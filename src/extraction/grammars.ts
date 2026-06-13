@@ -59,6 +59,11 @@ export const EXTENSION_MAP: Record<string, Language> = {
   '.jsx': 'jsx',
   '.py': 'python',
   '.pyw': 'python',
+  // Workflow DSLs reuse the Python grammar (Snakemake is a Python superset;
+  // Nextflow DSL2 is Python-ish enough to extract embedded helpers). Their
+  // step/dataflow semantics are added by the `workflow` framework resolver.
+  '.smk': 'python',
+  '.nf': 'python',
   '.go': 'go',
   '.rs': 'rust',
   '.java': 'java',
@@ -124,6 +129,7 @@ export const EXTENSION_MAP: Record<string, Language> = {
  */
 export function isSourceFile(filePath: string): boolean {
   if (isPlayRoutesFile(filePath)) return true; // Play `conf/routes` is extensionless
+  if (isSnakefileFile(filePath)) return true; // extensionless `Snakefile` → Python grammar
   if (isShopifyLiquidJson(filePath)) return true; // Shopify OS 2.0 JSON templates / section groups
   const dot = filePath.lastIndexOf('.');
   if (dot < 0) return false;
@@ -152,6 +158,15 @@ export function isPlayRoutesFile(filePath: string): boolean {
     filePath.endsWith('/conf/routes') ||
     filePath.endsWith('.routes')
   );
+}
+
+/**
+ * Snakemake workflow file: the extensionless `Snakefile` (`.smk` is caught by
+ * EXTENSION_MAP). Extracted via the Python grammar (Snakefile is a Python
+ * superset); rule/dataflow semantics come from the `workflow` framework resolver.
+ */
+export function isSnakefileFile(filePath: string): boolean {
+  return filePath === 'Snakefile' || filePath.endsWith('/Snakefile');
 }
 
 /**
@@ -272,6 +287,9 @@ export function detectLanguage(filePath: string, source?: string): Language {
   // Play `conf/routes` has no grammar — route through the no-symbol path; the
   // Play framework resolver extracts route nodes from it.
   if (isPlayRoutesFile(filePath)) return 'yaml';
+  // Extensionless `Snakefile` → Python grammar (Snakefile is a Python superset);
+  // the workflow resolver adds the rule/dataflow nodes.
+  if (isSnakefileFile(filePath)) return 'python';
   const ext = filePath.substring(filePath.lastIndexOf('.')).toLowerCase();
   // Shopify OS 2.0 JSON templates / section groups → the Liquid extractor (it
   // links each section `"type"` to its `sections/<type>.liquid`).
