@@ -1,0 +1,38 @@
+{
+  "timestamp": "2026-06-13T08:13:28.202Z",
+  "codebasePath": "/tmp/cg-probe/DESeq2",
+  "codegraphSha": "06e0375",
+  "summary": {
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "meanRecall": 1,
+    "meanMRR": 0
+  },
+  "results": [
+    {
+      "caseId": "r-s4-contains-deseqdataset",
+      "pass": true,
+      "recall": 1,
+      "mrr": 0,
+      "foundSymbols": [
+        "DESeqDataSet"
+      ],
+      "missedSymbols": [],
+      "edgeCount": 10,
+      "latencyMs": 0.9581660000000056
+    },
+    {
+      "caseId": "r-s4-overrides-dispersions",
+      "pass": true,
+      "recall": 1,
+      "mrr": 0,
+      "foundSymbols": [
+        "dispersions"
+      ],
+      "missedSymbols": [],
+      "edgeCount": 1,
+      "latencyMs": 0.8657499999999914
+    }
+  ]
+}

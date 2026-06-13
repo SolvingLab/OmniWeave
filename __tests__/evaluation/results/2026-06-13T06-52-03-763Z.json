@@ -1,0 +1,62 @@
+{
+  "timestamp": "2026-06-13T06:52:03.762Z",
+  "codebasePath": "/Users/liuzaoqu/Desktop/develop/sogen/new/__tests__/fixtures/capstone",
+  "codegraphSha": "06e0375",
+  "summary": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "meanRecall": 1,
+    "meanMRR": 0
+  },
+  "results": [
+    {
+      "caseId": "capstone-crosslang-fit-model",
+      "pass": true,
+      "recall": 1,
+      "mrr": 0,
+      "foundSymbols": [
+        "fit_model"
+      ],
+      "missedSymbols": [],
+      "edgeCount": 1,
+      "latencyMs": 0.15587499999998045
+    },
+    {
+      "caseId": "capstone-s4-genemodel-contains",
+      "pass": true,
+      "recall": 1,
+      "mrr": 0,
+      "foundSymbols": [
+        "GeneModel"
+      ],
+      "missedSymbols": [],
+      "edgeCount": 2,
+      "latencyMs": 0.021208000000001448
+    },
+    {
+      "caseId": "capstone-s4-fit-overrides",
+      "pass": true,
+      "recall": 1,
+      "mrr": 0,
+      "foundSymbols": [
+        "fit"
+      ],
+      "missedSymbols": [],
+      "edgeCount": 1,
+      "latencyMs": 0.061041999999986274
+    },
+    {
+      "caseId": "capstone-e2e-polyglot-chain",
+      "pass": true,
+      "recall": 1,
+      "mrr": 0,
+      "foundSymbols": [
+        "fit_model → fit (2 hops)"
+      ],
+      "missedSymbols": [],
+      "edgeCount": 2,
+      "latencyMs": 0.40508299999999053
+    }
+  ]
+}

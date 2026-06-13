@@ -1,0 +1,50 @@
+{
+  "timestamp": "2026-06-13T08:13:15.246Z",
+  "codebasePath": "/Users/liuzaoqu/Desktop/develop/sogen/new/__tests__/fixtures/polyglot-subprocess",
+  "codegraphSha": "06e0375",
+  "summary": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "meanRecall": 1,
+    "meanMRR": 0
+  },
+  "results": [
+    {
+      "caseId": "general-crosslang-py-subprocess",
+      "pass": true,
+      "recall": 1,
+      "mrr": 0,
+      "foundSymbols": [
+        "run_analysis"
+      ],
+      "missedSymbols": [],
+      "edgeCount": 1,
+      "latencyMs": 0.30562500000002046
+    },
+    {
+      "caseId": "general-crosslang-py-ossystem",
+      "pass": true,
+      "recall": 1,
+      "mrr": 0,
+      "foundSymbols": [
+        "make_report"
+      ],
+      "missedSymbols": [],
+      "edgeCount": 1,
+      "latencyMs": 0.024375000000020464
+    },
+    {
+      "caseId": "general-crosslang-js-childprocess",
+      "pass": true,
+      "recall": 1,
+      "mrr": 0,
+      "foundSymbols": [
+        "buildReport"
+      ],
+      "missedSymbols": [],
+      "edgeCount": 1,
+      "latencyMs": 0.01912499999997408
+    }
+  ]
+}

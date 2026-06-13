@@ -1,0 +1,62 @@
+{
+  "timestamp": "2026-06-13T06:12:16.648Z",
+  "codebasePath": "/tmp/cg-probe/wf",
+  "codegraphSha": "06e0375",
+  "summary": {
+    "total": 4,
+    "passed": 2,
+    "failed": 2,
+    "meanRecall": 0.5,
+    "meanMRR": 0
+  },
+  "results": [
+    {
+      "caseId": "workflow-crosslang-snakemake",
+      "pass": true,
+      "recall": 1,
+      "mrr": 0,
+      "foundSymbols": [
+        "deseq2"
+      ],
+      "missedSymbols": [],
+      "edgeCount": 1,
+      "latencyMs": 0.20587499999999181
+    },
+    {
+      "caseId": "workflow-crosslang-nextflow",
+      "pass": true,
+      "recall": 1,
+      "mrr": 0,
+      "foundSymbols": [
+        "DESEQ2_DIFFERENTIAL"
+      ],
+      "missedSymbols": [],
+      "edgeCount": 1,
+      "latencyMs": 0.02337500000004411
+    },
+    {
+      "caseId": "workflow-produces-align",
+      "pass": false,
+      "recall": 0,
+      "mrr": 0,
+      "foundSymbols": [],
+      "missedSymbols": [
+        "align (0/1 edges)"
+      ],
+      "edgeCount": 0,
+      "latencyMs": 0.022375000000010914
+    },
+    {
+      "caseId": "workflow-dag-link",
+      "pass": false,
+      "recall": 0,
+      "mrr": 0,
+      "foundSymbols": [],
+      "missedSymbols": [
+        "aligned/{sample}.bam (0/1 edges)"
+      ],
+      "edgeCount": 0,
+      "latencyMs": 0.0027079999999841675
+    }
+  ]
+}

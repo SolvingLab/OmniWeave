@@ -1,0 +1,96 @@
+{
+  "sha": "06e0375",
+  "rows": [
+    {
+      "id": "Q1",
+      "query": "List the S4 methods dispatching on class GeneModel",
+      "corpus": "capstone",
+      "owCalls": 1,
+      "owMs": 0.18,
+      "owAnswer": "2 dispatched methods (typed contains edges)",
+      "grepCalls": 1,
+      "grepLines": 2,
+      "grepVerdict": "FEASIBLE-COSTLY (raw setMethod hits, agent must parse which dispatch on GeneModel; no machine-typed result)",
+      "lspVerdict": "CANNOT-STRUCTURAL (no LSP 3.17 request encodes dispatch-table membership for a class; callHierarchy/incomingCalls finds callers of a generic, not setMethod registrations)",
+      "winner": "OMNIWEAVE"
+    },
+    {
+      "id": "Q2",
+      "query": "What script does Snakemake rule fit_model run?",
+      "corpus": "capstone",
+      "owCalls": 1,
+      "owMs": 0.19,
+      "owAnswer": "crossLang → scripts/model.R (1 typed edge)",
+      "grepCalls": 2,
+      "grepLines": 6,
+      "grepVerdict": "FEASIBLE (find the rule, then read its script: directive — 2 passes, unstructured)",
+      "lspVerdict": "CANNOT-STRUCTURAL (LSP is language-scoped; no request bridges .smk → the .R it invokes)",
+      "winner": "OMNIWEAVE"
+    },
+    {
+      "id": "Q3",
+      "query": "From rule fit_model, reach the S4 dispatch method across the process boundary",
+      "corpus": "capstone",
+      "owCalls": 1,
+      "owMs": 0.61,
+      "owAnswer": "connected path, 2 hops",
+      "grepCalls": 5,
+      "grepLines": 4,
+      "grepVerdict": "CANNOT-PROVE-COMPOSITION (grep can spot-check each hop independently but cannot prove they share nodes — a crossLang landing in a different file than the S4 class owner would pass every per-hop grep)",
+      "lspVerdict": "CANNOT-STRUCTURAL (cross-language process boundary + S4 dispatch registry — no request covers either)",
+      "winner": "OMNIWEAVE-STRUCTURAL"
+    },
+    {
+      "id": "Q4",
+      "query": "What R template does Nextflow process PREDICT run?",
+      "corpus": "capstone",
+      "owCalls": 1,
+      "owMs": 0.2,
+      "owAnswer": "crossLang → templates/predict.R (1 typed edge)",
+      "grepCalls": 2,
+      "grepLines": 2,
+      "grepVerdict": "FEASIBLE-COSTLY (find process, read its template directive, resolve templates/ convention)",
+      "lspVerdict": "CANNOT-STRUCTURAL (cross-language .nf → .R, no LSP request crosses it)",
+      "winner": "OMNIWEAVE"
+    },
+    {
+      "id": "Q5",
+      "query": "What script does the Python function run_analysis shell out to?",
+      "corpus": "polyglot-subprocess",
+      "owCalls": 1,
+      "owMs": 0.09,
+      "owAnswer": "crossLang → scripts/deseq.R (typed edge, py→R)",
+      "grepCalls": 1,
+      "grepLines": 11,
+      "grepVerdict": "FEASIBLE (the call site is greppable, but the py→R link is text the agent must resolve; no edge to traverse onward)",
+      "lspVerdict": "CANNOT-STRUCTURAL (a Python LSP does not resolve a subprocess argument into the R file it names)",
+      "winner": "OMNIWEAVE"
+    },
+    {
+      "id": "Q6",
+      "query": "Where is the function render defined?",
+      "corpus": "polyglot-subprocess",
+      "owCalls": 1,
+      "owMs": 0.1,
+      "owAnswer": "scripts/report.py (1 node)",
+      "grepCalls": 1,
+      "grepLines": 1,
+      "grepVerdict": "FEASIBLE (1 pass, 1 line) — TIED",
+      "lspVerdict": "CAN (textDocument/definition)",
+      "winner": "TIED"
+    },
+    {
+      "id": "Q7",
+      "query": "Which files mention the string \"Rscript\"?",
+      "corpus": "polyglot-subprocess",
+      "owCalls": 1,
+      "owMs": 0.84,
+      "owAnswer": "partial — symbol index is not full-text",
+      "grepCalls": 1,
+      "grepLines": 4,
+      "grepVerdict": "GREP-WINS (raw text presence, zero indexing overhead — grep is the right tool)",
+      "lspVerdict": "CANNOT-STRUCTURAL (not a symbol query)",
+      "winner": "GREP"
+    }
+  ]
+}

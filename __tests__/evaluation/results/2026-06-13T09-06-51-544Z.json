@@ -1,0 +1,122 @@
+{
+  "timestamp": "2026-06-13T09:06:51.544Z",
+  "codebasePath": "/Users/liuzaoqu/Desktop/develop/sogen/new/__tests__/fixtures/polyglot-subprocess",
+  "codegraphSha": "06e0375",
+  "summary": {
+    "total": 9,
+    "passed": 9,
+    "failed": 0,
+    "meanRecall": 1,
+    "meanMRR": 0
+  },
+  "results": [
+    {
+      "caseId": "general-crosslang-py-subprocess",
+      "pass": true,
+      "recall": 1,
+      "mrr": 0,
+      "foundSymbols": [
+        "run_analysis"
+      ],
+      "missedSymbols": [],
+      "edgeCount": 1,
+      "latencyMs": 0.22062499999998408
+    },
+    {
+      "caseId": "general-crosslang-py-ossystem",
+      "pass": true,
+      "recall": 1,
+      "mrr": 0,
+      "foundSymbols": [
+        "make_report"
+      ],
+      "missedSymbols": [],
+      "edgeCount": 1,
+      "latencyMs": 0.025167000000010376
+    },
+    {
+      "caseId": "general-crosslang-js-childprocess",
+      "pass": true,
+      "recall": 1,
+      "mrr": 0,
+      "foundSymbols": [
+        "buildReport"
+      ],
+      "missedSymbols": [],
+      "edgeCount": 1,
+      "latencyMs": 0.01870800000000372
+    },
+    {
+      "caseId": "general-crosslang-fstring-array",
+      "pass": true,
+      "recall": 1,
+      "mrr": 0,
+      "foundSymbols": [
+        "dispatch_array"
+      ],
+      "missedSymbols": [],
+      "edgeCount": 1,
+      "latencyMs": 0.017333000000007814
+    },
+    {
+      "caseId": "general-crosslang-fstring-string",
+      "pass": true,
+      "recall": 1,
+      "mrr": 0,
+      "foundSymbols": [
+        "dispatch_string"
+      ],
+      "missedSymbols": [],
+      "edgeCount": 1,
+      "latencyMs": 0.017042000000003554
+    },
+    {
+      "caseId": "general-crosslang-check-call",
+      "pass": true,
+      "recall": 1,
+      "mrr": 0,
+      "foundSymbols": [
+        "run_via_check_call"
+      ],
+      "missedSymbols": [],
+      "edgeCount": 1,
+      "latencyMs": 0.016375000000010687
+    },
+    {
+      "caseId": "general-crosslang-execfilesync",
+      "pass": true,
+      "recall": 1,
+      "mrr": 0,
+      "foundSymbols": [
+        "buildReportSync"
+      ],
+      "missedSymbols": [],
+      "edgeCount": 1,
+      "latencyMs": 0.016291999999992868
+    },
+    {
+      "caseId": "general-crosslang-echo-negative",
+      "pass": true,
+      "recall": 1,
+      "mrr": 0,
+      "foundSymbols": [
+        "echo_not_run"
+      ],
+      "missedSymbols": [],
+      "edgeCount": 0,
+      "latencyMs": 0.01274999999998272
+    },
+    {
+      "caseId": "general-crosslang-straddle-negative",
+      "pass": true,
+      "recall": 1,
+      "mrr": 0,
+      "foundSymbols": [
+        "straddle_negative"
+      ],
+      "missedSymbols": [],
+      "edgeCount": 0,
+      "latencyMs": 0.07933400000001711
+    }
+  ]
+}
