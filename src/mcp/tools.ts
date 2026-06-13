@@ -1290,7 +1290,7 @@ export class ToolHandler {
       for (const node of callers.slice(0, limit)) {
         const location = node.startLine ? `:${node.startLine}` : '';
         const label = labels.get(node.id);
-        lines.push(`- ${node.name} (${node.kind}) - ${node.filePath}${location}${label ? ` — via ${label}` : ''}`);
+        lines.push(`- ${this.callerDisplayName(node)} (${node.kind}) - ${node.filePath}${location}${label ? ` — via ${label}` : ''}`);
       }
     }
     return this.textResult(this.truncateOutput(lines.join('\n') + filterNote));
@@ -1360,7 +1360,7 @@ export class ToolHandler {
       for (const node of callees.slice(0, limit)) {
         const location = node.startLine ? `:${node.startLine}` : '';
         const label = labels.get(node.id);
-        lines.push(`- ${node.name} (${node.kind}) - ${node.filePath}${location}${label ? ` — via ${label}` : ''}`);
+        lines.push(`- ${this.callerDisplayName(node)} (${node.kind}) - ${node.filePath}${location}${label ? ` — via ${label}` : ''}`);
       }
     }
     return this.textResult(this.truncateOutput(lines.join('\n') + filterNote));
@@ -3733,16 +3733,34 @@ export class ToolHandler {
     return lines.join('\n');
   }
 
+  /**
+   * Display label for a caller/callee node: the qualified owner
+   * (`Class::method`) when it carries more than the bare name, else the bare
+   * name. Without the owner an agent must guess the enclosing class and can
+   * mislabel it — measured on a real django run, a `callers iri_to_uri` list
+   * got 3/12 owning classes wrong (`Stylesheet.url` reported as
+   * `SyndicationFeed.url`, etc.) because the bare method names (`url`,
+   * `__init__`) are ambiguous across same-file classes. The owner is already
+   * in the graph (`qualifiedName`); surfacing it is one short token and zero
+   * extra calls.
+   */
+  private callerDisplayName(node: Node): string {
+    return node.qualifiedName && node.qualifiedName !== node.name
+      ? node.qualifiedName
+      : node.name;
+  }
+
   private formatNodeList(nodes: Node[], title: string, labels?: Map<string, string>): string {
     const lines: string[] = [`## ${title} (${nodes.length} found)`, ''];
 
     for (const node of nodes) {
       const location = node.startLine ? `:${node.startLine}` : '';
-      // Compact: just name, kind, location — plus the relationship when it
-      // isn't a plain call (callback registration, instantiation, …).
+      // Compact: qualified name (so the owning class is unambiguous), kind,
+      // location — plus the relationship when it isn't a plain call (callback
+      // registration, instantiation, …).
       const label = labels?.get(node.id);
       lines.push(
-        `- ${node.name} (${node.kind}) - ${node.filePath}${location}${label ? ` — via ${label}` : ''}`
+        `- ${this.callerDisplayName(node)} (${node.kind}) - ${node.filePath}${location}${label ? ` — via ${label}` : ''}`
       );
     }
 
