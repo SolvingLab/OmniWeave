@@ -38,6 +38,14 @@ export const NODE_KINDS = [
   'export',
   'route',
   'component',
+  // A data artifact in a workflow DAG — a file path a step produces/consumes.
+  // Often a wildcard pattern (`results/{sample}.bam`) that isn't a repo file, so
+  // it is NOT a `file` node (those are real, indexed source files).
+  'artifact',
+  // An external command-line tool a workflow step runs (bwa, samtools, STAR) —
+  // a separate process with no source in the repo. Name-keyed so every step that
+  // runs the tool shares one node (`callers(STAR)` lists the whole pipeline's use).
+  'tool',
 ] as const;
 
 export type NodeKind = (typeof NODE_KINDS)[number];
@@ -57,7 +65,11 @@ export type EdgeKind =
   | 'returns'         // Function returns type
   | 'instantiates'    // Creates instance of class
   | 'overrides'       // Method overrides parent method
-  | 'decorates';      // Decorator applied to symbol
+  | 'decorates'      // Decorator applied to symbol
+  | 'crossLang'      // Workflow step invokes a script in another language (Snakemake/Nextflow → Rscript/python)
+  | 'produces'       // Workflow step writes a data artifact (output: directive)
+  | 'consumes'       // Workflow step reads a data artifact (input: directive)
+  | 'invokes';       // Workflow step runs an external command-line tool (wrapper: bio/<tool>/…, shell tool)
 
 /**
  * Supported programming languages. See NODE_KINDS for why this is a
