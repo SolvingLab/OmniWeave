@@ -36,7 +36,7 @@ import * as path from 'path';
 import { isSourceFile, buildScopeIgnore, type ScopeIgnore } from '../extraction';
 import { logDebug, logWarn } from '../errors';
 import { normalizePath } from '../utils';
-import { isCodeGraphDataDir } from '../directory';
+import { isOmniWeaveDataDir } from '../directory';
 import { watchDisabledReason } from './watch-policy';
 
 /**
@@ -52,14 +52,14 @@ function supportsRecursiveWatch(): boolean {
  * Upper bound on simultaneously-watched directories on the Linux per-directory
  * path. Each is one inotify watch; the kernel's `fs.inotify.max_user_watches`
  * is the hard limit (commonly 8k–128k). We stop adding watches past this and
- * log once — partial live-watch (with `codegraph sync` as the backstop) is far
+ * log once — partial live-watch (with `omniweave sync` as the backstop) is far
  * better than exhausting the user's inotify budget and breaking watching
- * system-wide (#579). Tunable via CODEGRAPH_MAX_DIR_WATCHES.
+ * system-wide (#579). Tunable via OMNIWEAVE_MAX_DIR_WATCHES.
  */
 const DEFAULT_MAX_DIR_WATCHES = 50_000;
 
 function maxDirWatches(): number {
-  const raw = process.env.CODEGRAPH_MAX_DIR_WATCHES;
+  const raw = process.env.OMNIWEAVE_MAX_DIR_WATCHES;
   if (raw && /^\d+$/.test(raw)) {
     const n = Number(raw);
     if (n > 0) return n;
@@ -117,7 +117,7 @@ export interface WatchOptions {
  * external indexer can hit this every debounce cycle.
  */
 export class LockUnavailableError extends Error {
-  constructor(message = 'CodeGraph file lock unavailable; another process is writing') {
+  constructor(message = 'OmniWeave file lock unavailable; another process is writing') {
     super(message);
     this.name = 'LockUnavailableError';
   }
@@ -153,7 +153,7 @@ export interface PendingFile {
  *   was the system-crashing fd leak on macOS (#644/#496/#555/#628).
  * - Debounced to avoid thrashing on rapid saves
  * - Filters to supported source files by extension
- * - Ignores .codegraph/ and .git/ regardless of .gitignore
+ * - Ignores .omniweave/ and .git/ regardless of .gitignore
  * - Tracks per-file pending state so MCP tools can flag stale results
  *   without blocking on a sync (issue #403)
  */
@@ -237,7 +237,7 @@ export class FileWatcher {
     // Some environments make filesystem watching unusable — most notably
     // WSL2 /mnt/ drives, where the underlying fs.watch calls block long
     // enough to break MCP startup handshakes (issue #199). Skip watching
-    // there; callers fall back to manual `codegraph sync` or git sync hooks.
+    // there; callers fall back to manual `omniweave sync` or git sync hooks.
     const disabledReason = watchDisabledReason(this.projectRoot);
     if (disabledReason) {
       logDebug('File watcher disabled', { reason: disabledReason, projectRoot: this.projectRoot });
@@ -427,12 +427,12 @@ export class FileWatcher {
 
   /** Our own dirs are always ignored, regardless of .gitignore. */
   private isAlwaysIgnored(rel: string): boolean {
-    // First path segment. Ignore any CodeGraph data dir — the active one AND a
-    // sibling like `.codegraph-win` a second environment (Windows/WSL) created
+    // First path segment. Ignore any OmniWeave data dir — the active one AND a
+    // sibling like `.omniweave-win` a second environment (Windows/WSL) created
     // in the same tree, so neither side watches the other's index (#636).
     const top = rel.split('/')[0] ?? rel;
     return (
-      isCodeGraphDataDir(top) ||
+      isOmniWeaveDataDir(top) ||
       rel === '.git' || rel.startsWith('.git/')
     );
   }

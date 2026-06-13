@@ -1,28 +1,28 @@
 /**
  * Directory Management
  *
- * Manages the .codegraph/ directory structure for CodeGraph data.
+ * Manages the .omniweave/ directory structure for OmniWeave data.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 
 /** The default per-project data directory name. */
-const DEFAULT_CODEGRAPH_DIR = '.codegraph';
+const DEFAULT_OMNIWEAVE_DIR = '.omniweave';
 
 let warnedBadDirName = false;
 
 /**
- * Resolve the per-project data directory name, honoring the `CODEGRAPH_DIR`
- * environment override (default `.codegraph`). The override is a single path
+ * Resolve the per-project data directory name, honoring the `OMNIWEAVE_DIR`
+ * environment override (default `.omniweave`). The override is a single path
  * segment that lives in the project root.
  *
  * Why this exists: two environments that share one working tree must NOT share
- * one `.codegraph/` — most concretely Windows-native and WSL (issue #636). The
- * daemon lockfile (`.codegraph/daemon.pid`) records a platform-specific pid and
+ * one `.omniweave/` — most concretely Windows-native and WSL (issue #636). The
+ * daemon lockfile (`.omniweave/daemon.pid`) records a platform-specific pid and
  * socket path (a Windows named pipe vs a WSL Unix socket), and SQLite file
  * locking across the WSL2 ↔ Windows filesystem boundary is unreliable, so two
- * daemons sharing one index risks corruption. Setting `CODEGRAPH_DIR=.codegraph-win`
+ * daemons sharing one index risks corruption. Setting `OMNIWEAVE_DIR=.omniweave-win`
  * on one side gives each environment its own index in the same tree.
  *
  * Read live (not captured at load) so it is both process-accurate and testable.
@@ -31,9 +31,9 @@ let warnedBadDirName = false;
  * default) rather than risk writing the index outside the project or into the
  * project root itself; we warn once to stderr so the misconfiguration is seen.
  */
-export function codeGraphDirName(): string {
-  const raw = process.env.CODEGRAPH_DIR?.trim();
-  if (!raw) return DEFAULT_CODEGRAPH_DIR;
+export function omniWeaveDirName(): string {
+  const raw = process.env.OMNIWEAVE_DIR?.trim();
+  if (!raw) return DEFAULT_OMNIWEAVE_DIR;
   const invalid =
     raw === '.' ||
     raw.includes('..') ||
@@ -45,70 +45,77 @@ export function codeGraphDirName(): string {
       warnedBadDirName = true;
       // stderr only — stdout is the MCP protocol channel.
       console.warn(
-        `[codegraph] Ignoring invalid CODEGRAPH_DIR="${raw}" — it must be a plain ` +
-          `directory name (no path separators, no "..", not absolute). Using "${DEFAULT_CODEGRAPH_DIR}".`
+        `[omniweave] Ignoring invalid OMNIWEAVE_DIR="${raw}" — it must be a plain ` +
+          `directory name (no path separators, no "..", not absolute). Using "${DEFAULT_OMNIWEAVE_DIR}".`
       );
     }
-    return DEFAULT_CODEGRAPH_DIR;
+    return DEFAULT_OMNIWEAVE_DIR;
   }
   return raw;
 }
 
 /**
- * CodeGraph directory name — a load-time snapshot of {@link codeGraphDirName}.
+ * OmniWeave directory name — a load-time snapshot of {@link omniWeaveDirName}.
  * A running process's environment is fixed, so this equals the live value;
  * it's kept as a stable string export for backward compatibility. Internal code
- * resolves the name through {@link codeGraphDirName} / {@link getCodeGraphDir}
- * so the `CODEGRAPH_DIR` override always applies.
+ * resolves the name through {@link omniWeaveDirName} / {@link getOmniWeaveDir}
+ * so the `OMNIWEAVE_DIR` override always applies.
  */
-export const CODEGRAPH_DIR = codeGraphDirName();
+export const OMNIWEAVE_DIR = omniWeaveDirName();
 
 /**
- * Is `name` (a single path segment) a CodeGraph data directory? Matches the
- * default `.codegraph`, the active `CODEGRAPH_DIR` override, and any
- * `.codegraph-*` sibling. File-watching and the indexer skip ALL of these, so
+ * Is `name` (a single path segment) a OmniWeave data directory? Matches the
+ * default `.omniweave`, the active `OMNIWEAVE_DIR` override, and any
+ * `.omniweave-*` sibling. File-watching and the indexer skip ALL of these, so
  * when two environments share one working tree (Windows + WSL, issue #636)
  * neither indexes or watches the other's index directory.
+ *
+ * The legacy `.codegraph` / `.codegraph-*` names are also skipped: OmniWeave is
+ * a fork of upstream codegraph, so the two tools can coexist in one working
+ * tree. Skipping the sibling's index dir keeps OmniWeave from watching or
+ * walking the other tool's continuously-rewritten SQLite WAL files.
  */
-export function isCodeGraphDataDir(name: string): boolean {
+export function isOmniWeaveDataDir(name: string): boolean {
   return (
-    name === DEFAULT_CODEGRAPH_DIR ||
-    name === codeGraphDirName() ||
-    name.startsWith(DEFAULT_CODEGRAPH_DIR + '-')
+    name === DEFAULT_OMNIWEAVE_DIR ||
+    name === omniWeaveDirName() ||
+    name.startsWith(DEFAULT_OMNIWEAVE_DIR + '-') ||
+    name === '.codegraph' ||
+    name.startsWith('.codegraph-')
   );
 }
 
 /**
- * Get the .codegraph directory path for a project
+ * Get the .omniweave directory path for a project
  */
-export function getCodeGraphDir(projectRoot: string): string {
-  return path.join(projectRoot, codeGraphDirName());
+export function getOmniWeaveDir(projectRoot: string): string {
+  return path.join(projectRoot, omniWeaveDirName());
 }
 
 /**
- * Check if a project has been initialized with CodeGraph
- * Requires both .codegraph/ directory AND codegraph.db to exist
+ * Check if a project has been initialized with OmniWeave
+ * Requires both .omniweave/ directory AND omniweave.db to exist
  */
 export function isInitialized(projectRoot: string): boolean {
-  const codegraphDir = getCodeGraphDir(projectRoot);
-  if (!fs.existsSync(codegraphDir) || !fs.statSync(codegraphDir).isDirectory()) {
+  const omniweaveDir = getOmniWeaveDir(projectRoot);
+  if (!fs.existsSync(omniweaveDir) || !fs.statSync(omniweaveDir).isDirectory()) {
     return false;
   }
-  // Must have codegraph.db, not just .codegraph folder
-  const dbPath = path.join(codegraphDir, 'codegraph.db');
+  // Must have omniweave.db, not just .omniweave folder
+  const dbPath = path.join(omniweaveDir, 'omniweave.db');
   return fs.existsSync(dbPath);
 }
 
 /**
- * Find the nearest parent directory containing .codegraph/
+ * Find the nearest parent directory containing .omniweave/
  *
- * Walks up from the given path to find a CodeGraph-initialized project,
+ * Walks up from the given path to find a OmniWeave-initialized project,
  * similar to how git finds .git/ directories.
  *
  * @param startPath - Directory to start searching from
- * @returns The project root containing .codegraph/, or null if not found
+ * @returns The project root containing .omniweave/, or null if not found
  */
-export function findNearestCodeGraphRoot(startPath: string): string | null {
+export function findNearestOmniWeaveRoot(startPath: string): string | null {
   let current = path.resolve(startPath);
   const root = path.parse(current).root;
 
@@ -130,25 +137,25 @@ export function findNearestCodeGraphRoot(startPath: string): string | null {
 }
 
 /**
- * Contents of `.codegraph/.gitignore`. A single wildcard ignore keeps every
+ * Contents of `.omniweave/.gitignore`. A single wildcard ignore keeps every
  * transient file in the index dir — the database, `daemon.pid`, the socket,
  * logs, cache, and anything future versions add — out of git, without having
  * to enumerate each name (issues #788, #492, #484). Older versions wrote an
  * explicit allowlist that never listed `daemon.pid` or the socket, so those
  * runtime files were silently committed.
  */
-const GITIGNORE_CONTENT = `# CodeGraph data files — local to each machine, not for committing.
-# Ignore everything in .codegraph/ except this file itself, so transient
+const GITIGNORE_CONTENT = `# OmniWeave data files — local to each machine, not for committing.
+# Ignore everything in .omniweave/ except this file itself, so transient
 # files (the database, daemon.pid, sockets, logs) never show up in git.
 *
 !.gitignore
 `;
 
-/** Header line that prefixes every .gitignore CodeGraph has auto-generated. */
-const GITIGNORE_MARKER = '# CodeGraph data files';
+/** Header line that prefixes every .gitignore OmniWeave has auto-generated. */
+const GITIGNORE_MARKER = '# OmniWeave data files';
 
 /**
- * Is `content` a stale CodeGraph-generated `.gitignore` that should be
+ * Is `content` a stale OmniWeave-generated `.gitignore` that should be
  * regenerated in place? True when it carries our header but predates the
  * wildcard ignore (it has no bare `*` line) — i.e. one of the old explicit
  * allowlists (`*.db`, `cache/`, `.dirty`, …) that never ignored `daemon.pid`
@@ -163,8 +170,8 @@ function isStaleDefaultGitignore(content: string): boolean {
 }
 
 /**
- * Write `.codegraph/.gitignore` if it's absent, or upgrade a stale
- * CodeGraph-generated default in place; a user-customized file is left alone.
+ * Write `.omniweave/.gitignore` if it's absent, or upgrade a stale
+ * OmniWeave-generated default in place; a user-customized file is left alone.
  * Best-effort — returns `false` only if a needed write failed.
  */
 function ensureGitignore(gitignorePath: string): boolean {
@@ -185,62 +192,62 @@ function ensureGitignore(gitignorePath: string): boolean {
 }
 
 /**
- * Create the .codegraph directory structure
- * Note: Only throws if codegraph.db already exists, not just if .codegraph/ exists.
+ * Create the .omniweave directory structure
+ * Note: Only throws if omniweave.db already exists, not just if .omniweave/ exists.
  */
 export function createDirectory(projectRoot: string): void {
-  const codegraphDir = getCodeGraphDir(projectRoot);
-  const dbPath = path.join(codegraphDir, 'codegraph.db');
+  const omniweaveDir = getOmniWeaveDir(projectRoot);
+  const dbPath = path.join(omniweaveDir, 'omniweave.db');
 
-  // Only throw if CodeGraph is actually initialized (db exists)
-  // .codegraph/ folder alone is fine
+  // Only throw if OmniWeave is actually initialized (db exists)
+  // .omniweave/ folder alone is fine
   if (fs.existsSync(dbPath)) {
-    throw new Error(`CodeGraph already initialized in ${projectRoot}`);
+    throw new Error(`OmniWeave already initialized in ${projectRoot}`);
   }
 
   // Create main directory (if it doesn't exist)
-  fs.mkdirSync(codegraphDir, { recursive: true });
+  fs.mkdirSync(omniweaveDir, { recursive: true });
 
-  // Write .gitignore inside .codegraph (create if absent, upgrade a stale
+  // Write .gitignore inside .omniweave (create if absent, upgrade a stale
   // pre-wildcard default left by an older version — issue #788).
-  ensureGitignore(path.join(codegraphDir, '.gitignore'));
+  ensureGitignore(path.join(omniweaveDir, '.gitignore'));
 }
 
 /**
- * Remove the .codegraph directory
+ * Remove the .omniweave directory
  */
 export function removeDirectory(projectRoot: string): void {
-  const codegraphDir = getCodeGraphDir(projectRoot);
+  const omniweaveDir = getOmniWeaveDir(projectRoot);
 
-  if (!fs.existsSync(codegraphDir)) {
+  if (!fs.existsSync(omniweaveDir)) {
     return;
   }
 
-  // Verify .codegraph is a real directory, not a symlink pointing elsewhere
-  const lstat = fs.lstatSync(codegraphDir);
+  // Verify .omniweave is a real directory, not a symlink pointing elsewhere
+  const lstat = fs.lstatSync(omniweaveDir);
   if (lstat.isSymbolicLink()) {
     // Only remove the symlink itself, never follow it for recursive delete
-    fs.unlinkSync(codegraphDir);
+    fs.unlinkSync(omniweaveDir);
     return;
   }
 
   if (!lstat.isDirectory()) {
     // Not a directory - remove the single file
-    fs.unlinkSync(codegraphDir);
+    fs.unlinkSync(omniweaveDir);
     return;
   }
 
   // Recursively remove directory
-  fs.rmSync(codegraphDir, { recursive: true, force: true });
+  fs.rmSync(omniweaveDir, { recursive: true, force: true });
 }
 
 /**
- * Get all files in the .codegraph directory
+ * Get all files in the .omniweave directory
  */
 export function listDirectoryContents(projectRoot: string): string[] {
-  const codegraphDir = getCodeGraphDir(projectRoot);
+  const omniweaveDir = getOmniWeaveDir(projectRoot);
 
-  if (!fs.existsSync(codegraphDir)) {
+  if (!fs.existsSync(omniweaveDir)) {
     return [];
   }
 
@@ -252,7 +259,7 @@ export function listDirectoryContents(projectRoot: string): string[] {
     for (const entry of entries) {
       const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
 
-      // Skip symlinks to prevent following links outside .codegraph
+      // Skip symlinks to prevent following links outside .omniweave
       if (entry.isSymbolicLink()) {
         continue;
       }
@@ -265,17 +272,17 @@ export function listDirectoryContents(projectRoot: string): string[] {
     }
   }
 
-  walkDir(codegraphDir);
+  walkDir(omniweaveDir);
   return files;
 }
 
 /**
- * Get the total size of the .codegraph directory in bytes
+ * Get the total size of the .omniweave directory in bytes
  */
 export function getDirectorySize(projectRoot: string): number {
-  const codegraphDir = getCodeGraphDir(projectRoot);
+  const omniweaveDir = getOmniWeaveDir(projectRoot);
 
-  if (!fs.existsSync(codegraphDir)) {
+  if (!fs.existsSync(omniweaveDir)) {
     return 0;
   }
 
@@ -285,7 +292,7 @@ export function getDirectorySize(projectRoot: string): number {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
 
     for (const entry of entries) {
-      // Skip symlinks to prevent following links outside .codegraph
+      // Skip symlinks to prevent following links outside .omniweave
       if (entry.isSymbolicLink()) {
         continue;
       }
@@ -301,19 +308,19 @@ export function getDirectorySize(projectRoot: string): number {
     }
   }
 
-  walkDir(codegraphDir);
+  walkDir(omniweaveDir);
   return totalSize;
 }
 
 /**
- * Ensure a subdirectory exists within .codegraph
+ * Ensure a subdirectory exists within .omniweave
  */
 export function ensureSubdirectory(projectRoot: string, subdirName: string): string {
   if (subdirName.includes('..') || subdirName.includes(path.sep) || subdirName.includes('/')) {
     throw new Error(`Invalid subdirectory name: ${subdirName}`);
   }
 
-  const subdirPath = path.join(getCodeGraphDir(projectRoot), subdirName);
+  const subdirPath = path.join(getOmniWeaveDir(projectRoot), subdirName);
 
   if (!fs.existsSync(subdirPath)) {
     fs.mkdirSync(subdirPath, { recursive: true });
@@ -323,34 +330,34 @@ export function ensureSubdirectory(projectRoot: string, subdirName: string): str
 }
 
 /**
- * Check if the .codegraph directory has valid structure
+ * Check if the .omniweave directory has valid structure
  */
 export function validateDirectory(projectRoot: string): {
   valid: boolean;
   errors: string[];
 } {
   const errors: string[] = [];
-  const codegraphDir = getCodeGraphDir(projectRoot);
+  const omniweaveDir = getOmniWeaveDir(projectRoot);
 
-  if (!fs.existsSync(codegraphDir)) {
-    errors.push('CodeGraph directory does not exist');
+  if (!fs.existsSync(omniweaveDir)) {
+    errors.push('OmniWeave directory does not exist');
     return { valid: false, errors };
   }
 
-  if (!fs.statSync(codegraphDir).isDirectory()) {
-    errors.push('.codegraph exists but is not a directory');
+  if (!fs.statSync(omniweaveDir).isDirectory()) {
+    errors.push('.omniweave exists but is not a directory');
     return { valid: false, errors };
   }
 
   // Auto-repair / upgrade .gitignore (non-critical file). A missing one is
   // recreated; a stale pre-wildcard default that never ignored daemon.pid is
   // regenerated in place (issue #788); a user-authored file is left alone.
-  const gitignorePath = path.join(codegraphDir, '.gitignore');
+  const gitignorePath = path.join(omniweaveDir, '.gitignore');
   const existedBefore = fs.existsSync(gitignorePath);
   if (!ensureGitignore(gitignorePath) && !existedBefore) {
     // Only a missing-and-uncreatable file is surfaced; a failed in-place
     // upgrade of an existing file is non-fatal — the index still works.
-    errors.push('.gitignore missing in .codegraph directory and could not be created');
+    errors.push('.gitignore missing in .omniweave directory and could not be created');
   }
 
   return {
