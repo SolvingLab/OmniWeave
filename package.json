@@ -1,10 +1,11 @@
 {
-  "name": "@colbymchenry/codegraph",
-  "version": "1.0.0",
-  "description": "Supercharge Claude Code with semantic code intelligence. 94% fewer tool calls • 77% faster exploration • 100% local.",
+  "name": "omniweave",
+  "version": "0.1.0",
+  "description": "A high-performance, polyglot code-analysis graph for coding agents — cross-language, cross-process, and dynamic-dispatch edges that grep and LSP can't follow. 100% local, MCP-native.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
+    "omniweave": "./dist/bin/codegraph.js",
     "codegraph": "./dist/bin/codegraph.js"
   },
   "files": [
@@ -22,15 +23,26 @@
     "test:watch": "vitest",
     "test:eval": "vitest run __tests__/evaluation/",
     "eval": "npm run build && npx tsx __tests__/evaluation/runner.ts",
+    "benchmark": "npm run build && npx tsx __tests__/evaluation/capability-matrix.ts",
     "clean": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true})\""
   },
   "keywords": [
     "code-intelligence",
     "knowledge-graph",
-    "static-analysis"
+    "static-analysis",
+    "polyglot",
+    "cross-language",
+    "mcp",
+    "coding-agent",
+    "bioinformatics"
   ],
-  "author": "",
+  "author": "SolvingLab",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SolvingLab/OmniWeave.git"
+  },
+  "homepage": "https://github.com/SolvingLab/OmniWeave#readme",
   "dependencies": {
     "@clack/prompts": "^1.3.0",
     "commander": "^14.0.2",
