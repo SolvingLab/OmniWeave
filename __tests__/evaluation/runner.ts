@@ -2,7 +2,7 @@ import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { CodeGraph } from '../../src/index.js';
-import { scoreSearchNodes, scoreFindRelevantContext } from './scoring.js';
+import { scoreSearchNodes, scoreFindRelevantContext, scoreAssertEdges, scoreAssertReachable } from './scoring.js';
 import { testCases } from './test-cases.js';
 import type { EvalReport, EvalResult } from './types.js';
 
@@ -24,17 +24,24 @@ try {
   codegraphSha = execSync('git rev-parse --short HEAD', { encoding: 'utf-8' }).trim();
 } catch {}
 
+// The runner loads ONE database, so it runs only the cases tagged for the
+// selected corpus (untagged cases default to 'elasticsearch', preserving the
+// original Java suite). Point EVAL_CORPUS at the corpus whose db is indexed.
+const corpus = process.env.EVAL_CORPUS || 'elasticsearch';
+const cases = testCases.filter((tc) => (tc.corpus ?? 'elasticsearch') === corpus);
+
 console.log(`\nCodeGraph Eval — ${path.basename(resolvedPath)}`);
 console.log(`Codebase: ${resolvedPath}`);
 console.log(`Commit:   ${codegraphSha}`);
-console.log(`Cases:    ${testCases.length}`);
+console.log(`Corpus:   ${corpus}`);
+console.log(`Cases:    ${cases.length}`);
 console.log('');
 
 async function run() {
   const cg = CodeGraph.openSync(resolvedPath);
   const results: EvalResult[] = [];
 
-  for (const tc of testCases) {
+  for (const tc of cases) {
     const start = performance.now();
 
     if (tc.api === 'searchNodes') {
@@ -46,6 +53,64 @@ async function run() {
       const latency = performance.now() - start;
       const result = scoreSearchNodes(tc.id, tc.expectedSymbols, searchResults, latency);
       results.push(result);
+    } else if (tc.api === 'assertEdges') {
+      // Count edges of `edgeKind` in `direction` across every node named
+      // `symbolName` (optionally pinned to `symbolKind`). The facade returns all
+      // edges for a node; we filter by kind here (counting needs no kind-aware query).
+      const nodes = cg
+        .getNodesByName(tc.symbolName ?? '')
+        .filter((n) => !tc.symbolKind || n.kind === tc.symbolKind);
+      let count = 0;
+      for (const n of nodes) {
+        const edges =
+          tc.direction === 'incoming' ? cg.getIncomingEdges(n.id) : cg.getOutgoingEdges(n.id);
+        count += edges.filter(
+          (e) =>
+            e.kind === tc.edgeKind &&
+            (tc.minConfidence === undefined ||
+              ((e.metadata?.confidence as number | undefined) ?? -1) >= tc.minConfidence)
+        ).length;
+      }
+      const latency = performance.now() - start;
+      results.push(
+        scoreAssertEdges(
+          tc.id,
+          tc.symbolName ?? '',
+          count,
+          tc.minEdgeCount ?? 1,
+          latency,
+          tc.maxEdgeCount ?? Infinity
+        )
+      );
+    } else if (tc.api === 'assertReachable') {
+      // Shortest-path existence across the polyglot chain. Names are ambiguous
+      // (a generic function and its S4 method both answer to `fit`), so we try
+      // every (origin, destination) pair and keep the shortest path found;
+      // `toKind` narrows destinations to the dispatch target specifically.
+      const fromNodes = cg.getNodesByName(tc.fromName ?? '');
+      const toNodes = cg
+        .getNodesByName(tc.toName ?? '')
+        .filter((n) => !tc.toKind || n.kind === tc.toKind);
+      const maxHops = tc.maxHops ?? 5;
+
+      let shortestHops: number | null = null;
+      for (const from of fromNodes) {
+        for (const to of toNodes) {
+          const path = cg.findPath(from.id, to.id, tc.reachableVia);
+          if (path) {
+            const hops = path.length - 1;
+            if (shortestHops === null || hops < shortestHops) shortestHops = hops;
+          }
+        }
+      }
+
+      const latency = performance.now() - start;
+      results.push(
+        scoreAssertReachable(
+          tc.id, tc.fromName ?? '', tc.toName ?? '', shortestHops, maxHops, latency,
+          fromNodes.length, toNodes.length
+        )
+      );
     } else {
       const subgraph = await cg.findRelevantContext(tc.query, {
         searchLimit: 8,
