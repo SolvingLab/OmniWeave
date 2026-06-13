@@ -1,0 +1,33 @@
+rule all:
+    input:
+        "results/model.rds"
+
+rule fit_model:
+    input:
+        counts="data/counts.tsv"
+    output:
+        "results/model.rds"
+    script:
+        "scripts/model.R"
+
+# Two rules run the SAME external tool (STAR) via snakemake-wrappers. The wrapper
+# path `bio/star/<sub>` names the tool with no shell to parse; both rules `invokes`
+# one shared `tool:star` node, so `callers(star)` lists the whole pipeline's STAR
+# usage and `callees(star_align)` reaches the tool — a cross-process hop (the tool is
+# a separate binary, no repo source) that LSP cannot follow and crossLang (local
+# scripts only) does not cover.
+rule star_index:
+    input:
+        "data/genome.fa"
+    output:
+        "index/SAindex"
+    wrapper:
+        "v7.2.0/bio/star/index"
+
+rule star_align:
+    input:
+        "data/reads.fq"
+    output:
+        "results/aligned.bam"
+    wrapper:
+        "v7.2.0/bio/star/align"
