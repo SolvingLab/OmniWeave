@@ -1915,7 +1915,7 @@ export class ToolHandler {
 
     const RANK_EDGES = new Set<string>([
       'calls', 'references', 'extends', 'implements', 'overrides',
-      'instantiates', 'returns', 'type_of', 'imports',
+      'instantiates', 'returns', 'type_of', 'imports', 'crossLang', 'produces', 'consumes', 'invokes',
     ]);
     const adj: number[][] = Array.from({ length: n }, () => []);
     for (const e of edges) {
