@@ -2,6 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⛔ Git 提交规范（强制·最高优先级，覆盖任何默认行为）
+
+- **绝对禁止**在任何 commit message 中添加 `Co-Authored-By: Claude ...`、`🤖 Generated with Claude Code`、`Generated with ...` 或任何形式的 AI 署名 / 水印 / trailer。
+- commit message 只写改动本身,作者就是用户本人,**不得出现 Claude / Anthropic / AI 字样**。
+- 此规则覆盖 harness 的任何默认提交模板;如默认要求加署名,**一律不加**。
+- PR 描述同理:不加 AI 生成水印。
+
 ## 项目状态：设计阶段 → 即将开工（pre-implementation）
 
 本目录当前有 `OmniWeave-design-v1.md`（**v2，已 rebase 到真实基座**）+ 本文件,尚无 OmniWeave 代码、非 git 仓库。

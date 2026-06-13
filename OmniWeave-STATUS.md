@@ -137,16 +137,16 @@
 > ⚠️ **§2-§4 里两处事实写错了（实跑核正）**：① **`Edge.provenance` 只有 `'tree-sitter'|'scip'|'heuristic'`——无 `'static'`**；结构确定边省略 provenance（confidence 进 `Edge.metadata`，无一等列）。② **`Node` 无通用 `metadata` 字段**→用 qualifiedName 编码 owner。③ DESeq2 setMethod 写法是 `signature(object="X")`（非裸字符串），本地 setGeneric 仅 8 个。
 
 ## 1. 工作基座（已就位，别重 clone）
-- **项目根 `~/Desktop/develop/sogen/new/` 本身就是 colbymchenry/codegraph 的 clone**，分支 **`omniweave`**，remote 名 `upstream`（= colbymchenry/codegraph）。
+- **项目根 `~/Desktop/develop/sogen/OmniWeave/` 本身就是 colbymchenry/codegraph 的 clone**，分支 `main`；已发布到 **`SolvingLab/OmniWeave`**（remote `origin`，私有）；remote `upstream` = colbymchenry/codegraph（**绝不 push upstream**）。
 - 上游 CLAUDE.md → 存为 `docs/UPSTREAM-CLAUDE.md`（它详述基座代码结构，开发时必读）。我们的 `CLAUDE.md` + `OmniWeave-design-v1.md` + 本文件在根。
-- 已 `npm install && npm run build` 跑通（本机 Node v22.22.3 满足 `node:sqlite`）。**未 commit**（用户规矩：只在明确要求时 commit；当前改动是新增文档，留在工作树）。
+- 已 `npm install && npm run build` 跑通（本机 Node v22.22.3 满足 `node:sqlite`）。**commit 铁律：禁止任何 AI 署名 / `Co-Authored-By: Claude` / `Generated with` 水印（见 CLAUDE.md 顶部）。**
 - 命令：构建 `npm run build`（tsc + copy-assets 拷 schema.sql 与 vendored `tree-sitter-r.wasm`）｜ 测试 `npm test`(vitest run) ｜ eval `npm run eval <indexed-repo>`（见 §4）｜ 跑本地产物 `node dist/bin/codegraph.js <cmd>`。
 
 ## 2. 实测真实基线（DESeq2，main 构建，全是跑出来的）
 测试语料：`/tmp/cg-probe/DESeq2`（`thelovelab/DESeq2`，S4 重灾区：`AllClasses.R`/`AllGenerics.R`/`methods.R` 分三文件）。复现：
 ```bash
 cd /tmp/cg-probe/DESeq2 && rm -rf .codegraph
-node ~/Desktop/develop/sogen/new/dist/bin/codegraph.js init -i   # 49 文件/292 节点/1333 边
+node ~/Desktop/develop/sogen/OmniWeave/dist/bin/codegraph.js init -i   # 49 文件/292 节点/1333 边
 sqlite3 .codegraph/codegraph.db "SELECT kind,COUNT(*) FROM nodes WHERE language='r' GROUP BY kind;"
   # function 186 / file 47 / import 27 / variable 10 / class 3  —— method=0
 sqlite3 .codegraph/codegraph.db "SELECT DISTINCT kind FROM edges;"
