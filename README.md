@@ -107,8 +107,8 @@ omniweave callers <symbol>   # or query directly from the CLI
 git clone https://github.com/SolvingLab/OmniWeave.git
 cd OmniWeave
 npm install && npm run build      # tsc + vendored tree-sitter WASM (Node ≥ 22.5 for node:sqlite)
-node dist/bin/codegraph.js init -i
-node dist/bin/codegraph.js serve --mcp
+node dist/bin/omniweave.js init -i
+node dist/bin/omniweave.js serve --mcp
 ```
 
 ---

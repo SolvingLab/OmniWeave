@@ -1,7 +1,7 @@
 {
-  "name": "codegraph-telemetry-worker",
+  "name": "omniweave-telemetry-worker",
   "private": true,
-  "description": "First-party ingest endpoint for codegraph's anonymous usage telemetry (telemetry.getcodegraph.com)",
+  "description": "First-party ingest endpoint for omniweave's anonymous usage telemetry (telemetry.getomniweave.com)",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
