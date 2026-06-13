@@ -20,6 +20,19 @@ const DEFAULT_OPTIONS: Required<TraversalOptions> = {
 };
 
 /**
+ * Edge kinds that bridge a process or language boundary. Their target is a
+ * transit node — the file a workflow step actually runs, or a data artifact
+ * passed between steps — whose kind sits below the high-value cutoff that the
+ * `nodeKinds` filter enforces. Honoring that filter on a bridge target would
+ * sever the polyglot path (workflow step → script file → symbol) from the
+ * traversal, hiding the cross-process / cross-language differentiator from any
+ * agent reading the subgraph. BFS/DFS therefore let bridge targets through
+ * regardless of kind; ordinary structural/reference edges still respect
+ * `nodeKinds`, so file and artifact nodes never flood normal exploration.
+ */
+const BRIDGE_EDGE_KINDS = new Set<EdgeKind>(['crossLang', 'produces', 'consumes', 'invokes']);
+
+/**
  * Result of a single traversal step
  */
 interface TraversalStep {
@@ -103,7 +116,12 @@ export class GraphTraverser {
         const nextNode = neighborNodes.get(nextNodeId);
         if (!nextNode) continue;
 
-        if (opts.nodeKinds && opts.nodeKinds.length > 0 && !opts.nodeKinds.includes(nextNode.kind)) {
+        if (
+          opts.nodeKinds &&
+          opts.nodeKinds.length > 0 &&
+          !opts.nodeKinds.includes(nextNode.kind) &&
+          !BRIDGE_EDGE_KINDS.has(adjEdge.kind)
+        ) {
           continue;
         }
 
@@ -184,8 +202,14 @@ export class GraphTraverser {
       const nextNode = neighborNodes.get(nextNodeId);
       if (!nextNode) continue;
 
-      // Apply node kind filter
-      if (opts.nodeKinds && opts.nodeKinds.length > 0 && !opts.nodeKinds.includes(nextNode.kind)) {
+      // Apply node kind filter, but never drop a bridge target (see
+      // BRIDGE_EDGE_KINDS) — that transit node carries the cross-process path.
+      if (
+        opts.nodeKinds &&
+        opts.nodeKinds.length > 0 &&
+        !opts.nodeKinds.includes(nextNode.kind) &&
+        !BRIDGE_EDGE_KINDS.has(edge.kind)
+      ) {
         continue;
       }
 
@@ -253,7 +277,7 @@ export class GraphTraverser {
     // caller of the class. Without it, `callers <Class>` surfaced only the
     // importing file (via `imports`) and missed every construction site —
     // the opposite of "what breaks if I change this class?" (#774).
-    const incomingEdges = this.queries.getIncomingEdges(nodeId, ['calls', 'references', 'imports', 'instantiates']);
+    const incomingEdges = this.queries.getIncomingEdges(nodeId, ['calls', 'references', 'imports', 'instantiates', 'crossLang', 'produces', 'consumes', 'invokes']);
     if (incomingEdges.length === 0) return;
 
     // Batch-fetch all caller nodes in one round-trip instead of one
@@ -302,7 +326,7 @@ export class GraphTraverser {
     // (`Foo(...)` / `new Foo()`) has that class as a callee, so callers and
     // callees stay inverses of each other and `trace` can cross the
     // instantiation boundary (function → class → its methods) (#774).
-    const outgoingEdges = this.queries.getOutgoingEdges(nodeId, ['calls', 'references', 'imports', 'instantiates']);
+    const outgoingEdges = this.queries.getOutgoingEdges(nodeId, ['calls', 'references', 'imports', 'instantiates', 'crossLang', 'produces', 'consumes', 'invokes']);
     if (outgoingEdges.length === 0) return;
 
     // Batch-fetch callee nodes (was N+1 — see getCallersRecursive note).
