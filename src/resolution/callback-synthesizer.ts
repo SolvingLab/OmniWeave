@@ -26,6 +26,7 @@ import type { QueryBuilder } from '../db/queries';
 import type { ResolutionContext } from './types';
 import { isGeneratedFile } from '../extraction/generated-detection';
 import { stripCommentsForRegex } from './strip-comments';
+import { WORKFLOW_STEP_PREFIX, isWorkflowFile } from './frameworks/workflow';
 
 const REGISTRAR_NAME = /^(on[A-Z]\w*|subscribe|addListener|addEventListener|register|watch|listen|addCallback)$/;
 const DISPATCHER_NAME = /(emit|trigger|notify|dispatch|fire|publish|flush)/i;
@@ -598,6 +599,92 @@ function goCrossFileMethodContainsEdges(queries: QueryBuilder): Edge[] {
     if (seen.has(key)) continue;
     seen.add(key);
     edges.push({ source: owner.id, target: method.id, kind: 'contains', line: method.startLine });
+  }
+  return edges;
+}
+
+/**
+ * R S4 dispatch graph. `setMethod("counts", signature(object="DESeqDataSet"), …)`
+ * declares that the `counts` generic, dispatched on a `DESeqDataSet`, runs this
+ * method — but the class is typically declared in another file (AllClasses.R), so
+ * extraction can't link them in-file. The R extractor encodes the dispatch class
+ * into the method's qualifiedName (`DESeqDataSet::counts`, the same `Recv::name`
+ * shape Go uses); here we resolve it within the package (= directory) into the two
+ * edges that make the dispatch graph navigable:
+ *   - class → method   `contains`   — the class owns this S4 method.
+ *   - method → generic `overrides`  — this method specializes the generic, when
+ *                                     the generic is declared locally (setGeneric).
+ *                                     Generics imported from another package have
+ *                                     no local node, so that method simply gets no
+ *                                     overrides edge — honest, never fabricated.
+ *
+ * R forbids two S4 classes of one name in a package, so the same-name same-dir
+ * match is unambiguous — like the Go cross-file `contains` synthesizer these are
+ * deterministic STRUCTURAL edges, not heuristics, so they carry no
+ * `provenance:'heuristic'` flag. Methods already owned by a class in-file
+ * (R6/R5/ggproto inline methods, which extraction `contains`-links via scope) are
+ * skipped via the same type-parent guard the Go synthesizer uses.
+ */
+function rS4DispatchEdges(queries: QueryBuilder): Edge[] {
+  const edges: Edge[] = [];
+  const seen = new Set<string>();
+  const dirOf = (p: string): string => {
+    const i = p.replace(/\\/g, '/').lastIndexOf('/');
+    return i >= 0 ? p.slice(0, i) : '';
+  };
+
+  for (const method of queries.getNodesByKind('method')) {
+    if (method.language !== 'r') continue;
+    // The dispatch class is the qualifiedName prefix (`Class::generic`); methods
+    // without one (no encoded class) are left class-orphaned by design.
+    const qn = method.qualifiedName;
+    if (!qn) continue;
+    const sep = qn.lastIndexOf('::');
+    if (sep <= 0) continue;
+    const className = qn.slice(0, sep);
+
+    // Already owned by a class in-file (R6/R5/ggproto inline method)? Skip — and
+    // this also makes the pass idempotent on re-sync (the synthesized class parent
+    // is present on the second run).
+    const hasClassParent = queries
+      .getIncomingEdges(method.id, ['contains'])
+      .some((e) => {
+        const src = queries.getNodeById(e.source);
+        return src != null && src.kind === 'class';
+      });
+    if (hasClassParent) continue;
+
+    const dir = dirOf(method.filePath);
+
+    // class → method `contains`
+    const owner = queries
+      .getNodesByName(className)
+      .find((n) => n.language === 'r' && n.kind === 'class' && dirOf(n.filePath) === dir);
+    if (owner) {
+      const key = `c:${owner.id}>${method.id}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        edges.push({ source: owner.id, target: method.id, kind: 'contains', line: method.startLine });
+      }
+    }
+
+    // method → generic `overrides` (only when the generic is declared locally)
+    const generic = queries
+      .getNodesByName(method.name)
+      .find((n) => n.language === 'r' && n.kind === 'function' && dirOf(n.filePath) === dir);
+    if (generic && generic.id !== method.id) {
+      const key = `o:${method.id}>${generic.id}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        edges.push({
+          source: method.id,
+          target: generic.id,
+          kind: 'overrides',
+          line: method.startLine,
+          metadata: { synthesizedBy: 'r-s4-dispatch', via: method.name },
+        });
+      }
+    }
   }
   return edges;
 }
@@ -1647,6 +1734,310 @@ function svelteKitLoadEdges(ctx: ResolutionContext): Edge[] {
 }
 
 /**
+ * Workflow cross-process script invocation (Snakemake / Nextflow → R/Python).
+ *
+ * A workflow step shells out to a script in another language —
+ *   Snakemake:  script: "scripts/deseq2.R"   /   shell: "python scripts/qc.py {input}"
+ *   Nextflow:   script: """ Rscript ${projectDir}/bin/deseq.R $counts out.rds """
+ *   Nextflow:   template 'deseq_de.R'   (resolves to <moduleDir>/templates/deseq_de.R)
+ * — crossing a PROCESS boundary the call graph can't follow. Bridge the step node
+ * (emitted by the workflow resolver, id-prefixed `workflow-step:`) to the target
+ * script's `file` node so a flow reaches into the code graph: `callees(rule)`
+ * lands on the R script, and `callers(script)` surfaces the rule that runs it.
+ *
+ * The script path comes from regex over a free-text directive/shell string, so
+ * the edge is `provenance:'heuristic'` with a `confidence` in metadata. Paths
+ * built by runtime interpolation (`{params.script}`, an unresolved `${var}`) are
+ * NOT statically knowable — they are skipped, never guessed (honesty ceiling).
+ */
+// Interpreter token → the language of the script it runs (metadata only).
+const INTERPRETER_LANG: Record<string, string> = {
+  Rscript: 'r', R: 'r', python: 'python', python3: 'python', python2: 'python', perl: 'perl', bash: 'bash', sh: 'bash',
+};
+// `script:` directive (path may sit on the next line) — Snakemake.
+const SCRIPT_DIRECTIVE_RE = /\bscript:\s*["']([^"'\n]+\.(?:[Rr]|py|pl|sh))["']/;
+// `template 'x.R'` directive — Nextflow. The target is a bare filename that
+// resolves to `<moduleDir>/templates/x.R`; this is the dominant cross-language
+// mechanism in nf-core DSL2 modules (each module ships its analysis script as a
+// template), so missing it would zero out crossLang recall on the entire nf-core
+// ecosystem. The path is literal and unambiguous, hence high-confidence.
+const TEMPLATE_DIRECTIVE_RE = /\btemplate\s+["']([^"'\n/]+\.(?:[Rr]|py|pl|sh))["']/;
+// A script-path token: a run of interpolation blocks (`${…}`, `$var`, `{…}`) and
+// ordinary path chars, ending in a known script extension. Capturing the block
+// whole lets a "this directory" prefix — f'{sys.path[0]}/x.py', '${projectDir}/x.R',
+// '$baseDir/x.R' — be seen even though `[` / `(` / `}` live inside it; cleanScriptPath
+// then strips the leading prefix, and a residual block (an interpolated basename) is
+// rejected downstream (honesty ceiling). Shared by the shell-string and array forms.
+//
+// The four alternatives have mutually exclusive first characters (`$`+`{`, `$`+word,
+// `{`, then a class with neither `$` nor `{`), so at most one can match at any input
+// position — the `+` is unambiguous and runs in linear time (no catastrophic
+// backtracking on adversarial `${}${}…` strings, since this scans every source file).
+const SCRIPT_PATH = String.raw`(?:\$\{[^}]*\}|\$\w+|\{[^}]*\}|[\w./~-])+\.(?:[Rr]|py|pl|sh)`;
+// Interpreter invocation in a shell/script body — Snakemake shell:, Nextflow script block.
+const SHELL_INVOKE_RE = new RegExp(
+  String.raw`\b(Rscript|python3?|python2?|perl|bash|sh|R)\b[^\n;|&>]*?\s(${SCRIPT_PATH})\b`,
+  'g',
+);
+
+/**
+ * Strip leading runtime-interpolation DIRECTORY prefixes to a repo-relative tail:
+ * shell `${projectDir}/`, `$baseDir/`, and Python f-string `{sys.path[0]}/` /
+ * `{os.path.dirname(__file__)}/` — the dominant "this repo's directory" idioms.
+ * Only a leading block followed by `/` is stripped, so an interpolated *basename*
+ * (`{prefix}.generated.R`) survives and is rejected downstream (honesty ceiling).
+ */
+function cleanScriptPath(raw: string): string {
+  return raw
+    .replace(/\$\{[^}]*\}\//g, '') // shell ${var}/  (strip before {…}/ so no stray $ is left)
+    .replace(/\{[^}]*\}\//g, '') // python f-string {sys.path[0]}/ , {os.path.dirname(__file__)}/
+    .replace(/\$\w+\//g, '') // shell $var/
+    .replace(/^~\//, '')
+    .replace(/^\.\//, '');
+}
+
+/** Join `rel` onto directory `dir` (both project-relative), normalizing `.`/`..`. */
+function joinRel(dir: string, rel: string): string {
+  const parts = (dir ? dir + '/' + rel : rel).split('/');
+  const out: string[] = [];
+  for (const p of parts) {
+    if (p === '' || p === '.') continue;
+    if (p === '..') out.pop();
+    else out.push(p);
+  }
+  return out.join('/');
+}
+
+function dirOfPath(p: string): string {
+  const i = p.replace(/\\/g, '/').lastIndexOf('/');
+  return i >= 0 ? p.slice(0, i) : '';
+}
+
+function workflowCrossLangEdges(queries: QueryBuilder, ctx: ResolutionContext): Edge[] {
+  // Bail on non-workflow repos before scanning any nodes.
+  if (!ctx.getAllFiles().some((f) => isWorkflowFile(f))) return [];
+
+  const edges: Edge[] = [];
+  const seen = new Set<string>();
+
+  for (const step of queries.getNodesByKind('function')) {
+    if (!step.id.startsWith(WORKFLOW_STEP_PREFIX)) continue;
+    const content = ctx.readFile(step.filePath);
+    if (!content) continue;
+    // Drop full-line comments (Snakemake/Python `#`, Groovy/Nextflow `//` `/*` `*`)
+    // before scanning: a commented-out `script:`/`template`/interpreter line must
+    // not mint a crossLang edge to a script the pipeline doesn't actually run.
+    const body = content
+      .split('\n')
+      .slice((step.startLine ?? 1) - 1, step.endLine ?? step.startLine)
+      .filter((l) => !/^\s*(#|\/\/|\/\*|\*)/.test(l))
+      .join('\n');
+    if (!body) continue;
+    const stepDir = dirOfPath(step.filePath);
+
+    // Collect (interpreter, rawPath, confidence) candidates. A literal directive
+    // (`script:`, `template`) is unambiguous → 0.95; a path scraped from a free-text
+    // shell string → 0.8.
+    const interpFor = (p: string) => (/\.[Rr]$/.test(p) ? 'Rscript' : /\.pl$/.test(p) ? 'perl' : /\.sh$/.test(p) ? 'bash' : 'python');
+    const candidates: Array<{ interp: string; raw: string; confidence: number }> = [];
+    const sd = body.match(SCRIPT_DIRECTIVE_RE);
+    if (sd) candidates.push({ interp: interpFor(sd[1]!), raw: sd[1]!, confidence: 0.95 });
+    // Nextflow `template 'x.R'` → <moduleDir>/templates/x.R (prefix the subdir here
+    // so the shared step-dir resolution below lands on the real file).
+    const td = body.match(TEMPLATE_DIRECTIVE_RE);
+    if (td) candidates.push({ interp: interpFor(td[1]!), raw: 'templates/' + td[1]!, confidence: 0.95 });
+    SHELL_INVOKE_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = SHELL_INVOKE_RE.exec(body))) candidates.push({ interp: m[1]!, raw: m[2]!, confidence: 0.8 });
+
+    for (const { interp, raw, confidence } of candidates) {
+      const cleaned = cleanScriptPath(raw);
+      if (!cleaned || /[{}$]/.test(cleaned)) continue; // residual interpolation — skip, never guess
+      // Snakemake `script:` paths resolve relative to the workflow file's dir;
+      // Nextflow shell paths are typically project-root-relative (the `${projectDir}`
+      // prefix was already stripped) — try the step dir first, then the root.
+      const candPaths = [joinRel(stepDir, cleaned), cleaned];
+      const target = candPaths
+        .filter((p, idx) => candPaths.indexOf(p) === idx)
+        .map((p) => ({ p, node: ctx.getNodesInFile(p).find((n) => n.kind === 'file') }))
+        .find((x) => x.node);
+      if (!target?.node) continue;
+
+      const key = `${step.id}>${target.node.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      edges.push({
+        source: step.id,
+        target: target.node.id,
+        kind: 'crossLang',
+        line: step.startLine,
+        provenance: 'heuristic',
+        metadata: {
+          synthesizedBy: 'workflow-crosslang',
+          interpreter: interp,
+          targetLanguage: INTERPRETER_LANG[interp] ?? 'unknown',
+          scriptPath: target.p,
+          confidence,
+          registeredAt: `${step.filePath}:${step.startLine}`,
+        },
+      });
+    }
+  }
+  return edges;
+}
+
+// Languages whose files carry function/method nodes AND whose source survives
+// comment-stripping with string literals intact (so an interpreter token inside
+// a subprocess call string is still visible). Shell/Makefile are excluded: they
+// are `unknown` language with no function nodes to attribute an edge to.
+const GENERAL_CROSSLANG_LANGS = new Set([
+  'python', 'typescript', 'javascript', 'tsx', 'jsx', 'go',
+]);
+// The recognized subprocess-spawning expressions, in one place so the array form
+// and the flat-string precision gate stay in lock-step. Covers Python
+// (`subprocess.run/call/check_call/check_output/Popen`, `os.system/popen`), Node
+// (`child_process.exec/execFile/spawn` and their `…Sync` variants — `execFile`
+// before `exec` so `execFileSync` resolves to execFile+Sync, not exec+stuck), and
+// Go (`exec.Command`/`CommandContext`). `check_call` and the `…Sync` variants were
+// added after an adversarial probe flagged them as common real-world misses.
+const SUBPROCESS_CALL_SRC = String.raw`subprocess\.(?:run|call|check_call|check_output|Popen)|os\.(?:system|popen)|child_process\.(?:execFile|exec|spawn)(?:Sync)?|exec\.Command(?:Context)?`;
+// Array / separate-argument subprocess form: `subprocess.run(["Rscript","x.R"])`,
+// Go `exec.Command("Rscript","x.R")`, Node `execFileSync("Rscript",["x.R"])`. The
+// interpreter and script path are distinct quoted tokens, so SHELL_INVOKE_RE
+// (which needs whitespace before the path) can't see them — this captures both.
+// The call name is baked in, so a match is inherently inside a real subprocess
+// call (no separate prefix gate needed). The path quote may carry a Python/JS
+// string prefix (`f'…'`, `r"…"`), and the path may open with a `{…}` "this dir"
+// interpolation — both covered so the dominant `subprocess.run(["python3",
+// f"{sys.path[0]}/x.py"])` dispatcher idiom is captured (via SCRIPT_PATH).
+const SUBPROCESS_ARRAY_RE = new RegExp(
+  String.raw`(?:${SUBPROCESS_CALL_SRC})\s*\(\s*\[?\s*["'](Rscript|python3?|python2?|perl|bash|sh|R)["']\s*,\s*\[?\s*[rbfRBF]{0,2}["'](${SCRIPT_PATH})["']`,
+  'g',
+);
+// The hard precision gate for the flat-string form (`os.system("python x.py")`,
+// `execSync("Rscript x.R")`): an interpreter+path inside a string only becomes an
+// edge when one of these is the enclosing call, so a bare `cmd = "Rscript x.R"` or
+// a log line never mints an edge.
+const SUBPROCESS_CALL_RE = new RegExp(SUBPROCESS_CALL_SRC);
+const MAX_CROSSLANG_PER_FN = 8;
+
+/**
+ * General cross-process / cross-language edges: a function in ANY indexed source
+ * file that shells out to a local R/Python/Perl/shell script — `subprocess.run`,
+ * `os.system`, Node `child_process.*`, Go `exec.Command`. This lifts crossLang
+ * out of workflow files (Snakemake/Nextflow) into ordinary polyglot code, the
+ * exact cross-language process hop no LSP can follow. The edge runs from the
+ * CALLING function node to the target script's `file` node, so `callees(fn)`
+ * reaches the script and `callers(script)` surfaces every site that runs it.
+ *
+ * Precision (general code has a wider false-positive surface than workflow
+ * directives): comments are stripped first; the array form is anchored to a real
+ * subprocess call; the flat-string form must sit inside a recognized subprocess
+ * call (SUBPROCESS_CALL_RE); interpolated/variable paths are skipped (honesty
+ * ceiling); and the target must resolve to an indexed local file (fileExists).
+ * Heuristic edges: provenance 'heuristic' + metadata.confidence.
+ */
+function generalCrossLangEdges(ctx: ResolutionContext): Edge[] {
+  const edges: Edge[] = [];
+  const seen = new Set<string>();
+  const fanOut = new Map<string, number>();
+
+  for (const file of ctx.getAllFiles()) {
+    // Workflow files are handled by workflowCrossLangEdges — don't double-scan.
+    if (isWorkflowFile(file)) continue;
+    const nodesInFile = ctx.getNodesInFile(file);
+    const lang = nodesInFile[0]?.language;
+    if (!lang || !GENERAL_CROSSLANG_LANGS.has(lang)) continue;
+
+    const content = ctx.readFile(file);
+    if (!content) continue;
+    const stripLang = lang === 'tsx' || lang === 'jsx' ? 'javascript' : lang;
+    const safe = stripCommentsForRegex(content, stripLang as Parameters<typeof stripCommentsForRegex>[1]);
+    const lineOf = (idx: number) => safe.slice(0, idx).split('\n').length;
+    const fileDir = dirOfPath(file);
+
+    // Build (interpreter, rawPath, confidence) candidates from both call shapes.
+    const cands: Array<{ interp: string; raw: string; idx: number; confidence: number }> = [];
+    SUBPROCESS_ARRAY_RE.lastIndex = 0;
+    let a: RegExpExecArray | null;
+    while ((a = SUBPROCESS_ARRAY_RE.exec(safe))) {
+      cands.push({ interp: a[1]!, raw: a[2]!, idx: a.index, confidence: 0.85 });
+    }
+    SHELL_INVOKE_RE.lastIndex = 0;
+    let s: RegExpExecArray | null;
+    while ((s = SHELL_INVOKE_RE.exec(safe))) {
+      // Gate 1 — command boundary: the interpreter must START a command, not be an
+      // argument to one. `os.system("echo Rscript x.R")` echoes the string; the
+      // interpreter sits right after a command word, so reject. A real invocation is
+      // preceded by a quote / shell separator (`"Rscript x.R"`, `sh -c "Rscript …"`,
+      // `cd d && Rscript x.R`), i.e. the last non-space char is not a word char.
+      const before = safe.slice(0, s.index).replace(/\s+$/, '').slice(-1);
+      if (/[A-Za-z0-9_]/.test(before)) continue;
+      // Gate 2 — real subprocess call: the interpreter string must sit inside a
+      // recognized subprocess call. Bound the look-back at the nearest preceding
+      // `)` (a closed call/statement) so a NEARBY-but-unrelated subprocess call
+      // can't lend its token to a bare string two lines down (the straddle FP).
+      const winStart = Math.max(0, s.index - 200);
+      const paren = safe.lastIndexOf(')', s.index - 1);
+      const prefix = safe.slice(paren >= winStart ? paren + 1 : winStart, s.index);
+      if (!SUBPROCESS_CALL_RE.test(prefix)) continue;
+      cands.push({ interp: s[1]!, raw: s[2]!, idx: s.index, confidence: 0.8 });
+    }
+
+    for (const { interp, raw, idx, confidence } of cands) {
+      const cleaned = cleanScriptPath(raw);
+      // Honesty ceiling: a residual `{…}`/`$` after stripping a leading "this dir"
+      // prefix means the basename or a mid-path segment is runtime-built — not
+      // statically knowable, so skip rather than guess a target.
+      if (!cleaned || /[{}$]/.test(cleaned)) continue;
+      // A path whose directory came from an interpolation block (`{sys.path[0]}/x.py`)
+      // is a notch less certain than a fully literal path — even though its static
+      // basename resolved to a real sibling, the directory was inferred.
+      const conf = /[{$]/.test(raw) ? Math.min(confidence, 0.7) : confidence;
+
+      const candPaths = [joinRel(fileDir, cleaned), cleaned];
+      const target = candPaths
+        .filter((p, i) => candPaths.indexOf(p) === i)
+        .map((p) => ({ p, node: ctx.getNodesInFile(p).find((n) => n.kind === 'file') }))
+        .find((x) => x.node);
+      if (!target?.node) continue; // not a local indexed file — PATH tool / external
+
+      // Attribute to the enclosing function so `callees(fn)` reaches the script.
+      // A top-level call (e.g. inside `if __name__ == '__main__':` — the dominant
+      // entry-point dispatcher idiom, where most CLI tools shell out to sub-tools)
+      // has no enclosing function, so fall back to the FILE node: `callers(script)`
+      // then still surfaces the orchestrator file that runs it.
+      const fnCaller = enclosingFn(nodesInFile, lineOf(idx));
+      const caller = fnCaller ?? nodesInFile.find((n) => n.kind === 'file');
+      if (!caller) continue; // no function and no file node — nothing to attribute to
+      if ((fanOut.get(caller.id) ?? 0) >= MAX_CROSSLANG_PER_FN) continue;
+
+      const key = `${caller.id}>${target.node.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      fanOut.set(caller.id, (fanOut.get(caller.id) ?? 0) + 1);
+
+      edges.push({
+        source: caller.id,
+        target: target.node.id,
+        kind: 'crossLang',
+        line: fnCaller ? fnCaller.startLine : lineOf(idx),
+        provenance: 'heuristic',
+        metadata: {
+          synthesizedBy: 'general-crosslang',
+          interpreter: interp,
+          targetLanguage: INTERPRETER_LANG[interp] ?? 'unknown',
+          scriptPath: target.p,
+          confidence: conf,
+          registeredAt: `${file}:${lineOf(idx)}`,
+        },
+      });
+    }
+  }
+  return edges;
+}
+
+/**
  * Synthesize dispatcher→callback edges (field observers + EventEmitters +
  * React re-render + JSX children + Vue templates + SvelteKit load + RN event
  * channel + Fabric native-impl + MyBatis Java↔XML + Gin middleware chain).
@@ -1668,6 +2059,12 @@ export function synthesizeCallbackEdges(queries: QueryBuilder, ctx: ResolutionCo
   const goImpl = goImplementsEdges(queries);
   if (goImpl.length > 0) queries.insertEdges(goImpl);
 
+  // R S4 dispatch graph: class→method `contains` + method→generic `overrides`.
+  // Structural (deterministic same-package), like the Go cross-file pass above,
+  // so it's persisted immediately rather than batched with the heuristic channels.
+  const rS4 = rS4DispatchEdges(queries);
+  if (rS4.length > 0) queries.insertEdges(rS4);
+
   const fieldEdges = fieldChannelEdges(queries, ctx);
   const closureCollEdges = closureCollectionEdges(queries, ctx);
   const emitterEdges = eventEmitterEdges(ctx);
@@ -1687,6 +2084,8 @@ export function synthesizeCallbackEdges(queries: QueryBuilder, ctx: ResolutionCo
   const rnXPlatEdges = rnCrossPlatformEdges(queries);
   const mybatisEdges = mybatisJavaXmlEdges(queries);
   const ginEdges = ginMiddlewareChainEdges(queries, ctx);
+  const workflowEdges = workflowCrossLangEdges(queries, ctx);
+  const generalCrossLang = generalCrossLangEdges(ctx);
 
   const merged: Edge[] = [];
   const seen = new Set<string>();
@@ -1710,6 +2109,8 @@ export function synthesizeCallbackEdges(queries: QueryBuilder, ctx: ResolutionCo
     ...rnXPlatEdges,
     ...mybatisEdges,
     ...ginEdges,
+    ...workflowEdges,
+    ...generalCrossLang,
   ]) {
     const key = `${e.source}>${e.target}`;
     if (seen.has(key)) continue;
@@ -1717,5 +2118,5 @@ export function synthesizeCallbackEdges(queries: QueryBuilder, ctx: ResolutionCo
     merged.push(e);
   }
   if (merged.length > 0) queries.insertEdges(merged);
-  return merged.length + goImpl.length + goMethodContains.length;
+  return merged.length + goImpl.length + goMethodContains.length + rS4.length;
 }
