@@ -7128,9 +7128,14 @@ setMethod("describe", "Patient", function(obj) paste(obj@id))
       const methods = result.nodes.filter((n) => n.kind === 'method').map((n) => n.name);
       expect(methods).toContain('deposit');
       expect(methods).toContain('push');
-      // setGeneric/setMethod produce functions named by their string argument.
-      const describes = result.nodes.filter((n) => n.name === 'describe' && n.kind === 'function');
-      expect(describes.length).toBeGreaterThanOrEqual(2);
+      // setGeneric declares the generic as a function; setMethod binds it to a
+      // class as a `method` whose dispatch class is encoded into its qualifiedName
+      // (`Patient::describe`) so resolution can build the S4 dispatch graph.
+      const describeGeneric = result.nodes.filter((n) => n.name === 'describe' && n.kind === 'function');
+      expect(describeGeneric.length).toBe(1);
+      const describeMethod = result.nodes.find((n) => n.name === 'describe' && n.kind === 'method');
+      expect(describeMethod).toBeDefined();
+      expect(describeMethod!.qualifiedName).toBe('Patient::describe');
       // The class-assignment idiom must not ALSO produce a variable node.
       expect(result.nodes.find((n) => n.name === 'Account' && n.kind === 'variable')).toBeUndefined();
     });

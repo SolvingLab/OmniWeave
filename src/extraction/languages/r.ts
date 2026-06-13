@@ -25,8 +25,11 @@ import type { LanguageExtractor, ExtractorContext } from '../tree-sitter-types';
  *                  calls too; the class node is named by the first string
  *                  argument and `name = function` entries in its list() args
  *                  extract as methods inside the class scope.
- *   - S4 generics: `setGeneric("name", …)` / `setMethod("name", "Class", fn)`
- *                  extract as functions named by the first string argument.
+ *   - S4 generics: `setGeneric("name", …)` extracts as a function named by the
+ *                  first string argument; `setMethod("name", signature(object=
+ *                  "Class"), fn)` extracts as a `method` whose dispatch class is
+ *                  encoded into its qualifiedName (`Class::name`) for the resolver
+ *                  to build the dispatch graph.
  *
  * Calls themselves go through the generic call extraction (`call` nodes with a
  * `function` field). Namespaced `pkg::fn(…)` keeps its qualified text;
@@ -76,6 +79,52 @@ function literalOrIdentifier(node: SyntaxNode | null, source: string): string | 
       if (c?.type === 'string_content') return getNodeText(c, source);
     }
     return ''; // empty string literal
+  }
+  return null;
+}
+
+/** The value node of the call's Nth positional argument (0-indexed), skipping named args. */
+function positionalArgValue(call: SyntaxNode, index: number): SyntaxNode | null {
+  const args = getChildByField(call, 'arguments');
+  if (!args) return null;
+  let positional = 0;
+  for (let i = 0; i < args.namedChildCount; i++) {
+    const arg = args.namedChild(i);
+    if (arg?.type !== 'argument') continue;
+    if (getChildByField(arg, 'name')) continue; // named argument — not positional
+    if (positional === index) return getChildByField(arg, 'value');
+    positional++;
+  }
+  return null;
+}
+
+/**
+ * The S4 dispatch class named in a `setMethod` signature argument. R writes the
+ * signature three ways:
+ *   - bare string:        setMethod("f", "ClassName", def)
+ *   - signature() call:   setMethod("f", signature(object="ClassName"), def)  ← Bioconductor norm
+ *   - character vector:   setMethod("f", c("A","B"), def)                     (multi-dispatch)
+ * Returns the FIRST class named. Single-dispatch is the Phase 1·A scope; the
+ * leading class of a multi-dispatch signature is still a true dispatch class —
+ * the remaining co-dispatch classes are a documented gap (one class encodes into
+ * the method's qualifiedName, see the setMethod branch).
+ */
+function s4DispatchClass(arg: SyntaxNode | null, source: string): string | null {
+  if (!arg) return null;
+  if (arg.type === 'string') return literalOrIdentifier(arg, source) || null;
+  // signature(object="X", ...) / c("A", "B") — first string-valued argument wins.
+  if (arg.type === 'call') {
+    const callee = calleeName(arg, source);
+    if (callee === 'signature' || callee === 'c') {
+      const args = getChildByField(arg, 'arguments');
+      if (!args) return null;
+      for (let i = 0; i < args.namedChildCount; i++) {
+        const a = args.namedChild(i);
+        if (a?.type !== 'argument') continue;
+        const cls = literalOrIdentifier(getChildByField(a, 'value'), source);
+        if (cls) return cls;
+      }
+    }
   }
   return null;
 }
@@ -220,12 +269,23 @@ export const rExtractor: LanguageExtractor = {
         return true;
       }
 
-      // setGeneric("describe", …) / setMethod("describe", "Patient", function(obj) …)
+      // setGeneric("describe", …) declares a generic → `function`.
+      // setMethod("describe", signature(object="Patient"), fn) binds that generic
+      // to a class → a `method` node whose dispatch CLASS is encoded into its
+      // qualifiedName (`Patient::describe`, the same `Recv::name` shape Go uses
+      // for receiver methods). The class is usually declared in another file
+      // (AllClasses.R), so extraction can't link them in-file; the resolver reads
+      // that qualifiedName to synthesize the class→method `contains` and
+      // method→generic `overrides` edges within the package (see
+      // resolution/callback-synthesizer.ts `rS4DispatchEdges`). The definition is
+      // often a bare function REFERENCE (`counts.DESeqDataSet`) rather than an
+      // inline function — the method node stands for the dispatch binding either
+      // way; the referenced function keeps its own node.
       if (GENERIC_FNS.has(fname)) {
         const name = literalOrIdentifier(firstArgValue(node), source);
         if (!name) return false;
-        // The implementing function_definition, when present (setMethod always,
-        // setGeneric usually via the def= argument).
+        // The implementing function_definition, when present (setMethod with an
+        // inline function; setGeneric usually via its def= argument).
         const args = getChildByField(node, 'arguments');
         let impl: SyntaxNode | null = null;
         if (args) {
@@ -236,8 +296,14 @@ export const rExtractor: LanguageExtractor = {
           }
         }
         const params = impl ? getChildByField(impl, 'parameters') : null;
-        const fn = ctx.createNode('function', name, node, {
+        const isMethod = fname === 'setMethod';
+        // The 2nd positional arg of setMethod is the signature; undefined class
+        // (dynamic, or a multi-arg form we don't encode) → default qualifiedName,
+        // leaving the method class-orphaned rather than mislinked.
+        const dispatchClass = isMethod ? s4DispatchClass(positionalArgValue(node, 1), source) : null;
+        const fn = ctx.createNode(isMethod ? 'method' : 'function', name, node, {
           signature: params ? getNodeText(params, source) : undefined,
+          ...(dispatchClass ? { qualifiedName: `${dispatchClass}::${name}` } : {}),
         });
         const body = impl ? getChildByField(impl, 'body') : null;
         if (fn && body) {
