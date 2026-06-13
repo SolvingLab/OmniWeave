@@ -13,6 +13,7 @@ The relationships that matter most to an agent are exactly the ones a language s
 [![Node](https://img.shields.io/badge/node-%E2%89%A522.5-blue.svg)](https://nodejs.org/)
 [![MCP](https://img.shields.io/badge/MCP-native-blueviolet.svg)](#use-it-from-an-agent)
 [![Tests](https://img.shields.io/badge/tests-1490%20passing-success.svg)](#engineering)
+[![Agent A/B](https://img.shields.io/badge/agent_A%2FB-measured-orange.svg)](#does-an-agent-actually-do-better-with-omniweave)
 
 </div>
 
@@ -28,6 +29,23 @@ A coding agent already has `grep` and an LSP. OmniWeave earns its place by winni
 - **Token economy.** One typed, traversable answer instead of a dozen `grep` passes the agent has to re-parse. The graph is built **by relationship**, not padded by language count.
 
 > **Honest by construction.** Every inferred edge carries a `provenance` and a `confidence`. What can't be known statically — a runtime-built path, NSE, runtime dispatch — is *skipped, never guessed*. The agent is never handed a fabricated edge it might trust.
+
+---
+
+## Does an agent actually do better with OmniWeave?
+
+Not a claim — a measurement. An A/B benchmark across **3 rounds, 8 real repositories, 24 headless runs** (Claude Sonnet, identical prompts). The *only* variable is whether OmniWeave's MCP graph is attached; both arms keep the same built-in `grep` / `read` / `bash`. Tool-calls are the reliable effort signal (token cost is prompt-cache-sensitive); both are reported.
+
+| Query · repo | Correct? | Tool calls *(with / without)* | Cost |
+|---|---|---|---|
+| Single-point lookup · small repos (≤ 450 files) | tie | **17 / 31** (−45%) | ≈ tie |
+| Reverse / multi-hop · small repos | tie | **16 / 34** (−53%) | −16% |
+| **Reverse blast-radius · django** (3,005 files) | **tie** | **2 / 31** (−94%) | **−64%** |
+| **Reverse blast-radius · vscode** (11,538 files) | **tie** | **2 / 47** (−96%) | **−76%** |
+
+On vscode, the plain `grep` / `read` agent reached the **same correct answer** — but spent **47 tool calls, 1.13 M input tokens, and ~6 minutes** brute-force-reading files to map every call site back to its enclosing function. With OmniWeave: **2 calls, 95 K tokens, 77 seconds** — one structural query instead of a file-by-file sweep. **The bigger the repo, the more `grep`'s read budget explodes; OmniWeave stays O(1).**
+
+**What this honestly shows.** Correctness was a **tie** in every tier above: on greppable, uniquely-named queries, a thorough `grep`/`read` agent stays *complete* even at 11.5 K-file scale. OmniWeave's edge is **effort, tokens, latency, and cost — and it widens with scale**, not exclusive correctness. Correctness only diverges on the structurally-*ungreppable* query — a runtime-dispatch target behind an ambiguous name, a cross-process bridge, a transitive blast radius — which is precisely the terrain OmniWeave's typed edges are built for. *(Small sample; the A/B harness is included under [`scripts/agent-eval/`](scripts/agent-eval/) and is fully reproducible.)*
 
 ---
 
@@ -83,14 +101,15 @@ This is the cross-process hop no language server can follow and that local-scrip
 
 OmniWeave is **MCP-native**. Point your agent at it and it gains a code-intelligence toolset:
 
+The four core tools — `explore`, `node`, `search`, `callers` — are exposed by default; the rest are opt-in via the `OMNIWEAVE_MCP_TOOLS` allowlist (fewer tools = fewer mis-picks).
+
 | Tool | Answers |
 |------|---------|
-| `search` | "What is the symbol named X?" |
-| `context` | "What's the deal with this feature / area?" (composes search + node + callers + callees) |
-| `callers` / `callees` | "What calls this?" / "What does this call?" — including cross-language and cross-process hops |
+| `explore` | "How does X work / survey this area / trace this flow?" — the **primary** tool: one capped call returns the relevant symbols' source grouped by file and rides the polyglot edges (dispatch, cross-process, workflow) where `callers` and an LSP stop |
+| `search` | "What is the symbol named X?" (just kind + location + signature) |
+| `callers` / `callees` | "What calls this?" / "What does this call?" — every call site with `file:line`, including cross-language and cross-process hops and callback registrations |
+| `node` | "Show me this symbol's (or file's) source + its caller/callee trail and blast radius" — a drop-in for `Read` on indexed files |
 | `impact` | "What would changing this break?" |
-| `explore` | "Survey this area / trace this flow" — one capped call rides the polyglot edges where `callers` and LSP stop |
-| `node` | "Show me this symbol's source + its caller/callee trail" |
 | `files` / `status` | directory listing · index health |
 
 ```bash
