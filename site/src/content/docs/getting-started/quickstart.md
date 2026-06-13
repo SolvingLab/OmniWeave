@@ -1,36 +1,36 @@
 ---
 title: Get Started
-description: Get up and running with CodeGraph in seconds.
+description: Get up and running with OmniWeave in seconds.
 ---
 
-Get up and running with CodeGraph in seconds.
+Get up and running with OmniWeave in seconds.
 
 ## No Node.js required — one command grabs the right build for your OS
 
 ```bash
 # macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/SolvingLab/OmniWeave/main/install.sh | sh
 
 # Windows (PowerShell)
-irm https://raw.githubusercontent.com/colbymchenry/codegraph/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/SolvingLab/OmniWeave/main/install.ps1 | iex
 ```
 
 ## Already have Node? Use npm instead (works on any version)
 
 ```bash
-npx @colbymchenry/codegraph        # zero-install, or:
-npm i -g @colbymchenry/codegraph
+npx @solvinglab/omniweave        # zero-install, or:
+npm i -g @solvinglab/omniweave
 ```
 
-CodeGraph bundles its own runtime — nothing to compile, no native build, works the same everywhere. The interactive installer auto-configures your agent(s) — Claude Code, Cursor, Codex CLI, opencode, Hermes Agent, Gemini CLI, Antigravity IDE, Kiro.
+OmniWeave bundles its own runtime — nothing to compile, no native build, works the same everywhere. The interactive installer auto-configures your agent(s) — Claude Code, Cursor, Codex CLI, opencode, Hermes Agent, Gemini CLI, Antigravity IDE, Kiro.
 
 ## Initialize Projects
 
 ```bash
 cd your-project
-codegraph init -i
+omniweave init -i
 ```
 
-That's it — your agent will use CodeGraph tools automatically when a `.codegraph/` directory exists.
+That's it — your agent will use OmniWeave tools automatically when a `.omniweave/` directory exists.
 
-Next: build [Your First Graph](/codegraph/getting-started/your-first-graph/), or see the full [Installation](/codegraph/getting-started/installation/) options.
+Next: build [Your First Graph](/OmniWeave/getting-started/your-first-graph/), or see the full [Installation](/OmniWeave/getting-started/installation/) options.

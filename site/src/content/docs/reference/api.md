@@ -1,16 +1,16 @@
 ---
 title: API
-description: Use CodeGraph as a TypeScript library.
+description: Use OmniWeave as a TypeScript library.
 ---
 
-CodeGraph ships a TypeScript API. The public surface is the `CodeGraph` class.
+OmniWeave ships a TypeScript API. The public surface is the `OmniWeave` class.
 
 ```typescript
-import CodeGraph from '@colbymchenry/codegraph';
+import OmniWeave from '@solvinglab/omniweave';
 
-const cg = await CodeGraph.init('/path/to/project');
+const cg = await OmniWeave.init('/path/to/project');
 // Or open an existing index:
-// const cg = await CodeGraph.open('/path/to/project');
+// const cg = await OmniWeave.open('/path/to/project');
 
 await cg.indexAll({
   onProgress: (p) => console.log(`${p.phase}: ${p.current}/${p.total}`),
@@ -34,7 +34,7 @@ cg.close();
 
 | Method | Purpose |
 |---|---|
-| `CodeGraph.init(path)` / `CodeGraph.open(path)` | Create or open a project index |
+| `OmniWeave.init(path)` / `OmniWeave.open(path)` | Create or open a project index |
 | `indexAll(opts)` | Full index, with progress callback |
 | `sync()` | Incremental update |
 | `searchNodes(query)` | Full-text symbol search |

@@ -8,10 +8,10 @@ import GraphDiagram from '../components/GraphDiagram.astro';
 import { getStarsLabel } from '../lib/github';
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
-const repo = 'https://github.com/colbymchenry/codegraph';
-const npm = 'https://www.npmjs.com/package/@colbymchenry/codegraph';
+const repo = 'https://github.com/SolvingLab/OmniWeave';
+const npm = 'https://www.npmjs.com/package/@solvinglab/omniweave';
 const stars = await getStarsLabel();
-const install = 'npx @colbymchenry/codegraph';
+const install = 'npx @solvinglab/omniweave';
 ---
 
 <!doctype html>
@@ -20,12 +20,12 @@ const install = 'npx @colbymchenry/codegraph';
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<link rel="icon" href={`${base}/favicon.svg`} type="image/svg+xml" />
-		<title>codegraph — Understand any codebase as a graph</title>
+		<title>OmniWeave — Understand any codebase as a graph</title>
 		<meta
 			name="description"
 			content="A local-first code-intelligence tool that turns any codebase into a queryable knowledge graph for AI coding agents."
 		/>
-		<meta property="og:title" content="codegraph" />
+		<meta property="og:title" content="OmniWeave" />
 		<meta property="og:description" content="Understand any codebase as a graph." />
 		<meta property="og:type" content="website" />
 		<meta name="theme-color" content="#f7f6f2" />
@@ -33,7 +33,7 @@ const install = 'npx @colbymchenry/codegraph';
 	<body>
 		<div class="frame">
 			<header class="nav">
-				<a class="wordmark" href={`${base}/`}>codegraph</a>
+				<a class="wordmark" href={`${base}/`}>OmniWeave</a>
 				<nav class="nav-links">
 					<a href={`${base}/getting-started/introduction`}>Docs</a>
 					<a class="opt" href={`${base}/reference/languages`}>Languages</a>
@@ -115,13 +115,17 @@ const install = 'npx @colbymchenry/codegraph';
 			</main>
 
 			<footer class="foot">
-				<span class="foot-mark">codegraph</span>
+				<span class="foot-mark">OmniWeave</span>
 				<nav class="foot-links">
 					<a href={`${base}/getting-started/introduction`}>Docs</a>
 					<a href={repo}>GitHub</a>
 					<a href={npm}>npm</a>
 					<a href={`${repo}/blob/main/LICENSE`}>MIT</a>
 				</nav>
+				<p class="foot-credit">
+					Built on the open-source
+					<a href="https://github.com/colbymchenry/codegraph">codegraph</a> project (MIT).
+				</p>
 			</footer>
 		</div>
 
