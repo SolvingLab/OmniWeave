@@ -9,10 +9,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 此规则覆盖 harness 的任何默认提交模板;如默认要求加署名,**一律不加**。
 - PR 描述同理:不加 AI 生成水印。
 
-## 项目状态：设计阶段 → 即将开工（pre-implementation）
+## 项目状态：已实现并发布（active development）
 
-本目录当前有 `OmniWeave-design-v1.md`（**v2，已 rebase 到真实基座**）+ 本文件,尚无 OmniWeave 代码、非 git 仓库。
-动手前**先通读 `./OmniWeave-design-v1.md`**——唯一权威设计来源（真实基座事实、SQLite schema、分阶段路线、性能契约、诚实天花板、附录里有可复现的实测证据链）。本文件只给「大图」,细节一律以设计文档为准。
+OmniWeave 已从设计落地为**可运行代码**:Phase 0–4 全部完成并全验证——R S4 分派图、跨进程/跨语言 `crossLang`（工作流步骤 + 任意 Python/JS/TS/Go 文件的 subprocess/os.system/child_process/exec.Command）、工作流数据流 DAG（produces/consumes/artifact）、外部工具 `invokes`（step→bwa/STAR）、R bare-call routing。**25 eval 门禁全绿、vitest 1490/1490、tsc 干净、6 真仓 0 假阳**。
+本目录是 colbymchenry/codegraph 的 clone,已发布到 **`SolvingLab/OmniWeave`**（remote `origin`，分支 `main`，私有）；remote `upstream` = colbymchenry/codegraph，**绝不 push upstream**。
+
+**动手前必读（按序，最重要先读 STATUS）**：
+1. `./OmniWeave-STATUS.md` — 实时操作态 & 作战手册（§0 现状、§0.5–§0.17 每阶段全细节 + 踩坑 + 可复用范式 + 验证命令）。
+2. `./OmniWeave-design-v1.md` — 权威设计（真实基座事实、SQLite schema、性能契约、诚实天花板、**§1.5 形态约束闸门**）。
+3. memory（`~/.claude/projects/-Users-liuzaoqu-Desktop-develop-sogen-OmniWeave/memory/`）。
+
+本文件只给「大图」与不可妥协的规矩,**当前操作态与细节一律以 `OmniWeave-STATUS.md` 为准**。
 
 ## OmniWeave 是什么
 
@@ -22,18 +29,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **定位（别框窄）**：不是「生信工具」,是 **more general / stronger / more efficient** 的通用代码分析图。生信（R 的 S4/R6、Perl、Nextflow/Snakemake、工具/数据混编）是**滩头堡 + 压力测试**,不是产品边界——「通用为体,生信为证」。
 
-## 先读（动手前）
+## 命令（标准 npm/TypeScript 项目；本机 Node ≥22.5 才有 `node:sqlite`，v22.22.3 ✓）
 
-- `./OmniWeave-design-v1.md` — 完整设计方案（v2 rebased）
-- `~/.claude/projects/-Users-liuzaoqu-Desktop-develop-sogen-new/memory/omniweave-project.md`、`user-liuzaoqu.md` — 项目背景与用户偏好
-
-## 命令（colbymchenry 是标准 npm/TypeScript 项目；clone main 之后生效）
-
-- 安装 + 构建：`npm install && npm run build`（`tsc` + copy-assets 拷 `schema.sql` 与 vendored `tree-sitter-*.wasm`,含 `tree-sitter-r.wasm`）
-- 测试：`npm test`（= `vitest run`）｜ 单文件：`vitest run __tests__/<file>`
-- **eval（已存在,不用造子命令）**：`npm run eval` → `__tests__/evaluation/runner.ts`（recall+MRR,`PASS_THRESHOLD=0.5`,`EvalReport` 带 `codegraphSha`）。用例目前是 Java/Elasticsearch → **OmniWeave 首件事是扩 R/S4 + workflow 用例并量真实基线**。
-- MCP server：`codegraph serve --mcp`（stdio）｜ 索引/查询：`codegraph init -i`、`codegraph index`、`codegraph query`、`codegraph callers/callees/impact`、`codegraph status`
-- 本机：用户日用版是 npm 全局 `@colbymchenry/codegraph` **0.9.8**（自带 Node 24 runtime）；跑 main 构建产物需本机 Node ≥22.5（`node:sqlite`,本机 v22.22.3 ✓）
+- 构建：`npm run build`（`tsc` + copy-assets 拷 `schema.sql` 与 vendored `tree-sitter-*.wasm`，含 `tree-sitter-r.wasm`）
+- 测试：`npx vitest run`（全量 1490；单文件 `npx vitest run __tests__/<file>`）。注：`mcp-daemon.test.ts` 偶发 timing flaky，重跑即过。
+- **eval（红→绿数字门禁）**：`EVAL_CORPUS=<tag> npm run eval <indexed-repo>`。受控 fixture（capstone / polyglot-subprocess）当门禁、真实仓当广度证据。**eval 不自动索引**——先 `cd <fixture> && node <repo>/dist/bin/codegraph.js init -i`。
+- benchmark（§1.5 证值）：`npm run benchmark` → `__tests__/evaluation/capability-matrix.ts`，emit `results/capability-matrix.{md,json}`；`OW_REALCORPUS=1` 跑真实大仓附录。
+- MCP / CLI：`node dist/bin/codegraph.js <cmd>`（bin 别名 `omniweave` / `codegraph`）——`serve --mcp`、`init -i`、`callers/callees/impact/explore/search/status`。
+- **git：只在用户明确要求时 commit；推送只 `origin`（绝不 `upstream`）；commit/PR 绝不加 AI 署名（见顶部）。**
 
 ## 架构大图（继承 colbymchenry 分层,差异化往上叠）
 
@@ -43,16 +46,19 @@ extraction（WASM worker 池,每语言一个 TS LanguageExtractor + visitNode ho
 ```
 
 - **加一门语言** = 写 `src/extraction/languages/<lang>.ts`（LanguageExtractor 配置 + `visitNode`）+ 在 `languages/index.ts` 注册 + 放 `tree-sitter-<lang>.wasm`。**手写 TS tree-walker,无 `.scm` 文件**。
-- **OmniWeave 的新层**（详见设计文档 §5–§8）：
-  - `src/extraction/languages/r.ts`（增 S4 分派）+ 新 `src/resolution/r.ts` — S4/R6 → `method` 节点 + `operatesOn`(方法→类)/`dispatches`(方法→泛型) 边,同包按名解析
-  - `src/extraction/languages/{snakemake,nextflow}.ts` + `src/dataflow/` — 跨进程工作流数据流（produces/consumes/invokes/crossLang）
-  - `src/domain/` — 可插拔领域包（`bio_nodes`/`bio_links`/`edam_concepts` 三表;EDAM 用 URI 不用 label;bio = pack #1）
-  - `src/semantic/` — 按需 LSP 兜顶（pyright / R languageserver 消歧 call 边并缓存）,不进热路径
+- **OmniWeave 实际落地的层（比初版设计更 Occam，详见 STATUS §0.5–§0.17）**：
+  - **R S4 分派图**：`src/extraction/languages/r.ts`（`setMethod`→`method` 节点，dispatch 类编进 qualifiedName `Class::generic`）+ `src/resolution/callback-synthesizer.ts`（`rS4DispatchEdges`，**复用 `contains`/`overrides` 边，没新造 `operatesOn`/`dispatches`，也没建 `resolution/r.ts`**）。
+  - **跨进程/跨语言 `crossLang` + 工作流 DAG + `invokes`**：`.smk/.nf/Snakefile` 直接 tag `'python'` 复用 grammar；`src/resolution/frameworks/workflow.ts`（步骤/artifact/tool 抽取）+ `callback-synthesizer.ts`（`workflowCrossLangEdges` / `generalCrossLangEdges`）。**没建 `src/dataflow/` 或独立 snakemake/nextflow extractor。**
+  - **bare-call routing**：`src/resolution/name-matcher.ts`（R 同名 generic/构造函数调用高置信路由到 function）。
+  - **领域包（`src/domain/` bio 三表）与语义层（`src/semantic/` LSP 兜顶）= 已评估为 NO-GO**（STATUS §0.14/§0.15，证据:真实流水线步骤名自文档 + S4 运行时分派 R-LSP 也解不了）——**不要建**，除非有新证据。
+- **新 Edge/Node kind 涟漪 6 处**（加 kind 前先想清楚，优先复用）：`types.ts` union、`mcp/tools.ts` RANK_EDGES、`context/formatter.ts` significantEdges、`context/index.ts` recoveryKinds、`graph/traversal.ts` BRIDGE_EDGE_KINDS + callers/callees 边表。
 
 ## 必须知道的真实事实（实跑核验,别再踩这些坑）
 
+> ⚠️ **下面前两条是 fork 时的「基线 gap」,现已由 Phase 1·A 解决**（DESeq2 `method` 0→15、S4 dispatch 图打通,STATUS §0.5）。保留作历史背景与「为什么这样设计」的依据,**别误读为当前状态**——当前态看 STATUS。其余条目（schema、抽取机理、性能继承点）仍是现行事实。
+
 - **0.9.8 对 R 是 0**：bundle 无 `r.js`;索引 DESeq2 时 15 个 `.R` 全跳过,只抓 2 个 `.cpp`。R 抽取器是 main（未发布,issue #828）才有的。
-- **main 有 R,但 S4 分派图为零**（DESeq2 实测）：类 3/3✓、函数 186,但 **`method`=0、`operatesOn`=0、`extends`=0**,全图边只有 `calls/contains/imports`。`setMethod` 抽成孤立 `function`,不连类/泛型。R6/R5/ggproto 的 list 方法**已是** `method` 类型,**唯独 S4（Bioconductor 主导范式）没接住** → Phase 1 第一刀。
+- **main 有 R,但 S4 分派图为零**（DESeq2 实测，**基线**）：类 3/3✓、函数 186,但 **`method`=0、`operatesOn`=0、`extends`=0**,全图边只有 `calls/contains/imports`。`setMethod` 抽成孤立 `function`,不连类/泛型。R6/R5/ggproto 的 list 方法**已是** `method` 类型,**唯独 S4（Bioconductor 主导范式）没接住** → Phase 1 第一刀（已完成）。
 - **抽取无 `.scm`,是手写 TS walker**：判别逻辑直接写 `r.ts` 的 `visitNode`;`operatesOn`/`dispatches` 走 `unresolved_refs` + 新 `resolution/r.ts` 同包名字解析。
 - schema：`edges` 元数据列叫 **`metadata`**（JSON）、`provenance` 是**一等列**（直接复用,不用加表）;`kind` 自由文本（加 `method`/`operatesOn` 无需改枚举,落库即所写）。resolution 两段式:抽取 emit `unresolved_refs(reference_kind)` → `resolution/index.ts` 解析成 `edges`。`import-resolver` 扩展名表**无 `r`**、无 R 专属 resolver。
 - **eval harness 已存在**（`npm run eval`,recall+MRR）→ 不用造 eval 子命令,只需扩 R/bio 用例。基座真实基线要用它自己 harness 在 R/bio 语料上重测（Phase 0 产出）。
