@@ -27,7 +27,7 @@ import {
   __emitWatchEventForTests,
   type WatchOptions,
 } from '../src/sync/watcher';
-import CodeGraph from '../src/index';
+import OmniWeave from '../src/index';
 
 type SyncFn = () => Promise<{ filesChanged: number; durationMs: number }>;
 
@@ -61,7 +61,7 @@ describe('FileWatcher', () => {
     new FileWatcher(testDir, syncFn, { inertForTests: true, ...opts });
 
   beforeEach(() => {
-    testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-watcher-'));
+    testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omniweave-watcher-'));
     // Create a source file so the directory isn't empty
     const srcDir = path.join(testDir, 'src');
     fs.mkdirSync(srcDir);
@@ -170,16 +170,16 @@ describe('FileWatcher', () => {
       watcher.stop();
     });
 
-    it('should ignore .codegraph directory changes', async () => {
+    it('should ignore .omniweave directory changes', async () => {
       const syncFn = vi.fn().mockResolvedValue({ filesChanged: 0, durationMs: 0 });
       const watcher = newWatcher(syncFn, { debounceMs: 200 });
 
       watcher.start();
       await watcher.waitUntilReady();
 
-      // A .codegraph event — FileWatcher's `isAlwaysIgnored` filter must drop
+      // A .omniweave event — FileWatcher's `isAlwaysIgnored` filter must drop
       // it before scheduling sync.
-      __emitWatchEventForTests(testDir, '.codegraph/db.sqlite');
+      __emitWatchEventForTests(testDir, '.omniweave/db.sqlite');
 
       await new Promise((r) => setTimeout(r, 400));
       expect(syncFn).not.toHaveBeenCalled();
@@ -279,7 +279,7 @@ describe('FileWatcher', () => {
     });
 
     it('should retain pending files and retry when syncFn throws LockUnavailableError (#449)', async () => {
-      // CodeGraph.watch() converts the cross-process lock-failure no-op
+      // OmniWeave.watch() converts the cross-process lock-failure no-op
       // into LockUnavailableError so the watcher's retry path picks it up
       // instead of falsely clearing pendingFiles. This test exercises the
       // contract directly.
@@ -358,15 +358,15 @@ describe('FileWatcher', () => {
     });
   });
 
-  describe('CodeGraph integration', () => {
-    let cg: CodeGraph;
+  describe('OmniWeave integration', () => {
+    let cg: OmniWeave;
 
     afterEach(() => {
       if (cg) cg.close();
     });
 
-    it('should watch and unwatch via CodeGraph API', async () => {
-      cg = CodeGraph.initSync(testDir, {
+    it('should watch and unwatch via OmniWeave API', async () => {
+      cg = OmniWeave.initSync(testDir, {
         config: { include: ['**/*.ts'], exclude: [] },
       });
       await cg.indexAll();
@@ -382,7 +382,7 @@ describe('FileWatcher', () => {
     });
 
     it('should stop watching on close', async () => {
-      cg = CodeGraph.initSync(testDir, {
+      cg = OmniWeave.initSync(testDir, {
         config: { include: ['**/*.ts'], exclude: [] },
       });
       await cg.indexAll();
@@ -399,7 +399,7 @@ describe('FileWatcher', () => {
     it('should auto-sync when files change while watching (real fs.watch end-to-end)', async () => {
       // The one test that exercises the genuine native watcher: a real file
       // write must propagate through fs.watch → debounce → sync into the graph.
-      cg = CodeGraph.initSync(testDir, {
+      cg = OmniWeave.initSync(testDir, {
         config: { include: ['**/*.ts'], exclude: [] },
       });
       await cg.indexAll();

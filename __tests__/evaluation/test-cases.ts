@@ -195,7 +195,7 @@ export const testCases: EvalTestCase[] = [
   // chain across a process boundary, a language boundary, and a dynamic dispatch
   // is the §1.5 differentiator (the zone LSP cannot reach).
   // Index + run:
-  //   cd __tests__/fixtures/capstone && node <repo>/dist/bin/codegraph.js init -i
+  //   cd __tests__/fixtures/capstone && node <repo>/dist/bin/omniweave.js init -i
   //   EVAL_CORPUS=capstone npm run eval __tests__/fixtures/capstone
 
   // --- per-hop diagnostic layer: pinpoints WHICH extractor regressed ---
@@ -381,7 +381,7 @@ export const testCases: EvalTestCase[] = [
   // early-returned unless the repo had a workflow file). Green once generalCrossLangEdges
   // attributes a crossLang edge from the CALLING function to the target script.
   // Index + run:
-  //   cd __tests__/fixtures/polyglot-subprocess && node <repo>/dist/bin/codegraph.js init -i
+  //   cd __tests__/fixtures/polyglot-subprocess && node <repo>/dist/bin/omniweave.js init -i
   //   EVAL_CORPUS=polyglot-subprocess npm run eval __tests__/fixtures/polyglot-subprocess
   {
     // Modern array form: subprocess.run(["Rscript", "scripts/deseq.R", ...]).

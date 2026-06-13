@@ -9,7 +9,7 @@
  *
  * No auto-flush, no static wait — the response is instant and the agent
  * decides whether to Read the specific stale file. These tests exercise
- * the full real path: real CodeGraph index + real ToolHandler.execute().
+ * the full real path: real OmniWeave index + real ToolHandler.execute().
  *
  * **Event delivery uses a synthetic seam** (`__emitWatchEventForTests`): the
  * real native fs.watch (FSEvents/inotify) delivery is non-deterministic under
@@ -24,7 +24,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import CodeGraph from '../src/index';
+import OmniWeave from '../src/index';
 import { ToolHandler } from '../src/mcp/tools';
 import { __emitWatchEventForTests } from '../src/sync/watcher';
 
@@ -42,15 +42,15 @@ function waitFor(condition: () => boolean, timeoutMs = 2000, intervalMs = 25): P
 
 describe('MCP staleness banner', () => {
   let testDir: string;
-  let cg: CodeGraph;
+  let cg: OmniWeave;
   let handler: ToolHandler;
 
   beforeEach(async () => {
-    testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codegraph-stale-banner-'));
+    testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omniweave-stale-banner-'));
     fs.mkdirSync(path.join(testDir, 'src'));
     // Three isolated files with no cross-references — keeps each test's
     // "which path does the response mention?" assertion unambiguous. If the
-    // files shared imports/calls, codegraph_search responses would surface
+    // files shared imports/calls, omniweave_search responses would surface
     // multiple file paths and the banner-vs-footer split would be racy.
     fs.writeFileSync(
       path.join(testDir, 'src', 'alpha-only.ts'),
@@ -65,7 +65,7 @@ describe('MCP staleness banner', () => {
       'export function charlieOnly() { return 3; }\n',
     );
 
-    cg = CodeGraph.initSync(testDir, { config: { include: ['**/*.ts'], exclude: [] } });
+    cg = OmniWeave.initSync(testDir, { config: { include: ['**/*.ts'], exclude: [] } });
     await cg.indexAll();
     handler = new ToolHandler(cg);
   });
@@ -95,7 +95,7 @@ describe('MCP staleness banner', () => {
     // and the small window before the pending-file Map is populated).
     await waitFor(() => cg.getPendingFiles().some((p) => p.path === 'src/alpha-only.ts'));
 
-    const res = await handler.execute('codegraph_search', { query: 'alphaOnly' });
+    const res = await handler.execute('omniweave_search', { query: 'alphaOnly' });
     expect(res.isError).toBeFalsy();
     const text = res.content[0].text;
 
@@ -122,7 +122,7 @@ describe('MCP staleness banner', () => {
     __emitWatchEventForTests(testDir, 'src/bravo-only.ts');
     await waitFor(() => cg.getPendingFiles().some((p) => p.path === 'src/bravo-only.ts'));
 
-    const res = await handler.execute('codegraph_search', { query: 'alphaOnly' });
+    const res = await handler.execute('omniweave_search', { query: 'alphaOnly' });
     const text = res.content[0].text;
 
     expect(text.startsWith('⚠️')).toBe(false);
@@ -142,13 +142,13 @@ describe('MCP staleness banner', () => {
     // Wait through debounce (200ms) + sync; pendingFiles drains back to empty.
     await waitFor(() => cg.getPendingFiles().length === 0, 3000);
 
-    const res = await handler.execute('codegraph_search', { query: 'alphaOnly' });
+    const res = await handler.execute('omniweave_search', { query: 'alphaOnly' });
     const text = res.content[0].text;
     expect(text.startsWith('⚠️')).toBe(false);
     expect(text).not.toMatch(/elsewhere in this project are pending index sync/);
   });
 
-  it('lists pending files under "Pending sync" in codegraph_status', async () => {
+  it('lists pending files under "Pending sync" in omniweave_status', async () => {
     cg.watch({ debounceMs: 4000, inertForTests: true });
     await cg.waitUntilWatcherReady();
 
@@ -159,7 +159,7 @@ describe('MCP staleness banner', () => {
     __emitWatchEventForTests(testDir, 'src/charlie-only.ts');
     await waitFor(() => cg.getPendingFiles().some((p) => p.path === 'src/charlie-only.ts'));
 
-    const res = await handler.execute('codegraph_status', {});
+    const res = await handler.execute('omniweave_status', {});
     const text = res.content[0].text;
     expect(text).toContain('### Pending sync:');
     expect(text).toContain('src/charlie-only.ts');

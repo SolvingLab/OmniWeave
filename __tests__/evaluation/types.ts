@@ -84,7 +84,7 @@ export interface EvalResult {
 export interface EvalReport {
   timestamp: string;
   codebasePath: string;
-  codegraphSha: string;
+  omniweaveSha: string;
   summary: {
     total: number;
     passed: number;

@@ -28,16 +28,16 @@
 import { execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { CodeGraph } from '../../src/index.js';
+import { OmniWeave } from '../../src/index.js';
 import type { EdgeKind, NodeKind } from '../../src/types.js';
 
 const ROOT = path.resolve(__dirname, '../..');
-const BIN = path.join(ROOT, 'dist/bin/codegraph.js');
+const BIN = path.join(ROOT, 'dist/bin/omniweave.js');
 const FIXTURES = path.join(ROOT, '__tests__/fixtures');
 
-/** Index a fixture if it has no .codegraph yet (keeps the script self-contained). */
+/** Index a fixture if it has no .omniweave yet (keeps the script self-contained). */
 function ensureIndexed(dir: string): void {
-  if (fs.existsSync(path.join(dir, '.codegraph', 'codegraph.db'))) return;
+  if (fs.existsSync(path.join(dir, '.omniweave', 'omniweave.db'))) return;
   execFileSync('node', [BIN, 'init', '-i'], { cwd: dir, stdio: 'ignore' });
 }
 
@@ -78,7 +78,7 @@ const time = (fn: () => unknown): { ms: number; val: unknown } => {
 // ── Corpus 1: capstone (Snakemake + Nextflow + R S4, committed) ──────────────
 const capDir = path.join(FIXTURES, 'capstone');
 ensureIndexed(capDir);
-const cap = CodeGraph.openSync(capDir);
+const cap = OmniWeave.openSync(capDir);
 
 // Q1 — S4 dispatch table membership (OmniWeave-wins): "methods dispatching on GeneModel"
 {
@@ -160,7 +160,7 @@ cap.close();
 // ── Corpus 2: polyglot-subprocess (plain Python/JS shelling out, committed) ──
 const subDir = path.join(FIXTURES, 'polyglot-subprocess');
 ensureIndexed(subDir);
-const sub = CodeGraph.openSync(subDir);
+const sub = OmniWeave.openSync(subDir);
 
 // Q5 — general cross-language subprocess (OmniWeave-wins): py fn → R script
 {
@@ -221,7 +221,7 @@ interface RealRow { repo: string; query: string; owAnswer: string; owMs: number;
 const realRows: RealRow[] = [];
 
 /** Sum outgoing edges of `kind` across every node of the given source kinds. */
-function countOut(cg: CodeGraph, kind: EdgeKind, sourceKinds: NodeKind[]): number {
+function countOut(cg: OmniWeave, kind: EdgeKind, sourceKinds: NodeKind[]): number {
   let count = 0;
   for (const k of sourceKinds) for (const n of cg.getNodesByKind(k)) {
     count += cg.getOutgoingEdges(n.id).filter((e) => e.kind === kind).length;
@@ -229,7 +229,7 @@ function countOut(cg: CodeGraph, kind: EdgeKind, sourceKinds: NodeKind[]): numbe
   return count;
 }
 
-const REAL_CORPORA: Array<{ name: string; dir: string; run: (cg: CodeGraph) => RealRow[] }> = [
+const REAL_CORPORA: Array<{ name: string; dir: string; run: (cg: OmniWeave) => RealRow[] }> = [
   {
     // The freshest direction-A number: cross-process Python→Python dispatcher edges
     // that no LSP follows (a subprocess argument is opaque to a language server).
@@ -306,7 +306,7 @@ if (process.env.OW_REALCORPUS) {
   for (const c of REAL_CORPORA) {
     if (!fs.existsSync(c.dir)) { console.error(`[real-corpus] skip ${c.name} — not found at ${c.dir}`); continue; }
     ensureIndexed(c.dir);
-    const cg = CodeGraph.openSync(c.dir);
+    const cg = OmniWeave.openSync(c.dir);
     try { realRows.push(...c.run(cg)); } finally { cg.close(); }
   }
 }

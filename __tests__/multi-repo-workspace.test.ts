@@ -19,7 +19,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { execFileSync } from 'child_process';
-import CodeGraph from '../src/index';
+import OmniWeave from '../src/index';
 import { scanDirectory, buildScopeIgnore, discoverEmbeddedRepoRoots } from '../src/extraction';
 
 function git(cwd: string, ...args: string[]): void {
@@ -186,7 +186,7 @@ describe('multi-repo workspaces (#514)', () => {
     write(path.join(ws, '.gitignore'), '/packages/\n');
     makeRepo(ws);
 
-    const cg = CodeGraph.initSync(ws, { config: { include: ['**/*.ts'], exclude: [] } });
+    const cg = OmniWeave.initSync(ws, { config: { include: ['**/*.ts'], exclude: [] } });
     try {
       await cg.indexAll();
       expect(cg.searchNodes('login', { limit: 5 }).length).toBeGreaterThan(0);

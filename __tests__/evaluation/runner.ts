@@ -1,7 +1,7 @@
 import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { CodeGraph } from '../../src/index.js';
+import { OmniWeave } from '../../src/index.js';
 import { scoreSearchNodes, scoreFindRelevantContext, scoreAssertEdges, scoreAssertReachable } from './scoring.js';
 import { testCases } from './test-cases.js';
 import type { EvalReport, EvalResult } from './types.js';
@@ -14,14 +14,14 @@ if (!codebasePath) {
 }
 
 const resolvedPath = path.resolve(codebasePath);
-if (!fs.existsSync(path.join(resolvedPath, '.codegraph', 'codegraph.db'))) {
-  console.error(`No .codegraph/codegraph.db found at ${resolvedPath}`);
+if (!fs.existsSync(path.join(resolvedPath, '.omniweave', 'omniweave.db'))) {
+  console.error(`No .omniweave/omniweave.db found at ${resolvedPath}`);
   process.exit(1);
 }
 
-let codegraphSha = 'unknown';
+let omniweaveSha = 'unknown';
 try {
-  codegraphSha = execSync('git rev-parse --short HEAD', { encoding: 'utf-8' }).trim();
+  omniweaveSha = execSync('git rev-parse --short HEAD', { encoding: 'utf-8' }).trim();
 } catch {}
 
 // The runner loads ONE database, so it runs only the cases tagged for the
@@ -30,15 +30,15 @@ try {
 const corpus = process.env.EVAL_CORPUS || 'elasticsearch';
 const cases = testCases.filter((tc) => (tc.corpus ?? 'elasticsearch') === corpus);
 
-console.log(`\nCodeGraph Eval — ${path.basename(resolvedPath)}`);
+console.log(`\nOmniWeave Eval — ${path.basename(resolvedPath)}`);
 console.log(`Codebase: ${resolvedPath}`);
-console.log(`Commit:   ${codegraphSha}`);
+console.log(`Commit:   ${omniweaveSha}`);
 console.log(`Corpus:   ${corpus}`);
 console.log(`Cases:    ${cases.length}`);
 console.log('');
 
 async function run() {
-  const cg = CodeGraph.openSync(resolvedPath);
+  const cg = OmniWeave.openSync(resolvedPath);
   const results: EvalResult[] = [];
 
   for (const tc of cases) {
@@ -165,7 +165,7 @@ async function run() {
   const report: EvalReport = {
     timestamp: new Date().toISOString(),
     codebasePath: resolvedPath,
-    codegraphSha,
+    omniweaveSha,
     summary: { total: results.length, passed, failed, meanRecall, meanMRR },
     results,
   };
