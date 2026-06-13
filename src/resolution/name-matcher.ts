@@ -334,6 +334,32 @@ export function matchByExactName(
     };
   }
 
+  // R bare-call routing: when the name is a top-level callable FUNCTION (qualifiedName
+  // === name — a free function, an S4 generic from `setGeneric`, or a same-named
+  // constructor) and EVERY other same-named candidate is a non-bare-callable kind — an
+  // S4 `method` (dispatched at runtime) or a `class` (constructed via `new()`, not
+  // callable directly) — the bare call invokes the FUNCTION. Resolve to it at high
+  // confidence: for a generic, runtime dispatch targets stay reachable via the
+  // method→generic `overrides` edges (which method runs is statically undecidable — the
+  // honesty ceiling); for a Bioconductor class+constructor pair the constructor is the
+  // certain target. The proximity heuristic otherwise guesses at confidence 0.4 — a
+  // real-corpus probe (DESeq2) showed `dispersions`/`normalizationFactors` misfiring
+  // onto an arbitrary method and `DESeqDataSet` constructor calls under-confident.
+  // It deliberately does NOT fire when a competing same-named FUNCTION exists (scope
+  // shadowing, e.g. a nested `unmix::vst`, or a true duplicate) — that stays genuinely
+  // ambiguous and falls through to the proximity heuristic below.
+  if (ref.language === 'r' && ref.referenceKind === 'calls' && candidates.length > 1) {
+    const fn = candidates.find((c) => c.kind === 'function' && c.qualifiedName === c.name);
+    if (fn && candidates.every((c) => c === fn || c.kind === 'method' || c.kind === 'class')) {
+      return {
+        original: ref,
+        targetNodeId: fn.id,
+        confidence: 0.9,
+        resolvedBy: 'exact-match',
+      };
+    }
+  }
+
   // Multiple matches - try to narrow down
   const bestMatch = findBestMatch(ref, candidates, context);
   if (bestMatch) {

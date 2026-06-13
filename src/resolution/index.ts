@@ -23,7 +23,7 @@ import { synthesizeCallbackEdges } from './callback-synthesizer';
 import { loadProjectAliases, type AliasMap } from './path-aliases';
 import { loadGoModule, type GoModule } from './go-module';
 import { loadWorkspacePackages, type WorkspacePackages } from './workspace-packages';
-import { logDebug } from '../errors';
+import { logDebug, logWarn } from '../errors';
 import type { ReExport } from './types';
 import { LRUCache } from './lru-cache';
 
@@ -999,8 +999,13 @@ export class ReferenceResolver {
     // index on it. See docs/design/callback-edge-synthesis.md.
     try {
       aggregateStats.byMethod['callback-synthesis'] = synthesizeCallbackEdges(this.queries, this.context);
-    } catch {
-      // synthesis is additive and optional; ignore failures
+    } catch (err) {
+      // Synthesis is additive — never fail the index on it — but a throw means
+      // some dispatch/crossLang edges are silently absent, so surface it rather
+      // than swallow (an empty catch here once hid a whole missing edge class).
+      logWarn('Dispatch/callback edge synthesis failed; some synthesized edges may be missing', {
+        error: String(err),
+      });
     }
 
     return {
