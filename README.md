@@ -12,8 +12,8 @@ The relationships that matter most to an agent are exactly the ones a language s
 [![Local](https://img.shields.io/badge/100%25-local-brightgreen.svg)](#performance)
 [![Node](https://img.shields.io/badge/node-%E2%89%A522.5-blue.svg)](https://nodejs.org/)
 [![MCP](https://img.shields.io/badge/MCP-native-blueviolet.svg)](#use-it-from-an-agent)
-[![Tests](https://img.shields.io/badge/tests-1490%20passing-success.svg)](#engineering)
-[![Agent A/B](https://img.shields.io/badge/agent_A%2FB-measured-orange.svg)](#does-an-agent-actually-do-better-with-omniweave)
+[![Tests](https://img.shields.io/badge/tests-1498%20passing-success.svg)](#engineering)
+[![Agent A/B](https://img.shields.io/badge/agent_A%2FB-6_rounds_measured-orange.svg)](#does-an-agent-actually-do-better-with-omniweave)
 
 </div>
 
@@ -34,7 +34,22 @@ A coding agent already has `grep` and an LSP. OmniWeave earns its place by winni
 
 ## Does an agent actually do better with OmniWeave?
 
-Not a claim — a measurement. An A/B benchmark across **5 rounds, 15+ real repositories measured, ~90 headless runs**, 5 languages (R · Python · TS · Java · polyglot), 2 models (Claude Sonnet + Haiku), identical prompts. The *only* variable is whether OmniWeave's MCP graph is attached; both arms keep the same built-in `grep` / `read` / `bash`. Tool-calls are the reliable effort signal (token cost is prompt-cache-sensitive); both are reported.
+Not a claim — a measurement. An A/B benchmark across **6 rounds, 15+ real repositories, ~120 headless runs**, 5 languages (R · Python · TS · Java · polyglot), 2 models (Claude Sonnet + Haiku), identical prompts. The *only* variable is whether OmniWeave's MCP graph is attached; both arms keep the same built-in `grep` / `read` / `bash`. Tool-calls are the reliable effort signal (token cost is prompt-cache-sensitive); both are reported. **Every number below is reproducible** (`scripts/agent-eval/`, raw transcripts and per-question judging in `eval-results/`).
+
+### The bottom line, by query shape
+
+OmniWeave doesn't win everywhere, and it's built to tell you where. The six rounds map a precise boundary:
+
+| Use it for — **clear win** | It's a **tie** (use anything) | Reach for `grep`/LSP instead |
+|---|---|---|
+| **Reverse / blast-radius on a large repo** — "what calls X", "what breaks if X changes" (1/20 the tool calls, scales *up* with repo size) | **Single-point lookup** — "what/where is X" (grep is just as fast; the graph is neutral) | **Cross-process at scale** — large repos build subprocess commands at runtime; that's the honest ceiling for everyone |
+| **Cross-language / cross-process / dynamic-dispatch** hops an LSP is structurally blind to (Python→R, S4 dispatch, workflow→script) | **Same-language navigation when an LSP is already running** (compiler-precise, free — OmniWeave ties it) | **Concept/semantic search** — "where's the auth logic" is vector-search territory, not a structural graph |
+| **Zero-config checkouts** (no build/install env) where an LSP resolves nothing | **Correctness on any well-posed question** — a capable agent ties grep+read either way | **A language OmniWeave doesn't extract well** — `grep` reads everything |
+| **Weak / cheap models**, where an unaided agent flails worst (see the model-strength curve) | | |
+
+**The honest one-liner:** OmniWeave is *not* more correct than `grep` and it is *not* a universal win. It is the **most economical form** for one specific intersection — same-language large-repo reverse/blast-radius **plus** cross-boundary structure an LSP can't see **plus** zero-config **plus** weaker models — and it ties (doesn't hurt) almost everywhere else. The rest of this section is the evidence for each of those claims, including the ties.
+
+### The efficiency moat (measured)
 
 | Query · repo | Correct? | Tool calls *(with / without)* | Cost |
 |---|---|---|---|
@@ -46,13 +61,41 @@ Not a claim — a measurement. An A/B benchmark across **5 rounds, 15+ real repo
 
 On vscode, the plain `grep` / `read` agent reached the **same correct answer** — but spent **47 tool calls, 1.13 M input tokens, and ~6 minutes** brute-force-reading files to map every call site back to its enclosing function. With OmniWeave: **2 calls, 95 K tokens, 77 seconds** — one structural query instead of a file-by-file sweep. **The bigger the repo, the more `grep`'s read budget explodes; OmniWeave stays O(1).**
 
-**What this honestly shows — including where it *doesn't* win.** Correctness was a **tie in every tier, and we went looking for where it wouldn't be.** Round 4 built deliberately structurally-ungreppable questions — a Java virtual-dispatch *trap* (`Ordering.natural().reverse()`, where the naive read gives the wrong class), a cross-process subprocess chain, a 4-hop transitive blast radius — across Java/Python/polyglot and **both Sonnet and Haiku, 3 runs each**. Correctness still **tied** (e.g. the dispatch trap: 12/12 correct, both arms, both models): a capable agent *reads and verifies* its way to the right answer, and OmniWeave's own static edges hit the same honest ceiling (they route to a declaration, not a runtime-dispatch target). **OmniWeave's moat is effort / tokens / latency / cost — and it widens with repo size *and* as the model gets weaker** (on the dispatch trap, Haiku-without-OmniWeave burned **13 tool calls vs OmniWeave's 2**; Sonnet-without was 7–9). Versus real competitors, not just grep: OmniWeave **ties an LSP** (`typescript-language-server`) on same-language navigation, but wins where LSP is blind — a **zero-config Python checkout** (pyright resolves 0 of 17 callers without an installed env), cross-language, cross-process, and R/S4 dispatch; **Aider's repo-map** is a ranked context list with no traversable edges, so it can't answer these at all. *(The A/B harness is under [`scripts/agent-eval/`](scripts/agent-eval/) and is fully reproducible; full per-question judging in `eval-results/`.)*
+### Correctness is a tie — and we tried hard to break that
 
-**Two honest boundaries from round 5.** *(1) The effort moat is for **same-language reverse/blast-radius** queries — it does **not** generalise to cross-process at scale.* We re-tested cross-process on a real ≥1,000-file polyglot repo (MAESTRO, 1,729 files, Python→R) where round 4's small-repo cross-process win (quarTeT, 7 files) should have widened. It **evaporated**: correct in both arms, and effort *tied* (with 11.7 vs without 12.3 tool calls). The reason is structural — across 15 large repos measured, the clean static sibling-script chain OmniWeave wins on doesn't occur at scale; real large repos build their subprocess commands at runtime (`Rscript {install_dir}/x.R`), which is the honest ceiling for grep *and* OmniWeave alike, so the agent just falls back to grep. *(2) Single-point form-tax: routing removes the removable part.* A small server-instructions routing layer (single-point metadata → `omniweave_search` instead of over-reaching for `omniweave_explore`) cuts a pure signature lookup from 138 K → 92 K tokens (now tying grep's 90 K); the reverse-callers win is untouched. What it *can't* remove is a model's find-then-read habit on compound questions — an honest boundary, not a bug.
+The most important honest finding: **OmniWeave does not make an agent *more correct*.** Round 4 built questions designed to be structurally ungreppable — a Java virtual-dispatch **trap** (`Ordering.natural().reverse()`, where the naive read returns the wrong class), a cross-process subprocess chain, a 4-hop transitive blast radius — across Java/Python/polyglot, **both Sonnet and Haiku, 3 runs each**. Correctness still **tied in every case** (the dispatch trap: 12/12 correct, both arms, both models). A capable agent *reads and verifies* its way to the right answer, and OmniWeave's own static edges hit the same honest ceiling — they route to a *declaration*, not a runtime-dispatch target. **So the moat is never "more correct." It is effort: tool-calls, tokens, turns, latency, cost.**
 
-**Round 6 corrects round 5's "fixed ~34 K MCP overhead" claim — it was mostly *not* OmniWeave.** An isolated A/B (same question, same model, omniweave attached vs not) measured the steady-state first-turn cost: **without OmniWeave 30,586 tok vs with 31,268 — a marginal +682 tok.** The ~30 K is the base Claude Code harness (built-in tool deferral + ToolSearch machinery), present in *both* arms. OmniWeave's tool schemas are deferred by default, so they aren't in the system prompt until used; the marginal always-on cost is tiny. (Disabling the ToolSearch gating to "save the round-trip" actually *costs* +16 K tokens — eager-loading every schema — so the default gating is already token-optimal.) The form-tax round 5 worried about, and the in-process/embedded mode it proposed to remove it, both shrink to a ~682-token target — so there is no form-debt worth re-architecting for.
+### The moat is effort — and it is bounded
 
-**Round 6 also mapped the moat against model strength (a 4-archetype × Haiku-vs-Sonnet matrix) and sharpened "weaker model → wider moat."** *With* the graph, both models collapse to ~2–3 tool calls on every archetype — the graph erases the strength gap. *Without* it, the moat opens on reverse/blast queries for both, but the **size depends on the metric**: in raw tool-count both fan out wide (a strong model even *more*, because it fires many greps in parallel); in **tokens and turns** the weak model is hit far harder — on a transitive blast-radius, Haiku-without burned up to **1.73 M tokens / 33 turns** (high variance) where Sonnet-without parallelised into a steady **65 K / 2 turns**. So the graph's real protection for a weak model is against *catastrophic serial flailing*, and that protection is **wider but less reliably captured** — Haiku sometimes ignored the attached graph and grepped anyway (1 of 3 runs). Correctness stayed a tie across the whole matrix. Round 6 also tightened `omniweave_callers`/`callees` output precision: the list now reports the true total (`showing 20 of 57`, not a silently-capped `20 found`) and drops file-level `import` edges that aren't calls — on a 57-caller symbol that shrank the tool result 33 % and removed a manual de-noising step, with zero correctness change.
+It opens on **reverse / blast-radius** queries and **widens with repo size**: same correct answer, but the unaided agent pays an O(call-sites) read tax the graph answers in O(1). It does **not** open everywhere:
+
+- **Cross-process at scale evaporates.** Round 4's small-repo cross-process win (quarTeT, 7 files) *should* have widened on a real ≥1,000-file polyglot repo. It didn't — on MAESTRO (1,729 files, Python→R) effort **tied** (11.7 vs 12.3 tool calls). Across 15 large repos measured, the clean static sibling-script chain OmniWeave wins on simply doesn't occur at scale; real large repos build subprocess commands at runtime (`Rscript {install_dir}/x.R`) — the honest ceiling for `grep` **and** OmniWeave alike, so the agent just falls back to `grep`.
+- **Single-point queries carry a small form-tax, not a win.** A signature lookup is `grep`'s home turf; a query-shape routing layer in the server instructions cuts the overreach (138 K → 92 K tokens, tying `grep`'s 90 K) but can't make the graph *win* a question grep already answers in one read.
+
+### Weaker model → wider moat, but less reliably captured
+
+A 4-archetype × Haiku-vs-Sonnet matrix sharpened the "weaker model" claim. **With** the graph, both models collapse to ~2–3 tool calls on every archetype — the graph erases the strength gap. **Without** it, the size of the gap depends on the metric: in raw tool-count both fan out wide (a strong model *more*, because it fires greps in parallel); but in **tokens and turns** the weak model is hit far harder — on a transitive blast-radius, Haiku-without burned up to **1.73 M tokens / 33 turns** where Sonnet-without parallelised into a steady **65 K / 2 turns**. The graph's real value to a weak model is **protection from catastrophic serial flailing** — wider, but **less reliably captured**: Haiku sometimes ignored the attached graph and grepped anyway (1 of 3 runs). Correctness stayed a tie throughout.
+
+### What it costs to attach: ~682 tokens
+
+A common worry about MCP graphs is system-prompt bloat. Measured directly (same question, same model, attached vs not), the steady-state first-turn cost is **30,586 tokens without OmniWeave vs 31,268 with — a marginal +682.** The other ~30 K is the base agent harness (built-in tool deferral + tool-search machinery), present in *both* arms. OmniWeave's tool schemas are deferred until first use, so they never sit in the system prompt idle. (Disabling that deferral to "save a round-trip" actually *costs* +16 K tokens by eager-loading every schema — the default is already token-optimal.) **Attaching the graph is nearly free; the cost is the structural answer you choose to fetch, not the connection.**
+
+### Round-6 output precision
+
+The graph's value is only as good as the precision of what it hands back, so round 6 audited every tool's output and tightened `callers`/`callees`: the list now reports the **true total** (`showing 20 of 57`, never a silently-capped `20 found` that makes an agent under-count), and **drops file-level `import` edges that aren't calls** — a file importing a name is a dependency, not a caller, and was redundant with the function-level callers from the same file (the full dependency closure stays on `impact`). On a 57-caller symbol this shrank the tool result **33 %** and removed a manual de-noising step the agent had been doing by hand, with **zero correctness change**. *(Honest caveat: on that symbol the agent's reported count varied across arms — 57/50 with the graph vs 136/206 with `grep` — not because either is "wrong" but because "distinct caller" is genuinely ambiguous in factory code full of anonymous accessors. The graph's answer is **stable**; `grep`'s varies run to run. The moat there is effort and stability, not correctness.)*
+
+### Versus the alternatives
+
+The comparison that matters isn't just `grep` — it's the tools an agent already has:
+
+| | What it does | Where OmniWeave stands |
+|---|---|---|
+| **`grep` + `read`** | Reads everything, follows nothing | **Ties on correctness**, wins on **effort** for reverse/blast at scale (1/20 tool calls), wider on weak models |
+| **LSP** (`tsserver`, `pyright`) | Compiler-precise same-language nav, **free, often already running** | **Ties** on its home turf; OmniWeave wins only where LSP is **blind** — zero-config checkouts (pyright resolved 0/17 callers without an env), cross-language, cross-process, R/S4 dispatch |
+| **Aider repo-map** | PageRank-ranked context list | **Category win** — a ranked list has no traversable edges, so it can't answer "what calls X across a process boundary" at all |
+| **Vector / embedding search** | Concept recall ("where's the auth logic") | **Different tool** — OmniWeave is structural, not semantic; it does not compete here and shouldn't be used for it |
+
+The takeaway is the one stated up front: a real, measured efficiency edge in a **bounded intersection**, honest ties or no-help outside it. (Full methodology, per-question ground truth, and raw transcripts in [`eval-results/`](eval-results/agent-ab-2026-06-13/).)
 
 ---
 
@@ -142,8 +185,9 @@ node dist/bin/omniweave.js serve --mcp
 ## Engineering
 
 - **Hand-written extractors, no `.scm`.** Each language is a focused TypeScript walker — adding a language or a relationship is a small, testable change, not a grammar rewrite.
-- **Eval-gated.** A recall/precision harness with edge, reachability, and **negative** assertions guards every capability — red before the feature, green after, with teeth that fail if a target regresses. **1490** unit tests, 25 evaluation gates, zero known false positives across six real repositories.
+- **Eval-gated.** A recall/precision harness with edge, reachability, and **negative** assertions guards every capability — red before the feature, green after, with teeth that fail if a target regresses. **1498** unit tests, 25 evaluation gates, zero known false positives across six real repositories.
 - **A §1.5 benchmark** (`npm run benchmark`) measures, honestly, the bounded class of queries where the graph wins, ties, or loses against `grep`/LSP — including the ones it loses.
+- **Adversarial agent A/B evaluation** (`scripts/agent-eval/`, six rounds in `eval-results/`). Rather than trust a self-reported metric, every value claim is measured by running a real coding agent **with vs without** the graph attached, on real repositories, with human-judged ground truth — and the discipline is to *go looking for where the tool loses*: correctness ties were confirmed by building traps meant to break them, a prior round's "~34 K overhead" claim was retracted after direct measurement (+682), and the cross-process-at-scale and in-process-mode bets were both retired as NO-GO on the evidence. The boundary in this README is drawn by that evaluation, not by marketing.
 
 ```
 extraction (WASM tree-sitter workers)
@@ -157,6 +201,8 @@ extraction (WASM tree-sitter workers)
 ## Scope
 
 OmniWeave is a **general** code-analysis graph. Bioinformatics — R/S4, Snakemake/Nextflow, mixed tool-and-data pipelines — is its proving ground precisely *because* it is the hardest polyglot, cross-process terrain there is: **general engine, proven on the hardest domain.**
+
+**What it is not**, stated plainly so you can choose the right tool: it is not a correctness oracle (a capable agent ties it with `grep`), not a semantic/concept search (that's embeddings), not a replacement for a language server on same-language navigation (it ties one), and not a universal win (single-point lookups and cross-process-at-scale are honest ties). It is the most economical structural form for the bounded intersection mapped above — and it's built to tell you where that boundary is.
 
 ---
 
