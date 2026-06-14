@@ -1,0 +1,18 @@
+=== with-r1.jsonl ===
+  by type: {"ToolSearch":1,"mcp__omniweave__omniweave_explore":3,"Bash":1}
+  tokens: in=252603 out=2798 | cost $0.317
+=== with-r2.jsonl ===
+  by type: {"ToolSearch":1,"mcp__omniweave__omniweave_explore":3,"Read":1}
+  tokens: in=259106 out=2479 | cost $0.281
+=== with-r3.jsonl ===
+  by type: {"ToolSearch":1,"mcp__omniweave__omniweave_explore":1}
+  tokens: in=99857 out=2685 | cost $0.114
+=== without-r1.jsonl ===
+  by type: {"Bash":1,"Read":3}
+  tokens: in=143751 out=1426 | cost $0.214
+=== without-r2.jsonl ===
+  by type: {"Bash":7}
+  tokens: in=188079 out=1781 | cost $0.101
+=== without-r3.jsonl ===
+  by type: {"Bash":1,"Read":3}
+  tokens: in=144514 out=1525 | cost $0.154

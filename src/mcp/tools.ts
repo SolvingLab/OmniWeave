@@ -1254,6 +1254,13 @@ export class ToolHandler {
       const labels = new Map<string, string>();
       for (const node of defNodes) {
         for (const c of cg.getCallers(node.id)) {
+          // A plain `import` edge (a file importing the name) is a dependency,
+          // not a caller — drop it so "(N found)" counts REAL callers, not
+          // redundant file imports. Measured: a vscode symbol returned 80
+          // entries = 57 callers + 23 file imports, every import in a file that
+          // ALSO calls it, forcing the agent to subtract the noise. The full
+          // dependency closure (importers included) is omniweave_impact's job.
+          if (c.edge.kind === 'imports') continue;
           if (!seen.has(c.node.id)) {
             seen.add(c.node.id);
             callers.push(c.node);
@@ -1274,7 +1281,7 @@ export class ToolHandler {
       // A successful `file` narrowing makes the multi-symbol aggregation note
       // stale — suppress it.
       const note = fileFilter && !filteredOut ? '' : allMatches.note;
-      const formatted = this.formatNodeList(callers.slice(0, limit), `Callers of ${symbol}`, labels) + note + filterNote;
+      const formatted = this.formatNodeList(callers, `Callers of ${symbol}`, labels, limit) + note + filterNote;
       return this.textResult(this.truncateOutput(formatted));
     }
 
@@ -1296,6 +1303,7 @@ export class ToolHandler {
         const label = labels.get(node.id);
         lines.push(`- ${this.callerDisplayName(node)} (${node.kind}) - ${node.filePath}${location}${label ? ` — via ${label}` : ''}`);
       }
+      if (callers.length > limit) lines.push(this.moreResultsNote(callers.length, limit));
     }
     return this.textResult(this.truncateOutput(lines.join('\n') + filterNote));
   }
@@ -1327,6 +1335,9 @@ export class ToolHandler {
       const labels = new Map<string, string>();
       for (const node of defNodes) {
         for (const c of cg.getCallees(node.id)) {
+          // Symmetric with callers: an `import` edge is a dependency, not a
+          // call. "What does X call" shouldn't list the names X merely imports.
+          if (c.edge.kind === 'imports') continue;
           if (!seen.has(c.node.id)) {
             seen.add(c.node.id);
             callees.push(c.node);
@@ -1346,7 +1357,7 @@ export class ToolHandler {
       // A successful `file` narrowing makes the multi-symbol aggregation note
       // stale — suppress it.
       const note = fileFilter && !filteredOut ? '' : allMatches.note;
-      const formatted = this.formatNodeList(callees.slice(0, limit), `Callees of ${symbol}`, labels) + note + filterNote;
+      const formatted = this.formatNodeList(callees, `Callees of ${symbol}`, labels, limit) + note + filterNote;
       return this.textResult(this.truncateOutput(formatted));
     }
 
@@ -1366,6 +1377,7 @@ export class ToolHandler {
         const label = labels.get(node.id);
         lines.push(`- ${this.callerDisplayName(node)} (${node.kind}) - ${node.filePath}${location}${label ? ` — via ${label}` : ''}`);
       }
+      if (callees.length > limit) lines.push(this.moreResultsNote(callees.length, limit));
     }
     return this.textResult(this.truncateOutput(lines.join('\n') + filterNote));
   }
@@ -3242,6 +3254,9 @@ export class ToolHandler {
       const seen = new Set<string>([node.id]);
       const out: Array<{ node: Node; edge: Edge }> = [];
       for (const e of edges) {
+        // Consistent with omniweave_callers/callees: an `import` edge is a
+        // dependency, not a call — keep it out of the call trail.
+        if (e.edge.kind === 'imports') continue;
         if (seen.has(e.node.id)) continue;
         seen.add(e.node.id);
         out.push(e);
@@ -3758,10 +3773,20 @@ export class ToolHandler {
       : node.name;
   }
 
-  private formatNodeList(nodes: Node[], title: string, labels?: Map<string, string>): string {
-    const lines: string[] = [`## ${title} (${nodes.length} found)`, ''];
+  private formatNodeList(nodes: Node[], title: string, labels?: Map<string, string>, limit?: number): string {
+    // Slice INSIDE the formatter (not at the call site) so the header always
+    // reports the TRUE total and a capped list always carries the "+N more"
+    // footer. A pre-sliced list made the header lie ("20 found" when 57 exist)
+    // with no re-run hint — see moreResultsNote.
+    const total = nodes.length;
+    const shown = limit != null && total > limit ? nodes.slice(0, limit) : nodes;
+    const capped = shown.length < total;
+    const header = capped
+      ? `## ${title} (showing ${shown.length} of ${total})`
+      : `## ${title} (${total} found)`;
+    const lines: string[] = [header, ''];
 
-    for (const node of nodes) {
+    for (const node of shown) {
       const location = node.startLine ? `:${node.startLine}` : '';
       // Compact: qualified name (so the owning class is unambiguous), kind,
       // location — plus the relationship when it isn't a plain call (callback
@@ -3772,7 +3797,28 @@ export class ToolHandler {
       );
     }
 
+    if (capped) lines.push('', this.moreResultsNote(total, shown.length));
+
     return lines.join('\n');
+  }
+
+  /**
+   * Honest "+N more" footer for a list capped at `limit`, mirroring
+   * formatImpact's depth-truncation note. Without it an agent reads a capped
+   * slice as the whole set and UNDER-reports the fan-in — and the high-fan-in
+   * reverse query is exactly where the graph is meant to beat grep (measured:
+   * vscode `checkProposedApiEnabled` has 57 distinct callers, default limit 20,
+   * so the old output said "20 found" and the agent reported 20). The true
+   * total is the header's job; this is the actionable re-run hint. The query
+   * tools clamp `limit` to 100, so a hub with more says how to read the top 100
+   * and that the rest exist.
+   */
+  private moreResultsNote(total: number, shown: number): string {
+    const askable = Math.min(total, 100);
+    const detail = total > 100
+      ? `the top ${askable} (this symbol is a hub: ${total} total)`
+      : 'the full list';
+    return `> ⚠️ Showing the first ${shown} of ${total} — re-run with \`limit=${askable}\` for ${detail}.`;
   }
 
   /**

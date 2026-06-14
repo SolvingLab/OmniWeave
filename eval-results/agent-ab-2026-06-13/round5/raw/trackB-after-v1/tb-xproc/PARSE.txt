@@ -1,0 +1,9 @@
+=== with-r1.jsonl ===
+  by type: {"ToolSearch":1,"mcp__omniweave__omniweave_node":5}
+  tokens: in=284642 out=2226 | cost $0.304
+=== with-r2.jsonl ===
+  by type: {"ToolSearch":1,"mcp__omniweave__omniweave_node":5}
+  tokens: in=285612 out=2514 | cost $0.244
+=== with-r3.jsonl ===
+  by type: {"ToolSearch":1,"mcp__omniweave__omniweave_node":3,"mcp__omniweave__omniweave_explore":1,"Bash":1}
+  tokens: in=212958 out=2428 | cost $0.242

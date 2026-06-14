@@ -1,0 +1,36 @@
+===== with-r1 =====
+omniweave tools exposed: 5
+Tool calls (14):
+  by type: {"Bash":13,"Read":1}
+Result: success | duration 214s | turns 15
+  tokens: in=200773 out=2601 | cost $0.212
+===== with-r2 =====
+omniweave tools exposed: 5
+Tool calls (11):
+  by type: {"ToolSearch":1,"Bash":10}
+Result: success | duration 86s | turns 12
+  tokens: in=239755 out=3902 | cost $0.173
+===== with-r3 =====
+omniweave tools exposed: 5
+Tool calls (10):
+  by type: {"Bash":9,"Read":1}
+Result: success | duration 59s | turns 11
+  tokens: in=234828 out=2410 | cost $0.136
+===== without-r1 =====
+omniweave tools exposed: 0
+Tool calls (13):
+  by type: {"Bash":13}
+Result: success | duration 80s | turns 14
+  tokens: in=277550 out=3680 | cost $0.252
+===== without-r2 =====
+omniweave tools exposed: 0
+Tool calls (11):
+  by type: {"Bash":8,"Read":3}
+Result: success | duration 51s | turns 12
+  tokens: in=199905 out=2074 | cost $0.128
+===== without-r3 =====
+omniweave tools exposed: 0
+Tool calls (13):
+  by type: {"Bash":8,"Read":5}
+Result: success | duration 74s | turns 14
+  tokens: in=263901 out=3438 | cost $0.166

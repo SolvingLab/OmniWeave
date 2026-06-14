@@ -1,0 +1,30 @@
+=== with-r1 ===
+omniweave tools exposed: 5
+  by type: {"ToolSearch":1,"mcp__omniweave__omniweave_explore":1,"Read":1}
+Result: success | duration 19s | turns 4
+  tokens: in=137952 out=513 | cost $0.161
+=== with-r2 ===
+omniweave tools exposed: 5
+  by type: {"ToolSearch":1,"mcp__omniweave__omniweave_explore":1,"Read":1}
+Result: success | duration 20s | turns 4
+  tokens: in=137998 out=535 | cost $0.095
+=== with-r3 ===
+omniweave tools exposed: 5
+  by type: {"ToolSearch":1,"mcp__omniweave__omniweave_explore":1,"Read":1}
+Result: success | duration 22s | turns 4
+  tokens: in=137994 out=540 | cost $0.095
+=== without-r1 ===
+omniweave tools exposed: 0
+  by type: {"Bash":1,"Read":1}
+Result: success | duration 16s | turns 3
+  tokens: in=90422 out=344 | cost $0.100
+=== without-r2 ===
+omniweave tools exposed: 0
+  by type: {"Bash":1,"Read":1}
+Result: success | duration 19s | turns 3
+  tokens: in=90706 out=374 | cost $0.038
+=== without-r3 ===
+omniweave tools exposed: 0
+  by type: {"Bash":1,"Read":1}
+Result: success | duration 14s | turns 3
+  tokens: in=90412 out=339 | cost $0.036

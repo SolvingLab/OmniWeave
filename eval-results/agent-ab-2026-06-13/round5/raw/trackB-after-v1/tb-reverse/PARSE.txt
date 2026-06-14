@@ -1,0 +1,9 @@
+=== with-r1.jsonl ===
+  by type: {"ToolSearch":1,"mcp__omniweave__omniweave_callers":1}
+  tokens: in=93490 out=795 | cost $0.115
+=== with-r2.jsonl ===
+  by type: {"ToolSearch":1,"mcp__omniweave__omniweave_callers":1}
+  tokens: in=93432 out=927 | cost $0.050
+=== with-r3.jsonl ===
+  by type: {"ToolSearch":1,"mcp__omniweave__omniweave_callers":1}
+  tokens: in=93506 out=992 | cost $0.051

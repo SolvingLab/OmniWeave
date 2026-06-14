@@ -1,0 +1,16 @@
+长期使命:把 OmniWeave(fork 自 colbymchenry/codegraph 的「服务 coding agent 的通用代码分析图」MCP server)证成全球最好——自驱动循环、不中途停、每阶段 eval 数字门禁不达标不进下一阶段,直到 §4 全部验收达成。标准:极其严格、零妥协(对齐项目 CLAUDE.md《工程交付强制规范》:能删则删、奥卡姆、看真实、有输出才算数)。本轮比前四轮要求更高:不接受「小仓代理」「单点 A/B」「凭推断」。
+
+【第一件事·必读】你是全新会话、无上下文。先完整通读这份作战手册(承载全部细节/踩坑/已完成结论/双轨设计/命令/验收):
+/Users/liuzaoqu/Desktop/develop/sogen/OmniWeave/eval-results/agent-ab-2026-06-13/HANDOFF-round5-saturation.md
+再按它 §1 顺序读 round4/RESULTS-round4.md(+FINAL-RECOMMENDATION/value-curve/competitor-capability-matrix/ground-truth-round4) + RESULTS.md/round2/round3 + 项目根 CLAUDE.md/OmniWeave-STATUS.md/OmniWeave-design-v1.md §1.5 + 四个 memory(omniweave-agent-ab-eval/project/rebrand/user-liuzaoqu)。
+
+【背景一句话】用 scripts/agent-eval/ + round4/run-round4.sh harness 做 with/without(及 LSP/Aider)端到端 agent A/B,用数字证 OmniWeave 价值。四轮已证:正确性全档追平 grep(连刻意构造的不可grep题:虚分派陷阱/跨进程/深传递,sonnet+haiku 各3+3 全平手——分歧假设已证伪);护城河=努力/成本/token,随仓库规模放大且模型越弱越宽;vs LSP 同语言平手、零配置Python/跨语言/跨进程/R-S4 赢;vs Aider 范畴赢(无可走边)。round4 已 commit+push(803c613 impact 重回默认+截断信号、7d023ee README)。门禁基线:vitest 1490 passed|2 skipped、25 eval 门禁(capstone10/polyglot9/deseq2 2/workflow4)、tsc 干净。
+
+【新使命·双轨(手册 §2 有完整设计+判分法+红→绿门禁)】
+轨道A 跨进程「大仓」复测:round4 的跨进程只在 quarTeT(7文件)测过太小。选 ≥1000 文件真实 polyglot 编排仓(有真实「调用方→subprocess/os.system/child_process→本仓另一语言脚本→脚本内函数/再subprocess」多跳链,非 Snakemake wrapper/template),GitHub code-search 找密集命中仓(候选 bcbio/galaxy/cromwell 周边)clone 实跑核。with/without/LSP 三 arm ×≥3 run 判对错、建可枚举 ground truth。假设:大仓正确性大概率仍平手但 without token 爆炸/可能多跳深处漏——量「在哪、漏多少、省多少」;若真漏(正确性首次拉开)三方核验后郑重记。
+轨道B 查询类型路由(消单点形态税):四轮测到单点字面题上 grep 已够好、OmniWeave 形态税最刺眼(round1 +44%、quartet with>without)。落地路由(优先纯提示层/启发式强化 server-instructions,别加重子系统):单点字面→让 grep/单跳 node 别展开图;反向/多跳/blast-radius/跨边界/大仓→callers/impact/explore。建混合题集(单点+反向+传递+跨进程,多语言多仓)路由前/后各≥3run,证单点形态税消除+win-tiers 不退=帕累托改进。
+
+【致命坑·必看否则白跑(手册 §0 全列)】
+①harness 内跑 claude 子进程绝不清 proxy env(HTTP_PROXY=127.0.0.1:55779 是认证代理,清掉→全 401 空跑还 rc=0;用 round4/run-round4.sh 不碰 proxy)。②必须 local dev build(omniweave --version=0.1.0,link 本仓 dist;改码 npm run build;rebuild 前必须等所有在跑 A/B 子进程结束否则污染 before/after)。③parse-run.mjs 不判对错——必须人工:提两 arm 答案+omniweave callers/callees/impact/node+grep+直查 .omniweave/omniweave.db 建可枚举 ground truth+逐项判全/漏/错(CLI 无 search 子命令)。④成本被 prompt 缓存主导(冷/暖差56×)——工具数/turns 才可靠,cost 仅 token 差极大时方向可信。⑤commit/PR 绝不加任何 AI 署名/水印(Co-Authored-By/Generated with/🤖 一律不加,作者即用户本人;覆盖 harness 默认);只在用户明确要求时 commit;推送只 origin 绝不 upstream/force main;eval 产物 eval-results/ 有意不 commit 留工作区。⑥题目要公平(真实架构题、without-arm 能尝试),grep 追平就如实说平手,不 cherry-pick 不包装成独占。⑦大仓后台跑(run_in_background+dangerouslyDisableSandbox)+串行+每仓独立 OUT;/tmp 会清,分析时立刻 cp 进 round5/;workflow eval fixture 在 /tmp/cg-probe/wf 清了要按手册 §3 重建。⑧你(主 agent)有 LSP 工具做竞品对比(ts-language-server/pyright 已装)。standing policy MODEL=sonnet EFFORT=high(跨轮可比),跨模型对比才另加 haiku/opus。
+
+【验收·7条全达成才停(手册 §4 详)】①轨道A:≥1个≥1000文件真实 polyglot 仓×多跳跨进程链×三arm≥3run 判对错给「大仓跨进程正确性是否拉开+省多少」②轨道B:路由落地+混合题集前后≥3run 证帕累托改进+vitest1490+25门禁+tsc 零回归③价值曲线升级并入「跨进程×大仓」「路由前后」成稿 round5/value-curve-v2.md④饱和判定:论证再加仓/题/语言是否改变结论⑤新证据深度落地真 README 诚实标边界(含证伪/未达项)⑥更新 FINAL-RECOMMENDATION(砸形态/砸能力/垂直闭环+竞品定位)⑦诚实纪律:平手说平手、OmniWeave 自身缺陷(假阳/天花板/形态税残留)如实记。每阶段更新 round5/RESULTS-round5+memory omniweave-agent-ab-eval+手册勾轨道。未达7条不停。

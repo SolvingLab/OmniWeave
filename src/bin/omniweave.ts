@@ -1392,13 +1392,17 @@ program
       }
 
       const limited = allCallers.slice(0, limit);
+      const truncated = allCallers.length > limit;
 
       if (options.json) {
-        console.log(JSON.stringify({ symbol, callers: limited }, null, 2));
+        // Surface the true total + a `truncated` flag so scripts never read a
+        // capped slice as the whole fan-in (MCP parity — see moreResultsNote).
+        console.log(JSON.stringify({ symbol, total: allCallers.length, truncated, callers: limited }, null, 2));
       } else if (limited.length === 0) {
         info(`No callers found for "${symbol}"`);
       } else {
-        console.log(chalk.bold(`\nCallers of "${symbol}" (${limited.length}):\n`));
+        const heading = truncated ? `${limited.length} of ${allCallers.length}` : `${limited.length}`;
+        console.log(chalk.bold(`\nCallers of "${symbol}" (${heading}):\n`));
         for (const node of limited) {
           const loc = node.startLine ? `:${node.startLine}` : '';
           console.log(
@@ -1408,6 +1412,7 @@ program
           console.log(chalk.dim(`  ${node.filePath}${loc}`));
           console.log();
         }
+        if (truncated) console.log(chalk.yellow(`  … ${allCallers.length - limit} more — re-run with --limit ${Math.min(allCallers.length, 100)} for the full list.\n`));
       }
 
       cg.destroy();
@@ -1470,13 +1475,15 @@ program
       }
 
       const limited = allCallees.slice(0, limit);
+      const truncated = allCallees.length > limit;
 
       if (options.json) {
-        console.log(JSON.stringify({ symbol, callees: limited }, null, 2));
+        console.log(JSON.stringify({ symbol, total: allCallees.length, truncated, callees: limited }, null, 2));
       } else if (limited.length === 0) {
         info(`No callees found for "${symbol}"`);
       } else {
-        console.log(chalk.bold(`\nCallees of "${symbol}" (${limited.length}):\n`));
+        const heading = truncated ? `${limited.length} of ${allCallees.length}` : `${limited.length}`;
+        console.log(chalk.bold(`\nCallees of "${symbol}" (${heading}):\n`));
         for (const node of limited) {
           const loc = node.startLine ? `:${node.startLine}` : '';
           console.log(
@@ -1486,6 +1493,7 @@ program
           console.log(chalk.dim(`  ${node.filePath}${loc}`));
           console.log();
         }
+        if (truncated) console.log(chalk.yellow(`  … ${allCallees.length - limit} more — re-run with --limit ${Math.min(allCallees.length, 100)} for the full list.\n`));
       }
 
       cg.destroy();

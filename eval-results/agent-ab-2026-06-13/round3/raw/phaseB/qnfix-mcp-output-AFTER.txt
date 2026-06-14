@@ -1,0 +1,19 @@
+AFTER (qualified_name fix — MCP omniweave_callers output, the owning class now surfaced):
+--- caller lines mentioning the previously-mislabeled methods ---
+- FlatPage::get_absolute_url (method) - django/contrib/flatpages/models.py:40
+- HttpRequest::_get_full_path (method) - django/http/request.py:226
+- HttpRequest::build_absolute_uri (method) - django/http/request.py:263
+- HttpResponseRedirectBase::__init__ (method) - django/http/response.py:642
+- iriencode (function) - django/template/defaultfilters.py:225
+- PrefixNode::handle_simple (method) - django/templatetags/static.py:42
+- Stylesheet::url (method) - django/utils/feedgenerator.py:89
+- Stylesheet::__str__ (method) - django/utils/feedgenerator.py:98
+- SyndicationFeed::__init__ (method) - django/utils/feedgenerator.py:113
+- SyndicationFeed::add_item (method) - django/utils/feedgenerator.py:165
+- Enclosure::__init__ (method) - django/utils/feedgenerator.py:289
+- AdminViewStringPrimaryKeyTest::test_changelist_to_changeform_link (method) - tests/admin_views/tests.py:4339
+- AdminViewStringPrimaryKeyTest::test_deleteconfirmation_link (method) - tests/admin_views/tests.py:4379
+- HttpResponseTests::test_redirect_url_max_length_checks_encoded_location (method) - tests/httpwrappers/tests.py:503
+- TestRFC3987IEncodingUtils::test_iri_to_uri (method) - tests/utils_tests/test_encoding.py:155
+- TestRFC3987IEncodingUtils::test_complementarity (method) - tests/utils_tests/test_encoding.py:204
+- django/utils/feedgenerator.py (file) - django/utils/feedgenerator.py:1 — via import

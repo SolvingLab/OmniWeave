@@ -1,0 +1,30 @@
+=== with-r1 ===
+omniweave tools exposed: 5
+  by type: {"ToolSearch":1,"mcp__omniweave__omniweave_impact":1,"mcp__omniweave__omniweave_callers":1,"mcp__omniweave__omniweave_explore":1}
+Result: success | duration 50s | turns 5
+  tokens: in=144948 out=2270 | cost $0.227
+=== with-r2 ===
+omniweave tools exposed: 5
+  by type: {"ToolSearch":1,"mcp__omniweave__omniweave_impact":1,"mcp__omniweave__omniweave_explore":2}
+Result: success | duration 52s | turns 5
+  tokens: in=158894 out=2319 | cost $0.204
+=== with-r3 ===
+omniweave tools exposed: 5
+  by type: {"ToolSearch":1,"mcp__omniweave__omniweave_callers":2,"mcp__omniweave__omniweave_explore":2}
+Result: success | duration 53s | turns 6
+  tokens: in=148704 out=2583 | cost $0.177
+=== without-r1 ===
+omniweave tools exposed: 0
+  by type: {"Bash":1,"Read":1}
+Result: success | duration 34s | turns 3
+  tokens: in=70361 out=2030 | cost $0.145
+=== without-r2 ===
+omniweave tools exposed: 0
+  by type: {"Bash":3,"Read":5}
+Result: success | duration 45s | turns 9
+  tokens: in=189123 out=1883 | cost $0.104
+=== without-r3 ===
+omniweave tools exposed: 0
+  by type: {"Bash":1,"Read":1}
+Result: success | duration 28s | turns 3
+  tokens: in=70328 out=1387 | cost $0.072

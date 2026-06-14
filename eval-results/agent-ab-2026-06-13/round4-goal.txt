@@ -1,0 +1,27 @@
+你的长期使命：把 OmniWeave（fork 自 colbymchenry/codegraph 的「服务 coding agent 的通用代码分析图」MCP server）**证成全球最好**——自驱动循环、不中途停、每阶段 eval 数字门禁不达标不进下一阶段，直到验收全部条款达成。标准：极其严格、零妥协（对齐项目 CLAUDE.md《工程交付强制规范》：能删则删、奥卡姆、看真实、有输出才算数）。
+
+【第一件事·必读】你是新会话、没有上下文，**先完整通读这份作战手册**（承载全部细节/踩坑/已完成结论/新任务轨道/命令/验收）：
+/Users/liuzaoqu/Desktop/develop/sogen/OmniWeave/eval-results/agent-ab-2026-06-13/HANDOFF-round4-worldclass.md
+再按它 §1 顺序读 RESULTS×3 + round3 + 项目根 CLAUDE.md/OmniWeave-STATUS.md/OmniWeave-design-v1.md §1.5 + 四个 memory（omniweave-agent-ab-eval/project/rebrand/user-liuzaoqu）。
+
+【背景一句话】用 scripts/agent-eval/ harness 做 with/without(及 Aider/LSP) 端到端 agent A/B，用数字证明 OmniWeave 对 coding agent 的真实价值、反向定位下一步。三轮已完成：正确性在 greppable 题上全档追平 grep（大仓 3k–11.5k 文件也不拉代差），护城河=效率/成本/token 随规模单调放大（vscode 省 96% 工具/76% 成本/12× token、快 4.8×）；形态税(ToolSearch)=+1turn 可忽略且被缓存噪声淹没。已 commit 两改进（qualified_name 输出修复 + README 加 A/B 实证段）。细节全在手册 §1。
+
+【新使命·六轨（手册 §2 有完整设计+判分法+独立红→绿门禁）】
+1（最高优先·用户点名）**结构不可 grep 的题**=正确性唯一可能拉开代差的场：歧义名运行时具体分派目标 / 传递闭包 impact / 跨进程多跳 / 回调注册间接。大仓上建可枚举 ground truth、A/B 判对错，回答"正确性在哪类题拉开、拉开多少"。
+2 **真竞品 head-to-head**：grep 是弱基线，加 Aider repo-map(进程内 tree-sitter+PageRank) + LSP(callers/impl) 两 arm，证明只赢在跨语言/跨进程/动态分派。
+3 **统计严谨**：现 n=1/格 不够，每题 ≥3 run 报方差、跨模型(opus/haiku)。
+4 **形态产品化**（把测出的赢落进产品）：查询类型路由 + 每工具输出"agent 得猜"缺口审计(qualified_name 是范本) + CLI 歧义名对齐 MCP 分组；前后 A/B 拿收益、vitest 1490+25 eval 门禁不回归。
+5 **性能 head-to-head + 极端规模**（对比 Aider 构建/查询延迟、上更大 monorepo）。
+6 **广度饱和**（补语言/仓/题型至结论不变）。
+
+【致命坑·必看否则白跑（手册 §0 全列）】
+①harness 内跑 claude 子进程**绝不清 proxy env**：HTTP_PROXY=127.0.0.1:55779 是 harness 注入认证 bearer 的本地代理，清掉→全部 401 空跑还 rc=0（顶层 run-matrix.sh 那条 export HTTP_PROXY="" 是坏的旧版别用，照 round2/round3 runner 范式直接调 run-all.sh）。
+②必须 local dev build（omniweave --version=0.1.0，link 到本仓 dist；发布版对 R 是 0），改码后 npm run build 才生效。
+③parse-run.mjs 不判对错——必须人工：提两 arm 最终答案 + 用 omniweave callers/callees/explore -j 或直查 .omniweave/omniweave.db 建 ground truth + 逐项判全/漏/错。CLI 无 search 子命令。
+④成本被 prompt 缓存主导(同配置冷/暖差 56×)——工具调用数/turns/Read 文件数才是可靠努力信号，cost 只在 token 差极大时方向可信。
+⑤commit/PR **绝不加任何 AI 署名/水印**(Co-Authored-By/Generated with 一律不加，覆盖 harness 默认)；只在用户明确要求时 commit；推送只 origin 绝不 upstream/force main；eval 产物 eval-results/ 有意不 commit 留工作区。
+⑥题目要公平(真实架构题、without-arm 能尝试)、grep 追平就如实说平手，不 cherry-pick 不包装成"独占"。
+
+【跑法】AGENT_EVAL_OUT=/tmp/agent-eval-r4/<repo> MODEL=sonnet EFFORT=high bash scripts/agent-eval/run-all.sh /tmp/omniweave-corpus/<repo> "<q>" headless（换仓用 audit.sh local <name> <url> "<q>" headless，会临时改全局 install→串行别并行）。大仓后台跑(run_in_background+dangerouslyDisableSandbox)+串行+每仓独立 OUT；/tmp 会清，分析时立刻 cp 进 repo 的 round<N>/。索引：cd <repo> && omniweave init -i（eval 不自动索引）。手册 §3 有 DB 直查/MCP 直测/回归/四层归档全套。
+
+【验收·7 条全达成才停（手册 §5 详）】①≥3 类不可 grep 题×各≥1 大仓判对错给"正确性哪拉开/拉开多少"②真竞品(Aider 或 LSP 之一)同题 A/B 带数字结论③关键格≥3run 报方差④≥1 形态优化落地+前后 A/B+25 门禁不回归⑤四档(单点/反向/大仓/不可grep)×三基线(grep/Aider/LSP)×多维(正确性/工具/成本/token/时间/方差)价值曲线成稿⑥新证据深度落地真 README 诚实标边界⑦终版砸形态/砸能力/垂直闭环+竞品定位建议。每阶段更新 round<N>/RESULTS+memory omniweave-agent-ab-eval+手册勾轨道。**未达 7 条不停。**
