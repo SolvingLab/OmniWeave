@@ -34,7 +34,7 @@ A coding agent already has `grep` and an LSP. OmniWeave earns its place by winni
 
 ## Does an agent actually do better with OmniWeave?
 
-Not a claim — a measurement. An A/B benchmark across **3 rounds, 8 real repositories, 24 headless runs** (Claude Sonnet, identical prompts). The *only* variable is whether OmniWeave's MCP graph is attached; both arms keep the same built-in `grep` / `read` / `bash`. Tool-calls are the reliable effort signal (token cost is prompt-cache-sensitive); both are reported.
+Not a claim — a measurement. An A/B benchmark across **4 rounds, 8 real repositories, ~60 headless runs**, 5 languages (R · Python · TS · Java · polyglot), 2 models (Claude Sonnet + Haiku), identical prompts. The *only* variable is whether OmniWeave's MCP graph is attached; both arms keep the same built-in `grep` / `read` / `bash`. Tool-calls are the reliable effort signal (token cost is prompt-cache-sensitive); both are reported.
 
 | Query · repo | Correct? | Tool calls *(with / without)* | Cost |
 |---|---|---|---|
@@ -42,10 +42,11 @@ Not a claim — a measurement. An A/B benchmark across **3 rounds, 8 real reposi
 | Reverse / multi-hop · small repos | tie | **16 / 34** (−53%) | −16% |
 | **Reverse blast-radius · django** (3,005 files) | **tie** | **2 / 31** (−94%) | **−64%** |
 | **Reverse blast-radius · vscode** (11,538 files) | **tie** | **2 / 47** (−96%) | **−76%** |
+| Structurally-ungreppable · dispatch trap / cross-process / deep transitive | **tie** | varies (see below) | varies |
 
 On vscode, the plain `grep` / `read` agent reached the **same correct answer** — but spent **47 tool calls, 1.13 M input tokens, and ~6 minutes** brute-force-reading files to map every call site back to its enclosing function. With OmniWeave: **2 calls, 95 K tokens, 77 seconds** — one structural query instead of a file-by-file sweep. **The bigger the repo, the more `grep`'s read budget explodes; OmniWeave stays O(1).**
 
-**What this honestly shows.** Correctness was a **tie** in every tier above: on greppable, uniquely-named queries, a thorough `grep`/`read` agent stays *complete* even at 11.5 K-file scale. OmniWeave's edge is **effort, tokens, latency, and cost — and it widens with scale**, not exclusive correctness. Correctness only diverges on the structurally-*ungreppable* query — a runtime-dispatch target behind an ambiguous name, a cross-process bridge, a transitive blast radius — which is precisely the terrain OmniWeave's typed edges are built for. *(Small sample; the A/B harness is included under [`scripts/agent-eval/`](scripts/agent-eval/) and is fully reproducible.)*
+**What this honestly shows — including where it *doesn't* win.** Correctness was a **tie in every tier, and we went looking for where it wouldn't be.** Round 4 built deliberately structurally-ungreppable questions — a Java virtual-dispatch *trap* (`Ordering.natural().reverse()`, where the naive read gives the wrong class), a cross-process subprocess chain, a 4-hop transitive blast radius — across Java/Python/polyglot and **both Sonnet and Haiku, 3 runs each**. Correctness still **tied** (e.g. the dispatch trap: 12/12 correct, both arms, both models): a capable agent *reads and verifies* its way to the right answer, and OmniWeave's own static edges hit the same honest ceiling (they route to a declaration, not a runtime-dispatch target). **OmniWeave's moat is effort / tokens / latency / cost — and it widens with repo size *and* as the model gets weaker** (on the dispatch trap, Haiku-without-OmniWeave burned **13 tool calls vs OmniWeave's 2**; Sonnet-without was 7–9). Versus real competitors, not just grep: OmniWeave **ties an LSP** (`typescript-language-server`) on same-language navigation, but wins where LSP is blind — a **zero-config Python checkout** (pyright resolves 0 of 17 callers without an installed env), cross-language, cross-process, and R/S4 dispatch; **Aider's repo-map** is a ranked context list with no traversable edges, so it can't answer these at all. *(The A/B harness is under [`scripts/agent-eval/`](scripts/agent-eval/) and is fully reproducible; full per-question judging in `eval-results/`.)*
 
 ---
 
