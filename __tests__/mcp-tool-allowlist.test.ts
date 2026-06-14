@@ -17,23 +17,26 @@ describe('OMNIWEAVE_MCP_TOOLS allowlist', () => {
 
   const listed = () => new ToolHandler(null).getTools().map(t => t.name).sort();
 
-  it('exposes the default 4-tool surface when unset', () => {
+  it('exposes the default 5-tool surface when unset', () => {
     delete process.env[ENV];
     // The default set (see DEFAULT_MCP_TOOLS): explore + node are the
     // validated workhorses, search the cheap lookup, callers the one
-    // irreplaceable enumerator. callees/impact/files/status stay defined
-    // and executable but unlisted — impact appeared in ZERO recorded runs.
+    // irreplaceable enumerator, impact the one-call transitive closure
+    // (round-4 A/B: without it, agents rebuild the closure with ~20
+    // recursive callers). callees/files/status stay defined and executable
+    // but unlisted.
     expect(listed()).toEqual([
       'omniweave_callers',
       'omniweave_explore',
+      'omniweave_impact',
       'omniweave_node',
       'omniweave_search',
     ]);
   });
 
-  it('re-enables an unlisted tool via the allowlist (impact)', () => {
-    process.env[ENV] = 'explore,impact';
-    expect(listed()).toEqual(['omniweave_explore', 'omniweave_impact']);
+  it('re-enables an unlisted tool via the allowlist (callees)', () => {
+    process.env[ENV] = 'explore,callees';
+    expect(listed()).toEqual(['omniweave_callees', 'omniweave_explore']);
   });
 
   it('filters ListTools to the allowlisted short names', () => {
@@ -48,7 +51,7 @@ describe('OMNIWEAVE_MCP_TOOLS allowlist', () => {
 
   it('treats an empty/whitespace value as unset (default surface)', () => {
     process.env[ENV] = '   ';
-    expect(listed()).toHaveLength(4);
+    expect(listed()).toHaveLength(5);
     expect(listed()).toContain('omniweave_explore');
   });
 

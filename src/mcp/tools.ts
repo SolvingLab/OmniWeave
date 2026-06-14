@@ -616,27 +616,31 @@ export function getStaticTools(): ToolDefinition[] {
 
 /**
  * The MCP tools served by DEFAULT (short names). The other defined tools
- * (callees, impact, files, status) remain fully functional — handlers stay,
- * the library API and CLI are untouched, and `OMNIWEAVE_MCP_TOOLS` re-enables
+ * (callees, files, status) remain fully functional — handlers stay, the
+ * library API and CLI are untouched, and `OMNIWEAVE_MCP_TOOLS` re-enables
  * any of them — they just aren't LISTED to agents anymore.
  *
- * Evidence for the cut (the "adapt the tool to the agent" principle —
+ * Evidence for the surface (the "adapt the tool to the agent" principle —
  * fewer tools = fewer mis-picks, and presence itself steers):
- * - `omniweave_impact` appears in ZERO recorded eval runs ever — its
- *   blast-radius info already arrives inline on explore (the "Blast radius"
- *   section) and node (the dependents note), so agents never need the
- *   standalone tool.
+ * - `omniweave_callers` stays: exhaustive call-site enumeration (every
+ *   caller with file:line, callback registrations labeled, one section per
+ *   same-named definition) is the one job explore/node don't replicate.
+ * - `omniweave_impact` stays: transitive blast-radius ("what does changing X
+ *   affect, across all depths") is a one-call closure. Round-4 A/B measured
+ *   the cost of NOT listing it — on a deep (4-hop) django impact question the
+ *   agent fell back to ~20 recursive `callers` calls to rebuild the closure
+ *   by hand, shrinking OmniWeave's tool-savings to ~35% (vs 70–96% on the
+ *   reverse-callers questions). The earlier "ZERO recorded runs" was a
+ *   self-fulfilling absence (the tool wasn't listed). The inline blast-radius
+ *   on explore/node is 1-hop only; transitive questions genuinely need this.
  * - `omniweave_callees` is redundant by construction: a symbol's body (which
  *   node returns) IS its callee list, plus the caller/callee trail.
  * - `omniweave_files` / `omniweave_status`: the tiny-repo audit (see
  *   getTools) found they "reduce to one grep"; staleness banners already
  *   inline the pending-sync info on every read tool, and the CLI covers
  *   diagnostics.
- * - `omniweave_callers` stays: exhaustive call-site enumeration (every
- *   caller with file:line, callback registrations labeled, one section per
- *   same-named definition) is the one job explore/node don't replicate.
  */
-const DEFAULT_MCP_TOOLS = new Set(['explore', 'node', 'search', 'callers']);
+const DEFAULT_MCP_TOOLS = new Set(['explore', 'node', 'search', 'callers', 'impact']);
 
 /**
  * Tool handler that executes tools against a OmniWeave instance
@@ -730,7 +734,7 @@ export class ToolHandler {
    */
   getTools(): ToolDefinition[] {
     const allow = this.toolAllowlist();
-    // No explicit allowlist → the default 4-tool surface (see
+    // No explicit allowlist → the default 5-tool surface (see
     // DEFAULT_MCP_TOOLS for the evidence). An allowlist replaces the
     // default entirely, so any defined tool can be re-enabled.
     let visible = allow
@@ -1387,10 +1391,12 @@ export class ToolHandler {
       ? `\n\n> **Note:** no definition of "${symbol}" matches file "${fileFilter}" — showing all definitions instead.`
       : '';
 
-    const impactOf = (defNodes: Node[]) => {
+    const impactOf = (defNodes: Node[]): Subgraph => {
       const mergedNodes = new Map<string, Node>();
       const mergedEdges: Edge[] = [];
       const seenEdges = new Set<string>();
+      let truncated = false;
+      let deeperCount = 0;
       for (const node of defNodes) {
         const impact = cg.getImpactRadius(node.id, depth);
         for (const [id, n] of impact.nodes) {
@@ -1403,13 +1409,15 @@ export class ToolHandler {
             mergedEdges.push(e);
           }
         }
+        if (impact.truncated) truncated = true;
+        deeperCount += impact.deeperCount ?? 0;
       }
-      return { nodes: mergedNodes, edges: mergedEdges, roots: defNodes.map((n) => n.id) };
+      return { nodes: mergedNodes, edges: mergedEdges, roots: defNodes.map((n) => n.id), truncated, deeperCount };
     };
 
     // Single definition (or same-file overloads): the familiar merged report.
     if (groups.length === 1) {
-      const formatted = this.formatImpact(symbol, impactOf(groups[0]!)) + (fileFilter && !filteredOut ? "" : allMatches.note) + filterNote;
+      const formatted = this.formatImpact(symbol, impactOf(groups[0]!), depth) + (fileFilter && !filteredOut ? "" : allMatches.note) + filterNote;
       return this.textResult(this.truncateOutput(formatted));
     }
 
@@ -1424,7 +1432,7 @@ export class ToolHandler {
       const line = head.startLine ? `:${head.startLine}` : '';
       sections.push(
         '',
-        this.formatImpact(`${head.qualifiedName} (${head.filePath}${line})`, impactOf(group))
+        this.formatImpact(`${head.qualifiedName} (${head.filePath}${line})`, impactOf(group), depth)
       );
     }
     return this.textResult(this.truncateOutput(sections.join('\n') + filterNote));
@@ -3782,7 +3790,7 @@ export class ToolHandler {
     return edge.kind;
   }
 
-  private formatImpact(symbol: string, impact: Subgraph): string {
+  private formatImpact(symbol: string, impact: Subgraph, depth?: number): string {
     const nodeCount = impact.nodes.size;
 
     // Compact format: just list affected symbols grouped by file
@@ -3804,6 +3812,21 @@ export class ToolHandler {
       // Compact: inline list
       const nodeList = nodes.map(n => `${n.name}:${n.startLine}`).join(', ');
       lines.push(nodeList);
+      lines.push('');
+    }
+
+    // Honest incompleteness: this set is a depth-clipped prefix of the true
+    // transitive closure, so say so and how to get the rest — otherwise an
+    // agent reads N symbols as "the whole blast radius" and stops short.
+    if (impact.truncated) {
+      const atDepth = depth ?? 2;
+      const more = impact.deeperCount && impact.deeperCount > 0
+        ? `at least ${impact.deeperCount} more dependent symbol(s) exist`
+        : 'more dependents exist';
+      lines.push(
+        `> ⚠️ Partial — traversal stopped at depth ${atDepth}; ${more} deeper. ` +
+        `Re-run \`omniweave_impact\` with a higher \`depth\` (e.g. depth=${atDepth + 2}) for the full transitive closure.`
+      );
       lines.push('');
     }
 

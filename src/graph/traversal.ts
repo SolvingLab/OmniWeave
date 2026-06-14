@@ -505,17 +505,28 @@ export class GraphTraverser {
     const nodes = new Map<string, Node>();
     const edges: Edge[] = [];
     const visited = new Set<string>();
+    // Sources of incoming edges seen at the depth frontier — i.e. dependents one
+    // level past maxDepth that we deliberately did NOT expand. Collected so we
+    // can honestly tell the caller the closure was clipped (see Subgraph.truncated).
+    const frontier = new Set<string>();
 
     // Add focal node
     nodes.set(focalNode.id, focalNode);
 
     // Traverse incoming edges to find all dependents
-    this.getImpactRecursive(nodeId, maxDepth, 0, nodes, edges, visited);
+    this.getImpactRecursive(nodeId, maxDepth, 0, nodes, edges, visited, frontier);
+
+    // A frontier source only counts as "omitted" if it didn't also get included
+    // via some shorter path (a diamond). What's left is genuinely beyond maxDepth.
+    let deeperCount = 0;
+    for (const id of frontier) if (!nodes.has(id)) deeperCount++;
 
     return {
       nodes,
       edges,
       roots: [nodeId],
+      truncated: deeperCount > 0,
+      deeperCount,
     };
   }
 
@@ -525,9 +536,20 @@ export class GraphTraverser {
     currentDepth: number,
     nodes: Map<string, Node>,
     edges: Edge[],
-    visited: Set<string>
+    visited: Set<string>,
+    frontier?: Set<string>
   ): void {
-    if (currentDepth >= maxDepth || visited.has(nodeId)) {
+    if (visited.has(nodeId)) return;
+    if (currentDepth >= maxDepth) {
+      // Depth limit reached. If this node still has dependents we're not
+      // expanding, record them as the truncation frontier (a lower bound on
+      // what a deeper run would surface). Skip `contains` for the same reason
+      // the expansion below does.
+      if (frontier) {
+        for (const e of this.queries.getIncomingEdges(nodeId)) {
+          if (e.kind !== 'contains' && !nodes.has(e.source)) frontier.add(e.source);
+        }
+      }
       return;
     }
     visited.add(nodeId);
@@ -547,7 +569,7 @@ export class GraphTraverser {
               nodes.set(childNode.id, childNode);
               edges.push(edge);
               // Recurse into children at the same depth (they're part of the same symbol)
-              this.getImpactRecursive(childNode.id, maxDepth, currentDepth, nodes, edges, visited);
+              this.getImpactRecursive(childNode.id, maxDepth, currentDepth, nodes, edges, visited, frontier);
             }
           }
         }
@@ -567,7 +589,7 @@ export class GraphTraverser {
       if (sourceNode && !nodes.has(sourceNode.id)) {
         nodes.set(sourceNode.id, sourceNode);
         edges.push(edge);
-        this.getImpactRecursive(sourceNode.id, maxDepth, currentDepth + 1, nodes, edges, visited);
+        this.getImpactRecursive(sourceNode.id, maxDepth, currentDepth + 1, nodes, edges, visited, frontier);
       }
     }
   }

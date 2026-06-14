@@ -352,6 +352,22 @@ export interface Subgraph {
    * for graph traversals that don't run the search-ranking path.
    */
   confidence?: 'high' | 'low';
+
+  /**
+   * Impact/blast-radius only: `true` when the traversal stopped at `maxDepth`
+   * while dependent symbols still existed deeper — i.e. the returned set is a
+   * prefix of the true transitive closure, not the whole thing. Lets callers
+   * tell the agent the answer is incomplete (and to re-run at a higher depth)
+   * instead of silently presenting a depth-clipped set as exhaustive.
+   */
+  truncated?: boolean;
+
+  /**
+   * Impact/blast-radius only: number of distinct dependent symbols that sit one
+   * level past `maxDepth` and were therefore omitted (a lower bound on what a
+   * deeper run would add — the closure beyond them is not counted).
+   */
+  deeperCount?: number;
 }
 
 /**
