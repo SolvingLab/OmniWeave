@@ -153,11 +153,23 @@ describe('CLI explore parity', () => {
 export type FlowAlias = string;
 
 export function entryPoint(): FlowResult {
-  return { value: localStep() + snapshotOnly() + runPythonReport() };
+  return { value: localStep() + snapshotOnly() + runPythonReport() + normalizeInput('cli') };
 }
 
 export function localStep(): string {
   return 'local';
+}
+
+export function normalizeInput(value: string): string {
+  return buildPayload(value.trim());
+}
+
+export function buildPayload(value: string): string {
+  return sendPayload(value.toUpperCase());
+}
+
+export function sendPayload(value: string): string {
+  return value;
 }
 
 export function runPythonReport(): string {
@@ -551,6 +563,14 @@ export function snapshotCaller(): string {
     expect(result.stdout).toContain('## Flow (call path among the symbols you queried)');
     expect(result.stdout).toMatch(/1\. entryPoint[\s\S]*2\. runPythonReport[\s\S]*3\. renderReport/);
     expect(result.stdout).toContain('dynamic: general crosslang');
+  });
+
+  it('bridges CLI endpoint-only flow queries across two unnamed intermediates', () => {
+    const result = runCli(testDir, ['explore', 'entryPoint', 'sendPayload']);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('## Flow (call path among the symbols you queried)');
+    expect(result.stdout).toMatch(/1\. entryPoint[\s\S]*2\. normalizeInput[\s\S]*3\. buildPayload[\s\S]*4\. sendPayload/);
   });
 
   it('does not let MCP tool allowlist environment disable CLI read commands', () => {

@@ -1986,7 +1986,7 @@ export class ToolHandler {
         parent.set(seed.id, { prev: null, edge: null, node: seed });
         const q: Array<{ id: string; depth: number; streak: number }> = [{ id: seed.id, depth: 0, streak: 0 }];
         let deep: string | null = null, deepDepth = 0;
-        const MAX_BRIDGE = 1; // ≤1 consecutive UNNAMED hop: bridge one missing intermediate, never wander a god-function's fan-out
+        const MAX_BRIDGE = 2; // Bridge short endpoint queries (entry -> helper -> helper -> sink) without wandering fan-out.
         for (let h = 0; h < q.length && parent.size < 1500; h++) {
           const { id, depth, streak } = q[h]!;
           if (id !== seed.id && named.has(id) && depth > deepDepth) { deep = id; deepDepth = depth; }

@@ -39,11 +39,11 @@ describe('omniweave_explore — supporting relationships', () => {
 
     fs.writeFileSync(
       path.join(src, 'entry.ts'),
-      `import { runWorkflow, runPythonReport } from './workflow';
+      `import { runWorkflow, runPythonReport, normalizeInput } from './workflow';
 import type { Config } from './types';
 
 export function entryPoint(config: Config): string {
-  return runWorkflow(config) + runPythonReport(config.name);
+  return runWorkflow(config) + runPythonReport(config.name) + normalizeInput(config.name);
 }
 
 export function emitDone(): string {
@@ -61,6 +61,18 @@ export function runWorkflow(config: Config): string {
 
 export function stepOne(name: string): string {
   return name.trim();
+}
+
+export function normalizeInput(name: string): string {
+  return buildPayload(name.trim());
+}
+
+export function buildPayload(name: string): string {
+  return sendPayload(name.toUpperCase());
+}
+
+export function sendPayload(value: string): string {
+  return value;
 }
 
 export function runPythonReport(name: string): string {
@@ -171,5 +183,16 @@ export function runPythonReport(name: string): string {
     expect(text).toContain('## Flow (call path among the symbols you queried)');
     expect(text).toMatch(/1\. entryPoint[\s\S]*2\. runPythonReport[\s\S]*3\. renderReport/);
     expect(text).toContain('dynamic: general crosslang');
+  });
+
+  it('bridges endpoint-only flow queries across two unnamed intermediates', async () => {
+    const result = await handler.execute('omniweave_explore', {
+      query: 'entryPoint sendPayload',
+      maxFiles: 8,
+    });
+    const text = result.content[0].text;
+
+    expect(text).toContain('## Flow (call path among the symbols you queried)');
+    expect(text).toMatch(/1\. entryPoint[\s\S]*2\. normalizeInput[\s\S]*3\. buildPayload[\s\S]*4\. sendPayload/);
   });
 });
