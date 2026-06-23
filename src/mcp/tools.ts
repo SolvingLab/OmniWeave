@@ -882,14 +882,42 @@ function visibleToolsForAllowlist(allow: Set<string> | null): ToolDefinition[] {
     : tools.filter(t => DEFAULT_MCP_TOOLS.has(shortToolName(t.name)));
 }
 
+const TINY_REPO_FILE_THRESHOLD = 500;
+const TINY_REPO_CORE_TOOLS = new Set([
+  'omniweave_explore',
+  'omniweave_search',
+  'omniweave_node',
+]);
+
+function toolsForSurface(allow: Set<string> | null, fileCount?: number): ToolDefinition[] {
+  let visible = visibleToolsForAllowlist(allow);
+  if (fileCount === undefined) return visible;
+
+  if (fileCount < TINY_REPO_FILE_THRESHOLD) {
+    visible = visible.filter(t => TINY_REPO_CORE_TOOLS.has(t.name));
+  }
+
+  const callBudget = getExploreBudget(fileCount);
+  const outputBudget = getExploreOutputBudget(fileCount);
+  return visible.map(tool => {
+    if (tool.name === 'omniweave_explore') {
+      return {
+        ...tool,
+        description: `${tool.description} Budget: make at most ${callBudget} calls for this project (${fileCount.toLocaleString()} files indexed). If maxFiles is omitted, this project defaults to ${outputBudget.defaultMaxFiles} source files per call.`,
+      };
+    }
+    return tool;
+  });
+}
+
 /**
  * Allowlist-filtered tool definitions WITHOUT an engine — the static surface the
  * proxy answers `tools/list` with before any project is open. Mirrors
- * `ToolHandler.getTools()` in the no-OmniWeave case (the dynamic per-repo budget
- * note in a description only adds once `cg` is loaded; the schemas are static).
+ * `ToolHandler.getTools()` when a file count is provided; without one, only
+ * schema-safe static fields are returned.
  */
-export function getStaticTools(): ToolDefinition[] {
-  return visibleToolsForAllowlist(parseToolAllowlist());
+export function getStaticTools(fileCount?: number): ToolDefinition[] {
+  return toolsForSurface(parseToolAllowlist(), fileCount);
 }
 
 /**
@@ -1016,8 +1044,6 @@ export class ToolHandler {
 
     try {
       const stats = this.cg.getStats();
-      const callBudget = getExploreBudget(stats.fileCount);
-      const outputBudget = getExploreOutputBudget(stats.fileCount);
 
       // Tiny-repo tool gating: on projects under TINY_REPO_FILE_THRESHOLD
       // files, only expose the core trio (search, node, explore) — one
@@ -1042,25 +1068,7 @@ export class ToolHandler {
       // probes; iter3 measurement showed sinatra is structurally the
       // SAME problem as cobra (single-file WITHOUT-arm Read wins),
       // so it deserves the same gating.
-      const TINY_REPO_FILE_THRESHOLD = 500;
-      const TINY_REPO_CORE_TOOLS = new Set([
-        'omniweave_explore',
-        'omniweave_search',
-        'omniweave_node',
-      ]);
-      if (stats.fileCount < TINY_REPO_FILE_THRESHOLD) {
-        visible = visible.filter(t => TINY_REPO_CORE_TOOLS.has(t.name));
-      }
-
-      return visible.map(tool => {
-        if (tool.name === 'omniweave_explore') {
-          return {
-            ...tool,
-            description: `${tool.description} Budget: make at most ${callBudget} calls for this project (${stats.fileCount.toLocaleString()} files indexed). If maxFiles is omitted, this project defaults to ${outputBudget.defaultMaxFiles} source files per call.`,
-          };
-        }
-        return tool;
-      });
+      return toolsForSurface(allow, stats.fileCount);
     } catch {
       return visible;
     }

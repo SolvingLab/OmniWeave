@@ -94,6 +94,38 @@ describe('OMNIWEAVE_MCP_TOOLS allowlist', () => {
     expect(explore?.description).toContain('defaults to 4 source files per call');
   });
 
+  it('applies the same project-size shaping to static proxy tools when file count is known', () => {
+    delete process.env[ENV];
+    const tiny = getStaticTools(42);
+    const medium = getStaticTools(505);
+
+    expect(tiny.map(t => t.name).sort()).toEqual([
+      'omniweave_explore',
+      'omniweave_node',
+      'omniweave_search',
+    ]);
+    expect(tiny.find(t => t.name === 'omniweave_explore')?.description).toContain(
+      'Budget: make at most 1 calls for this project (42 files indexed)'
+    );
+    expect(tiny.find(t => t.name === 'omniweave_explore')?.description).toContain(
+      'defaults to 4 source files per call'
+    );
+
+    expect(medium.map(t => t.name).sort()).toEqual([
+      'omniweave_callers',
+      'omniweave_explore',
+      'omniweave_impact',
+      'omniweave_node',
+      'omniweave_search',
+    ]);
+    expect(medium.find(t => t.name === 'omniweave_explore')?.description).toContain(
+      'Budget: make at most 2 calls for this project (505 files indexed)'
+    );
+    expect(medium.find(t => t.name === 'omniweave_explore')?.description).toContain(
+      'defaults to 8 source files per call'
+    );
+  });
+
   it('discloses bounded numeric parameters in the static tool schemas', () => {
     delete process.env[ENV];
     const byName = new Map(getStaticTools().map(t => [t.name, t]));

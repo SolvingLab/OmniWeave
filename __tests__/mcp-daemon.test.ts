@@ -231,6 +231,37 @@ describe('Shared MCP daemon (issue #411)', () => {
     expect(readLockPid(realRoot)).toBe(daemonPid);
   }, 40000);
 
+  it('proxy tools/list uses indexed file count for tiny gating and explore budget', async () => {
+    const srcDir = path.join(tempDir, 'src');
+    fs.mkdirSync(srcDir, { recursive: true });
+    for (let i = 0; i < 42; i++) {
+      fs.writeFileSync(
+        path.join(srcDir, `file-${i}.ts`),
+        `export function proxyToolSurface${i}(): number { return ${i}; }\n`
+      );
+    }
+    const cg = await OmniWeave.open(tempDir);
+    await cg.indexAll();
+    cg.close();
+
+    const server = spawnServer(tempDir, { OMNIWEAVE_DAEMON_IDLE_TIMEOUT_MS: '15000' });
+    servers.push(server);
+    sendInitialize(server.child, `file://${tempDir}`, 1);
+    await waitFor(() => findResponse(server.stdout, 1), 10000);
+
+    sendMessage(server.child, { jsonrpc: '2.0', id: 2, method: 'tools/list' });
+    const toolsResp = await waitFor(() => findResponse(server.stdout, 2), 10000);
+    const tools = toolsResp.result.tools as Array<{ name: string; description: string }>;
+    expect(tools.map((t) => t.name).sort()).toEqual([
+      'omniweave_explore',
+      'omniweave_node',
+      'omniweave_search',
+    ]);
+    const explore = tools.find((t) => t.name === 'omniweave_explore');
+    expect(explore?.description).toContain('Budget: make at most 1 calls for this project (42 files indexed)');
+    expect(explore?.description).toContain('defaults to 4 source files per call');
+  }, 40000);
+
   it('concurrent launchers converge on a single daemon (lockfile race — must-fix 1)', async () => {
     const env = { OMNIWEAVE_DAEMON_IDLE_TIMEOUT_MS: '15000' };
 

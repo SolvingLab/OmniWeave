@@ -31,6 +31,8 @@ import { getStaticTools } from './tools';
 import { getTelemetry, ClientInfo } from '../telemetry';
 import type { MCPEngine } from './engine';
 
+const loadDb = (): typeof import('../db') => require('../db') as typeof import('../db');
+
 /** Default poll cadence for the PPID watchdog (same as the direct server). */
 const DEFAULT_PPID_POLL_MS = 5000;
 
@@ -42,6 +44,22 @@ const DEFAULT_PPID_POLL_MS = 5000;
  * when debugging daemon attach. (#618; approach from #640 by @mturac)
  */
 const LOG_ATTACH_ENV = 'OMNIWEAVE_MCP_LOG_ATTACH';
+
+function readIndexedFileCount(projectRoot: string): number | null {
+  let conn: import('../db').DatabaseConnection | null = null;
+  try {
+    const { DatabaseConnection, getDatabasePath } = loadDb();
+    conn = DatabaseConnection.open(getDatabasePath(projectRoot), { migrate: false, readOnly: true });
+    const row = conn.getDb().prepare('SELECT COUNT(*) AS count FROM files').get() as { count?: unknown } | undefined;
+    return typeof row?.count === 'number' && Number.isFinite(row.count) ? row.count : null;
+  } catch {
+    return null;
+  } finally {
+    if (conn) {
+      try { conn.close(); } catch { /* best-effort */ }
+    }
+  }
+}
 
 /**
  * Log a successful daemon attach — gated behind {@link LOG_ATTACH_ENV} so it is
@@ -241,6 +259,7 @@ export async function runLocalHandshakeProxy(deps: LocalHandshakeDeps): Promise<
     if (!engineReady) engineReady = engine.ensureInitialized(deps.root).catch(() => { /* degraded */ });
     return engineReady;
   };
+  const currentStaticTools = () => getStaticTools(readIndexedFileCount(deps.root) ?? undefined);
   // Daemon-unavailable fallback: serve a client message in-process.
   const handleLocally = async (line: string): Promise<void> => {
     let msg: JsonRpc; try { msg = JSON.parse(line) as JsonRpc; } catch { return; }
@@ -298,7 +317,7 @@ export async function runLocalHandshakeProxy(deps: LocalHandshakeDeps): Promise<
         writeClient({ jsonrpc: '2.0', id: msg.id, result: { protocolVersion: PROTOCOL_VERSION, capabilities: { tools: {} }, serverInfo: SERVER_INFO, instructions: SERVER_INSTRUCTIONS } });
         routeToDaemon(line); // prime the daemon so it resolves the project (its reply is suppressed below)
       } else if (msg.method === 'tools/list') {
-        writeClient({ jsonrpc: '2.0', id: msg.id, result: { tools: getStaticTools() } });
+        writeClient({ jsonrpc: '2.0', id: msg.id, result: { tools: currentStaticTools() } });
       } else if (msg.method === 'resources/list') {
         // No resources exposed — answer the probe locally so it never reaches
         // the daemon as an unhandled method and logs `-32601`. (#621)
