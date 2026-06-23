@@ -163,6 +163,22 @@ function writeRelationshipKindScipIndex(filePath: string): void {
   ));
 }
 
+function writeScipOnlyImpactIndex(filePath: string): void {
+  const target = 'scip-typescript npm demo 1.0 src/a.ts/target().';
+  const orphan = 'scip-typescript npm demo 1.0 src/a.ts/orphan().';
+  fs.writeFileSync(filePath, msg(
+    fieldMsg(2, document('src/a.ts', 'typescript', [
+      occurrence([0, 16, 22], target, ROLE_DEFINITION),
+      occurrence([6, 16, 22], orphan, ROLE_DEFINITION),
+    ], [
+      symbolInfo(target, KIND_FUNCTION, 'target'),
+      symbolInfo(orphan, KIND_FUNCTION, 'orphan', [
+        relationship(target, { typeDefinition: true }),
+      ]),
+    ])),
+  ));
+}
+
 function writeMalformedRangeScipIndex(filePath: string): void {
   const badDef = 'scip-typescript npm demo 1.0 src/a.ts/badDefinition().';
   const target = 'scip-typescript npm demo 1.0 src/a.ts/target().';
@@ -379,6 +395,32 @@ describe('SCIP importer', () => {
 
       expect(new Set(scipKinds)).toEqual(new Set(['references', 'type_of']));
       expect(scipKinds.every((kind) => allowedRelationshipKinds.has(kind))).toBe(true);
+    } finally {
+      cg.destroy();
+    }
+  });
+
+  it('surfaces SCIP provenance in impact output', async () => {
+    const sourcePath = path.join(projectRoot, 'src', 'a.ts');
+    const text = `${fs.readFileSync(sourcePath, 'utf8')}export function orphan(): string {\n  return 'orphan';\n}\n`;
+    fs.writeFileSync(sourcePath, text);
+    await reindexProject(projectRoot);
+    writeScipOnlyImpactIndex(indexPath);
+    await importScipIndex(projectRoot, indexPath);
+
+    const cg = OmniWeave.openSync(projectRoot);
+    try {
+      const result = await new ToolHandler(cg).execute('omniweave_impact', {
+        symbol: 'target',
+        depth: 1,
+      });
+      const text = result.content[0]?.text ?? '';
+
+      expect(text).toContain('SCIP provenance');
+      expect(text).toContain('index.scip');
+      expect(text).toContain('unverified source text');
+      expect(text).toContain('unverified target text');
+      expect(text).toContain('orphan:7 [scip]');
     } finally {
       cg.destroy();
     }

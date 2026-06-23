@@ -4525,12 +4525,26 @@ export class ToolHandler {
 
   private formatImpact(symbol: string, impact: Subgraph, depth?: number): string {
     const nodeCount = impact.nodes.size;
+    const scipEdges = impact.edges.filter((edge) => edge.provenance === 'scip');
+    const directlyScipReached = new Set(scipEdges.map((edge) => edge.source));
 
     // Compact format: just list affected symbols grouped by file
     const lines: string[] = [
       `## Impact: "${symbol}" affects ${nodeCount} symbols`,
       '',
     ];
+
+    if (scipEdges.length > 0) {
+      const labels = new Set<string>();
+      for (const edge of scipEdges) {
+        for (const label of this.scipTrustLabels(edge)) labels.add(label);
+      }
+      const suffix = labels.size > 0 ? ` (${[...labels].join('; ')})` : '';
+      lines.push(
+        `> SCIP provenance: ${scipEdges.length} traversed relationship(s) came from index.scip${suffix}; verify those affected symbols with source before editing.`,
+        ''
+      );
+    }
 
     // Group by file
     const byFile = new Map<string, Node[]>();
@@ -4543,7 +4557,7 @@ export class ToolHandler {
     for (const [file, nodes] of byFile) {
       lines.push(`**${file}:**`);
       // Compact: inline list
-      const nodeList = nodes.map(n => `${n.name}:${n.startLine}`).join(', ');
+      const nodeList = nodes.map(n => `${n.name}:${n.startLine}${directlyScipReached.has(n.id) ? ' [scip]' : ''}`).join(', ');
       lines.push(nodeList);
       lines.push('');
     }
