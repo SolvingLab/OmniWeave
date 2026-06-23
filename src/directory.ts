@@ -99,7 +99,11 @@ export function getOmniWeaveDir(projectRoot: string): string {
  */
 export function isInitialized(projectRoot: string): boolean {
   const omniweaveDir = getOmniWeaveDir(projectRoot);
-  if (!fs.existsSync(omniweaveDir) || !fs.statSync(omniweaveDir).isDirectory()) {
+  if (!fs.existsSync(omniweaveDir)) {
+    return false;
+  }
+  const dirStat = fs.lstatSync(omniweaveDir);
+  if (dirStat.isSymbolicLink() || !dirStat.isDirectory()) {
     return false;
   }
   // Must have omniweave.db, not just .omniweave folder
@@ -228,6 +232,10 @@ function ensureGitignore(gitignorePath: string): boolean {
 export function createDirectory(projectRoot: string): void {
   const omniweaveDir = getOmniWeaveDir(projectRoot);
   const dbPath = path.join(omniweaveDir, 'omniweave.db');
+
+  if (fs.existsSync(omniweaveDir) && fs.lstatSync(omniweaveDir).isSymbolicLink()) {
+    throw new Error(`OmniWeave directory is a symlink: ${omniweaveDir}`);
+  }
 
   // Only throw if OmniWeave is actually initialized (db exists)
   // .omniweave/ folder alone is fine
@@ -374,7 +382,13 @@ export function validateDirectory(projectRoot: string): {
     return { valid: false, errors };
   }
 
-  if (!fs.statSync(omniweaveDir).isDirectory()) {
+  const dirStat = fs.lstatSync(omniweaveDir);
+  if (dirStat.isSymbolicLink()) {
+    errors.push('.omniweave exists but is a symlink');
+    return { valid: false, errors };
+  }
+
+  if (!dirStat.isDirectory()) {
     errors.push('.omniweave exists but is not a directory');
     return { valid: false, errors };
   }

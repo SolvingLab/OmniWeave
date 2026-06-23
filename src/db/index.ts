@@ -13,6 +13,10 @@ import { getOmniWeaveDir } from '../directory';
 
 export { SqliteDatabase, SqliteBackend } from './sqlite-adapter';
 
+export interface OpenDatabaseOptions {
+  migrate?: boolean;
+}
+
 /**
  * Apply connection-level PRAGMAs. Shared by `initialize` and `open` so the two
  * paths can't drift.
@@ -87,24 +91,34 @@ export class DatabaseConnection {
   /**
    * Open an existing database
    */
-  static open(dbPath: string): DatabaseConnection {
+  static open(dbPath: string, options: OpenDatabaseOptions = {}): DatabaseConnection {
     if (!fs.existsSync(dbPath)) {
       throw new Error(`Database not found: ${dbPath}`);
     }
 
     const { db, backend } = createDatabase(dbPath);
 
-    configureConnection(db);
+    try {
+      configureConnection(db);
 
-    // Check and run migrations if needed
-    const conn = new DatabaseConnection(db, dbPath, backend);
-    const currentVersion = getCurrentVersion(db);
+      // Check and run migrations if needed
+      const conn = new DatabaseConnection(db, dbPath, backend);
+      const currentVersion = getCurrentVersion(db);
+      if (currentVersion > CURRENT_SCHEMA_VERSION) {
+        throw new Error(
+          `Database schema version ${currentVersion} is newer than this OmniWeave supports (${CURRENT_SCHEMA_VERSION})`
+        );
+      }
 
-    if (currentVersion < CURRENT_SCHEMA_VERSION) {
-      runMigrations(db, currentVersion);
+      if (options.migrate !== false && currentVersion < CURRENT_SCHEMA_VERSION) {
+        runMigrations(db, currentVersion);
+      }
+
+      return conn;
+    } catch (err) {
+      if (db.open) db.close();
+      throw err;
     }
-
-    return conn;
   }
 
   /**

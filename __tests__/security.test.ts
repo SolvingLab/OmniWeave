@@ -18,6 +18,7 @@ import { ToolHandler, tools } from '../src/mcp/tools';
 import { scanDirectory, isSourceFile } from '../src/extraction';
 import { DatabaseConnection, getDatabasePath } from '../src/db';
 import { QueryBuilder } from '../src/db/queries';
+import { validateDirectory } from '../src/directory';
 
 function createTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'omniweave-security-test-'));
@@ -282,6 +283,34 @@ describe('Symlink escape prevention (#527)', () => {
     } finally {
       cg.close();
     }
+  });
+});
+
+describe('OmniWeave directory trust boundary', () => {
+  let root: string;
+  let outside: string;
+
+  beforeEach(() => {
+    root = createTempDir();
+    outside = createTempDir();
+  });
+
+  afterEach(() => {
+    cleanupTempDir(root);
+    cleanupTempDir(outside);
+  });
+
+  it('rejects a symlinked .omniweave directory during validation', () => {
+    try {
+      fs.symlinkSync(outside, path.join(root, '.omniweave'), 'dir');
+    } catch {
+      return;
+    }
+
+    const validation = validateDirectory(root);
+
+    expect(validation.valid).toBe(false);
+    expect(validation.errors.join('\n')).toContain('symlink');
   });
 });
 

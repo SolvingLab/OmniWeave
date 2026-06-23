@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { createDirectory, getOmniWeaveDir, isInitialized, validateDirectory } from './directory';
-import { DatabaseConnection, getDatabasePath } from './db';
+import { DatabaseConnection, getDatabasePath, type SqliteDatabase } from './db';
 import { CURRENT_SCHEMA_VERSION } from './db/migrations';
 import { QueryBuilder } from './db/queries';
 import { FileLock, validatePathWithinRoot } from './utils';
@@ -96,6 +96,10 @@ export interface ImportSnapshotResult {
   manifest: SnapshotManifest;
   warnings: string[];
   staleness: SnapshotStaleness | null;
+}
+
+interface StagedVerifySnapshotResult extends VerifySnapshotResult {
+  stagingDir?: string;
 }
 
 export async function exportSnapshot(
@@ -203,22 +207,58 @@ export async function verifySnapshot(
   snapshotDir: string,
   options: VerifySnapshotOptions = {},
 ): Promise<VerifySnapshotResult> {
+  const verification = await verifySnapshotWithStaging(snapshotDir, options);
+  try {
+    return {
+      directory: verification.directory,
+      manifestPath: verification.manifestPath,
+      ok: verification.ok,
+      errors: verification.errors,
+      warnings: verification.warnings,
+      manifest: verification.manifest,
+      staleness: verification.staleness,
+    };
+  } finally {
+    removeStagingDirectory(verification.stagingDir);
+  }
+}
+
+async function verifySnapshotWithStaging(
+  snapshotDir: string,
+  options: VerifySnapshotOptions = {},
+): Promise<StagedVerifySnapshotResult> {
   const directory = resolveExistingDirectory(snapshotDir, 'snapshot directory');
   const manifestPath = path.join(directory, SNAPSHOT_MANIFEST_FILENAME);
   const errors: string[] = [];
   const warnings: string[] = [];
 
   const manifest = parseSnapshotManifest(manifestPath, errors);
+  let stagingDir: string | undefined;
   if (manifest) {
-    await validateSnapshotManifest(directory, manifest, errors, warnings);
+    const canStage = validateSnapshotManifest(manifest, errors);
+    if (canStage) {
+      stagingDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omniweave-snapshot-stage-'));
+      try {
+        stageSnapshotArtifacts(directory, stagingDir, manifest, errors, warnings);
+        if (errors.length === 0) {
+          await validateStagedSnapshotArtifacts(stagingDir, manifest, errors);
+        }
+        if (errors.length === 0) {
+          validateStagedSnapshotDatabase(path.join(stagingDir, SNAPSHOT_DATABASE_FILENAME), manifest, errors);
+        }
+        if (errors.length === 0) {
+          await validateStagedSnapshotArtifacts(stagingDir, manifest, errors);
+        }
+      } catch (err) {
+        errors.push(`Snapshot artifact staging failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
   }
 
   let staleness: SnapshotStaleness | undefined;
-  if (manifest && errors.length === 0 && options.projectRoot) {
+  if (manifest && stagingDir && errors.length === 0 && options.projectRoot) {
     const root = resolveExistingDirectory(options.projectRoot, 'project root');
-    staleness = await withTemporarySnapshotDatabase(directory, manifest, async (dbPath) =>
-      computeSnapshotStaleness(root, dbPath)
-    );
+    staleness = await computeSnapshotStaleness(root, path.join(stagingDir, SNAPSHOT_DATABASE_FILENAME));
     if (staleness.unsafeFiles.length > 0) {
       errors.push(
         `Snapshot database contains indexed paths outside the target root: ${summarizePaths(staleness.unsafeFiles)}`
@@ -227,6 +267,9 @@ export async function verifySnapshot(
     if (staleness.stale) {
       warnings.push(describeStaleness(staleness));
     }
+  }
+  if (manifest && stagingDir && errors.length === 0) {
+    await validateStagedSnapshotArtifacts(stagingDir, manifest, errors);
   }
 
   return {
@@ -237,6 +280,7 @@ export async function verifySnapshot(
     warnings,
     manifest,
     staleness,
+    stagingDir,
   };
 }
 
@@ -246,52 +290,56 @@ export async function importSnapshot(
   options: ImportSnapshotOptions = {},
 ): Promise<ImportSnapshotResult> {
   const root = resolveExistingDirectory(projectRoot, 'project root');
-  const verification = await verifySnapshot(snapshotDir, { projectRoot: root });
-  if (!verification.ok || !verification.manifest) {
-    throw new Error(`Invalid snapshot: ${summarizeMessages(verification.errors)}`);
-  }
+  const verification = await verifySnapshotWithStaging(snapshotDir, { projectRoot: root });
+  try {
+    if (!verification.ok || !verification.manifest || !verification.stagingDir) {
+      throw new Error(`Invalid snapshot: ${summarizeMessages(verification.errors)}`);
+    }
 
-  const staleness = verification.staleness ?? null;
-  if (staleness?.stale && options.allowStale !== true) {
-    throw new Error(
-      `${describeStaleness(staleness)} Re-run \`omniweave init -i\` for a fresh local graph, or pass --allow-stale to import this snapshot for inspection.`
-    );
-  }
+    const staleness = verification.staleness ?? null;
+    if (staleness?.stale && options.allowStale !== true) {
+      throw new Error(
+        `${describeStaleness(staleness)} Re-run \`omniweave init -i\` for a fresh local graph, or pass --allow-stale to import this snapshot for inspection.`
+      );
+    }
 
-  if (isInitialized(root) && options.force !== true) {
-    throw new Error(`OmniWeave already initialized in ${root}; pass --force to replace known database files`);
-  }
-
-  if (!isInitialized(root)) {
-    createDirectory(root);
-  }
-
-  const validation = validateDirectory(root);
-  if (!validation.valid) {
-    throw new Error(`Invalid OmniWeave directory: ${validation.errors.join(', ')}`);
-  }
-
-  const targetDir = getOmniWeaveDir(root);
-  const lock = new FileLock(path.join(targetDir, 'omniweave.lock'));
-
-  return await lock.withLockAsync(async () => {
     if (isInitialized(root) && options.force !== true) {
       throw new Error(`OmniWeave already initialized in ${root}; pass --force to replace known database files`);
     }
 
-    installSnapshotArtifacts(verification.directory, targetDir, verification.manifest!);
+    if (!isInitialized(root)) {
+      createDirectory(root);
+    }
 
-    const databasePath = getDatabasePath(root);
-    return {
-      directory: verification.directory,
-      projectRoot: root,
-      manifestPath: verification.manifestPath,
-      databasePath,
-      manifest: verification.manifest!,
-      warnings: verification.warnings,
-      staleness,
-    };
-  });
+    const validation = validateDirectory(root);
+    if (!validation.valid) {
+      throw new Error(`Invalid OmniWeave directory: ${validation.errors.join(', ')}`);
+    }
+
+    const targetDir = getOmniWeaveDir(root);
+    const lock = new FileLock(path.join(targetDir, 'omniweave.lock'));
+
+    return await lock.withLockAsync(async () => {
+      if (isInitialized(root) && options.force !== true) {
+        throw new Error(`OmniWeave already initialized in ${root}; pass --force to replace known database files`);
+      }
+
+      installSnapshotArtifacts(verification.stagingDir!, targetDir, verification.manifest!);
+
+      const databasePath = getDatabasePath(root);
+      return {
+        directory: verification.directory,
+        projectRoot: root,
+        manifestPath: verification.manifestPath,
+        databasePath,
+        manifest: verification.manifest!,
+        warnings: verification.warnings,
+        staleness,
+      };
+    });
+  } finally {
+    removeStagingDirectory(verification.stagingDir);
+  }
 }
 
 function resolveExistingDirectory(dir: string, label: string): string {
@@ -354,54 +402,52 @@ function parseSnapshotManifest(manifestPath: string, errors: string[]): Snapshot
   return parsed as unknown as SnapshotManifest;
 }
 
-async function validateSnapshotManifest(
-  snapshotDir: string,
+function validateSnapshotManifest(
   manifest: SnapshotManifest,
   errors: string[],
-  warnings: string[],
-): Promise<void> {
+): boolean {
   if (manifest.format !== SNAPSHOT_FORMAT) {
     errors.push(`Unsupported snapshot format: ${String(manifest.format)}`);
   }
   if (manifest.formatVersion !== SNAPSHOT_FORMAT_VERSION) {
     errors.push(`Unsupported snapshot format version: ${String(manifest.formatVersion)}`);
   }
-  if (typeof manifest.schemaVersion === 'number' && manifest.schemaVersion > CURRENT_SCHEMA_VERSION) {
-    errors.push(
-      `Snapshot schema version ${manifest.schemaVersion} is newer than this OmniWeave supports (${CURRENT_SCHEMA_VERSION})`
-    );
+  if (
+    manifest.schemaVersion !== null &&
+    (!Number.isSafeInteger(manifest.schemaVersion) || manifest.schemaVersion < 0)
+  ) {
+    errors.push('Snapshot manifest schemaVersion must be a non-negative integer or null');
+  } else if (typeof manifest.schemaVersion === 'number' && manifest.schemaVersion > CURRENT_SCHEMA_VERSION) {
+      errors.push(
+        `Snapshot schema version ${manifest.schemaVersion} is newer than this OmniWeave supports (${CURRENT_SCHEMA_VERSION})`
+      );
   }
   if (!isRecord((manifest as unknown as Record<string, unknown>).files)) {
     errors.push('Snapshot manifest files must be an object');
-    return;
+    return false;
   }
 
-  await validateSnapshotFileEntry(snapshotDir, manifest.files.database, SNAPSHOT_DATABASE_FILENAME, true, errors);
-  await validateSnapshotFileEntry(snapshotDir, manifest.files.wal, `${SNAPSHOT_DATABASE_FILENAME}-wal`, false, errors);
-  await validateSnapshotFileEntry(snapshotDir, manifest.files.shm, `${SNAPSHOT_DATABASE_FILENAME}-shm`, false, errors);
-
-  warnUnlistedArtifact(snapshotDir, manifest.files.wal, `${SNAPSHOT_DATABASE_FILENAME}-wal`, warnings);
-  warnUnlistedArtifact(snapshotDir, manifest.files.shm, `${SNAPSHOT_DATABASE_FILENAME}-shm`, warnings);
+  return errors.length === 0;
 }
 
-async function validateSnapshotFileEntry(
-  snapshotDir: string,
+function validateSnapshotFileEntryMetadata(
   entry: SnapshotFileEntry | undefined,
   expectedPath: string,
   required: boolean,
   errors: string[],
-): Promise<void> {
+): SnapshotFileEntry | undefined {
+  const errorCount = errors.length;
   if (!entry) {
     if (required) errors.push(`Snapshot manifest is missing ${expectedPath}`);
-    return;
+    return undefined;
   }
   if (!isRecord(entry)) {
     errors.push(`Snapshot manifest entry for ${expectedPath} must be an object`);
-    return;
+    return undefined;
   }
   if (entry.path !== expectedPath) {
     errors.push(`Snapshot file entry for ${expectedPath} must use path "${expectedPath}"`);
-    return;
+    return undefined;
   }
   if (!Number.isSafeInteger(entry.bytes) || entry.bytes < 0) {
     errors.push(`Snapshot file entry for ${expectedPath} has invalid byte size`);
@@ -409,26 +455,163 @@ async function validateSnapshotFileEntry(
   if (typeof entry.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(entry.sha256)) {
     errors.push(`Snapshot file entry for ${expectedPath} has invalid sha256`);
   }
+  return errors.length === errorCount ? entry : undefined;
+}
+
+function stageSnapshotArtifacts(
+  snapshotDir: string,
+  stagingDir: string,
+  manifest: SnapshotManifest,
+  errors: string[],
+  warnings: string[],
+): void {
+  fs.mkdirSync(stagingDir, { recursive: true });
+  stageSnapshotArtifact(snapshotDir, stagingDir, manifest.files.database, SNAPSHOT_DATABASE_FILENAME, true, errors);
+  stageSnapshotArtifact(snapshotDir, stagingDir, manifest.files.wal, `${SNAPSHOT_DATABASE_FILENAME}-wal`, false, errors);
+  stageSnapshotArtifact(snapshotDir, stagingDir, manifest.files.shm, `${SNAPSHOT_DATABASE_FILENAME}-shm`, false, errors);
+
+  warnUnlistedArtifact(snapshotDir, manifest.files.wal, `${SNAPSHOT_DATABASE_FILENAME}-wal`, warnings);
+  warnUnlistedArtifact(snapshotDir, manifest.files.shm, `${SNAPSHOT_DATABASE_FILENAME}-shm`, warnings);
+}
+
+function stageSnapshotArtifact(
+  snapshotDir: string,
+  stagingDir: string,
+  entry: SnapshotFileEntry | undefined,
+  expectedPath: string,
+  required: boolean,
+  errors: string[],
+): void {
+  const validEntry = validateSnapshotFileEntryMetadata(entry, expectedPath, required, errors);
+  if (!validEntry) return;
 
   const artifactPath = path.join(snapshotDir, expectedPath);
   let stat: fs.Stats;
   try {
-    stat = fs.statSync(artifactPath);
+    stat = fs.lstatSync(artifactPath);
   } catch {
     errors.push(`Snapshot artifact not found: ${expectedPath}`);
+    return;
+  }
+  if (stat.isSymbolicLink()) {
+    errors.push(`Snapshot artifact must not be a symlink: ${expectedPath}`);
     return;
   }
   if (!stat.isFile()) {
     errors.push(`Snapshot artifact is not a file: ${expectedPath}`);
     return;
   }
-  if (stat.size !== entry.bytes) {
-    errors.push(`Snapshot artifact size mismatch for ${expectedPath}: expected ${entry.bytes}, got ${stat.size}`);
+
+  fs.copyFileSync(artifactPath, path.join(stagingDir, validEntry.path));
+}
+
+async function validateStagedSnapshotArtifacts(
+  stagingDir: string,
+  manifest: SnapshotManifest,
+  errors: string[],
+): Promise<void> {
+  await validateStagedSnapshotFileEntry(stagingDir, manifest.files.database, SNAPSHOT_DATABASE_FILENAME, true, errors);
+  await validateStagedSnapshotFileEntry(stagingDir, manifest.files.wal, `${SNAPSHOT_DATABASE_FILENAME}-wal`, false, errors);
+  await validateStagedSnapshotFileEntry(stagingDir, manifest.files.shm, `${SNAPSHOT_DATABASE_FILENAME}-shm`, false, errors);
+}
+
+async function validateStagedSnapshotFileEntry(
+  stagingDir: string,
+  entry: SnapshotFileEntry | undefined,
+  expectedPath: string,
+  required: boolean,
+  errors: string[],
+): Promise<void> {
+  const validEntry = validateSnapshotFileEntryMetadata(entry, expectedPath, required, errors);
+  if (!validEntry) return;
+
+  const artifactPath = path.join(stagingDir, validEntry.path);
+  let stat: fs.Stats;
+  try {
+    stat = fs.lstatSync(artifactPath);
+  } catch {
+    errors.push(`Staged snapshot artifact not found: ${expectedPath}`);
+    return;
+  }
+  if (!stat.isFile()) {
+    errors.push(`Staged snapshot artifact is not a file: ${expectedPath}`);
+    return;
+  }
+  if (stat.size !== validEntry.bytes) {
+    errors.push(`Snapshot artifact size mismatch for ${expectedPath}: expected ${validEntry.bytes}, got ${stat.size}`);
   }
   const actualHash = await sha256File(artifactPath);
-  if (actualHash !== entry.sha256) {
+  if (actualHash !== validEntry.sha256) {
     errors.push(`Snapshot artifact hash mismatch for ${expectedPath}`);
   }
+}
+
+function validateStagedSnapshotDatabase(
+  databasePath: string,
+  manifest: SnapshotManifest,
+  errors: string[],
+): void {
+  let conn: DatabaseConnection | undefined;
+  try {
+    conn = DatabaseConnection.open(databasePath, { migrate: false });
+    const actualSchemaVersion = conn.getSchemaVersion()?.version ?? null;
+    if (actualSchemaVersion !== manifest.schemaVersion) {
+      errors.push(
+        `Snapshot database schema version ${formatSchemaVersion(actualSchemaVersion)} does not match manifest schemaVersion ${formatSchemaVersion(manifest.schemaVersion)}`
+      );
+      return;
+    }
+    validateSnapshotPathColumn(conn.getDb(), 'files', 'path', 'files.path', errors);
+    validateSnapshotPathColumn(conn.getDb(), 'nodes', 'file_path', 'nodes.file_path', errors);
+    validateSnapshotPathColumn(conn.getDb(), 'unresolved_refs', 'file_path', 'unresolved_refs.file_path', errors);
+  } catch (err) {
+    errors.push(`Snapshot database validation failed: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    conn?.close();
+  }
+}
+
+function validateSnapshotPathColumn(
+  db: SqliteDatabase,
+  table: string,
+  column: string,
+  label: string,
+  errors: string[],
+): void {
+  let rows: Array<{ value: unknown }>;
+  try {
+    rows = db.prepare(`SELECT DISTINCT ${column} AS value FROM ${table}`).all() as Array<{ value: unknown }>;
+  } catch (err) {
+    errors.push(`Snapshot database cannot read ${label}: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+
+  const unsafeValues = rows
+    .map((row) => row.value)
+    .filter((value) => !isSafeSnapshotIndexedPath(value))
+    .map(displayPathValue);
+  if (unsafeValues.length > 0) {
+    errors.push(`Snapshot database contains unsafe ${label} values: ${summarizePaths(unsafeValues)}`);
+  }
+}
+
+function isSafeSnapshotIndexedPath(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length === 0 || value.includes('\0') || value.includes('\\')) {
+    return false;
+  }
+  if (path.isAbsolute(value) || path.posix.isAbsolute(value) || path.win32.isAbsolute(value)) {
+    return false;
+  }
+  const normalized = path.posix.normalize(value);
+  return normalized === value && normalized !== '.' && normalized !== '..' && !normalized.startsWith('../');
+}
+
+function displayPathValue(value: unknown): string {
+  return typeof value === 'string' ? JSON.stringify(value) : String(value);
+}
+
+function formatSchemaVersion(version: number | null): string {
+  return version === null ? 'null' : String(version);
 }
 
 function warnUnlistedArtifact(
@@ -442,22 +625,8 @@ function warnUnlistedArtifact(
   }
 }
 
-async function withTemporarySnapshotDatabase<T>(
-  snapshotDir: string,
-  manifest: SnapshotManifest,
-  fn: (dbPath: string) => Promise<T>,
-): Promise<T> {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omniweave-snapshot-verify-'));
-  try {
-    copySnapshotArtifacts(snapshotDir, tempDir, manifest);
-    return await fn(path.join(tempDir, SNAPSHOT_DATABASE_FILENAME));
-  } finally {
-    fs.rmSync(tempDir, { recursive: true, force: true });
-  }
-}
-
 async function computeSnapshotStaleness(projectRoot: string, dbPath: string): Promise<SnapshotStaleness> {
-  const conn = DatabaseConnection.open(dbPath);
+  const conn = DatabaseConnection.open(dbPath, { migrate: false });
   let files: FileRecord[];
   try {
     files = new QueryBuilder(conn.getDb()).getAllFiles();
@@ -511,22 +680,9 @@ async function computeSnapshotStaleness(projectRoot: string, dbPath: string): Pr
   };
 }
 
-function copySnapshotArtifacts(snapshotDir: string, targetDir: string, manifest: SnapshotManifest): void {
-  fs.mkdirSync(targetDir, { recursive: true });
-  copySnapshotArtifact(snapshotDir, targetDir, manifest.files.database);
-  if (manifest.files.wal) copySnapshotArtifact(snapshotDir, targetDir, manifest.files.wal);
-  if (manifest.files.shm) copySnapshotArtifact(snapshotDir, targetDir, manifest.files.shm);
-}
-
-function copySnapshotArtifact(snapshotDir: string, targetDir: string, entry: SnapshotFileEntry): void {
-  fs.copyFileSync(path.join(snapshotDir, entry.path), path.join(targetDir, entry.path));
-}
-
-function installSnapshotArtifacts(snapshotDir: string, targetDir: string, manifest: SnapshotManifest): void {
-  const stagingDir = fs.mkdtempSync(path.join(targetDir, '.snapshot-import-stage-'));
+function installSnapshotArtifacts(stagingDir: string, targetDir: string, manifest: SnapshotManifest): void {
   const backupDir = fs.mkdtempSync(path.join(targetDir, '.snapshot-import-backup-'));
   try {
-    copySnapshotArtifacts(snapshotDir, stagingDir, manifest);
     moveKnownGraphFiles(targetDir, backupDir);
     moveSnapshotArtifacts(stagingDir, targetDir, manifest);
   } catch (err) {
@@ -534,7 +690,6 @@ function installSnapshotArtifacts(snapshotDir: string, targetDir: string, manife
     restoreKnownGraphFiles(backupDir, targetDir);
     throw err;
   } finally {
-    fs.rmSync(stagingDir, { recursive: true, force: true });
     fs.rmSync(backupDir, { recursive: true, force: true });
   }
 }
@@ -571,6 +726,12 @@ function restoreKnownGraphFiles(backupDir: string, targetDir: string): void {
 function removeKnownGraphFiles(targetDir: string): void {
   for (const name of knownGraphFileNames()) {
     fs.rmSync(path.join(targetDir, name), { force: true });
+  }
+}
+
+function removeStagingDirectory(stagingDir: string | undefined): void {
+  if (stagingDir) {
+    fs.rmSync(stagingDir, { recursive: true, force: true });
   }
 }
 

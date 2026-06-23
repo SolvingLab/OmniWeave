@@ -6,6 +6,7 @@ import * as os from 'os';
 import * as path from 'path';
 import OmniWeave from '../src/index';
 import { DatabaseConnection, getDatabasePath } from '../src/db';
+import { CURRENT_SCHEMA_VERSION } from '../src/db/migrations';
 import {
   exportSnapshot,
   importSnapshot,
@@ -122,6 +123,58 @@ describe('snapshot import and verify', () => {
     expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
   });
 
+  it('rejects snapshots whose database schema is newer than supported even when the manifest is current', async () => {
+    const conn = DatabaseConnection.open(path.join(outputDir, SNAPSHOT_DATABASE_FILENAME));
+    try {
+      conn.getDb().prepare(
+        'INSERT INTO schema_versions (version, applied_at, description) VALUES (?, ?, ?)'
+      ).run(CURRENT_SCHEMA_VERSION + 1, Date.now(), 'future schema');
+      conn.getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      conn.close();
+    }
+    refreshSnapshotDatabaseManifest(outputDir);
+
+    const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+
+    expect(verification.ok).toBe(false);
+    expect(verification.errors.join('\n')).toContain('newer than this OmniWeave supports');
+    await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
+    expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+  });
+
+  it('rejects snapshots whose manifest schema does not match the database schema', async () => {
+    updateSnapshotManifestForTest(outputDir, (manifest) => {
+      manifest.schemaVersion = CURRENT_SCHEMA_VERSION - 1;
+    });
+
+    const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+
+    expect(verification.ok).toBe(false);
+    expect(verification.errors.join('\n')).toContain('does not match manifest schemaVersion');
+    await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
+    expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+  });
+
+  it('rejects snapshot artifact symlinks even when the target bytes match the manifest', async () => {
+    const dbPath = path.join(outputDir, SNAPSHOT_DATABASE_FILENAME);
+    const realDbPath = path.join(outputDir, 'real-omniweave.db');
+    fs.renameSync(dbPath, realDbPath);
+    try {
+      fs.symlinkSync(realDbPath, dbPath);
+    } catch {
+      fs.renameSync(realDbPath, dbPath);
+      return;
+    }
+
+    const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+
+    expect(verification.ok).toBe(false);
+    expect(verification.errors.join('\n')).toContain('Snapshot artifact must not be a symlink');
+    await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
+    expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+  });
+
   it('imports a verified snapshot into an uninitialized project and keeps the graph usable', async () => {
     const result = await importSnapshot(outputDir, targetRoot);
 
@@ -168,9 +221,67 @@ describe('snapshot import and verify', () => {
     const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
 
     expect(verification.ok).toBe(false);
-    expect(verification.errors.join('\n')).toContain('outside the target root');
+    expect(verification.errors.join('\n')).toContain('unsafe files.path');
     await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
     expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+  });
+
+  it('rejects snapshots whose node file paths are unsafe', async () => {
+    const conn = DatabaseConnection.open(path.join(outputDir, SNAPSHOT_DATABASE_FILENAME));
+    try {
+      conn.getDb().prepare('UPDATE nodes SET file_path = ? WHERE file_path = ?').run('/tmp/outside.ts', 'src/index.ts');
+      conn.getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      conn.close();
+    }
+    refreshSnapshotDatabaseManifest(outputDir);
+
+    const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+
+    expect(verification.ok).toBe(false);
+    expect(verification.errors.join('\n')).toContain('unsafe nodes.file_path');
+    await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
+    expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+  });
+
+  it('rejects snapshots whose unresolved reference file paths are unsafe', async () => {
+    const conn = DatabaseConnection.open(path.join(outputDir, SNAPSHOT_DATABASE_FILENAME));
+    try {
+      const node = conn.getDb().prepare('SELECT id FROM nodes LIMIT 1').get() as { id: string } | undefined;
+      expect(node).toBeDefined();
+      conn.getDb().prepare(
+        `INSERT INTO unresolved_refs
+          (from_node_id, reference_name, reference_kind, line, col, candidates, file_path, language)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(node!.id, 'unsafeRef', 'call', 1, 1, '[]', 'src/../outside.ts', 'typescript');
+      conn.getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      conn.close();
+    }
+    refreshSnapshotDatabaseManifest(outputDir);
+
+    const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+
+    expect(verification.ok).toBe(false);
+    expect(verification.errors.join('\n')).toContain('unsafe unresolved_refs.file_path');
+    await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
+    expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+  });
+
+  it('rejects import when the target OmniWeave directory is a symlink', async () => {
+    const symlinkTarget = fs.mkdtempSync(path.join(os.tmpdir(), 'omniweave-snapshot-linked-index-'));
+    try {
+      try {
+        fs.symlinkSync(symlinkTarget, path.join(targetRoot, '.omniweave'), 'dir');
+      } catch {
+        return;
+      }
+
+      await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/symlink/);
+      expect(fs.existsSync(path.join(symlinkTarget, SNAPSHOT_DATABASE_FILENAME))).toBe(false);
+    } finally {
+      rmTree(symlinkTarget);
+    }
   });
 
   it('does not replace an existing index unless force is explicit', async () => {
