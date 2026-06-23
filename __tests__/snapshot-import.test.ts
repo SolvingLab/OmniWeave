@@ -157,6 +157,47 @@ describe('snapshot import and verify', () => {
     expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
   });
 
+  it('rejects snapshots whose manifest source fingerprint does not match the database', async () => {
+    updateSnapshotManifestForTest(outputDir, (manifest) => {
+      const sourceRoot = manifest.sourceRoot as Record<string, unknown>;
+      sourceRoot.fingerprint = 'forged-fingerprint';
+    });
+
+    const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+
+    expect(verification.ok).toBe(false);
+    expect(verification.errors.join('\n')).toContain('sourceRoot.fingerprint');
+    await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
+    expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+  });
+
+  it('rejects snapshots whose manifest graph counts do not match the database', async () => {
+    updateSnapshotManifestForTest(outputDir, (manifest) => {
+      const graph = manifest.graph as Record<string, unknown>;
+      graph.nodeCount = 0;
+    });
+
+    const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+
+    expect(verification.ok).toBe(false);
+    expect(verification.errors.join('\n')).toContain('graph.nodeCount');
+    await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
+    expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+  });
+
+  it('rejects snapshots with missing manifest sourceRoot before installing bytes', async () => {
+    updateSnapshotManifestForTest(outputDir, (manifest) => {
+      delete manifest.sourceRoot;
+    });
+
+    const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+
+    expect(verification.ok).toBe(false);
+    expect(verification.errors.join('\n')).toContain('sourceRoot must be an object');
+    await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
+    expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+  });
+
   it('rejects snapshot artifact symlinks even when the target bytes match the manifest', async () => {
     const dbPath = path.join(outputDir, SNAPSHOT_DATABASE_FILENAME);
     const realDbPath = path.join(outputDir, 'real-omniweave.db');

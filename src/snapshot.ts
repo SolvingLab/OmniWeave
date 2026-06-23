@@ -408,6 +408,7 @@ function validateSnapshotManifest(
   manifest: SnapshotManifest,
   errors: string[],
 ): boolean {
+  const raw = manifest as unknown as Record<string, unknown>;
   if (manifest.format !== SNAPSHOT_FORMAT) {
     errors.push(`Unsupported snapshot format: ${String(manifest.format)}`);
   }
@@ -424,7 +425,13 @@ function validateSnapshotManifest(
         `Snapshot schema version ${manifest.schemaVersion} is newer than this OmniWeave supports (${CURRENT_SCHEMA_VERSION})`
       );
   }
-  if (!isRecord((manifest as unknown as Record<string, unknown>).files)) {
+  if (!isRecord(raw.sourceRoot)) {
+    errors.push('Snapshot manifest sourceRoot must be an object');
+  }
+  if (!isRecord(raw.graph)) {
+    errors.push('Snapshot manifest graph must be an object');
+  }
+  if (!isRecord(raw.files)) {
     errors.push('Snapshot manifest files must be an object');
     return false;
   }
@@ -568,6 +575,7 @@ function validateStagedSnapshotDatabase(
     validateSnapshotPathColumn(conn.getDb(), 'unresolved_refs', 'file_path', 'unresolved_refs.file_path', errors);
     validateSnapshotDatabasePragmas(conn.getDb(), errors);
     validateSnapshotIndexedPathMembership(conn.getDb(), errors);
+    validateSnapshotManifestMatchesDatabase(conn.getDb(), manifest, errors);
   } catch (err) {
     errors.push(`Snapshot database validation failed: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
@@ -645,6 +653,79 @@ function validateSnapshotPathMembership(
     errors.push(
       `Snapshot database contains ${label} values not present in files.path: ${summarizePaths(rows.map((row) => displayPathValue(row.value)))}`
     );
+  }
+}
+
+function validateSnapshotManifestMatchesDatabase(
+  db: SqliteDatabase,
+  manifest: SnapshotManifest,
+  errors: string[],
+): void {
+  const queries = new QueryBuilder(db);
+  const stats = queries.getStats();
+  const files = queries.getAllFiles();
+  const expectedLanguages = Object.entries(stats.filesByLanguage)
+    .filter(([, count]) => count > 0)
+    .map(([language]) => language)
+    .sort();
+
+  validateSnapshotManifestValue('sourceRoot.fingerprint', manifest.sourceRoot.fingerprint, fingerprintIndexedFiles(files), errors);
+  validateSnapshotManifestValue('sourceRoot.indexedFileCount', manifest.sourceRoot.indexedFileCount, files.length, errors);
+  validateSnapshotManifestStringArray('sourceRoot.languages', manifest.sourceRoot.languages, expectedLanguages, errors);
+  validateSnapshotManifestValue('graph.nodeCount', manifest.graph.nodeCount, stats.nodeCount, errors);
+  validateSnapshotManifestValue('graph.edgeCount', manifest.graph.edgeCount, stats.edgeCount, errors);
+  validateSnapshotManifestValue('graph.fileCount', manifest.graph.fileCount, stats.fileCount, errors);
+  validateSnapshotManifestCountMap('graph.nodesByKind', manifest.graph.nodesByKind, stats.nodesByKind, errors);
+  validateSnapshotManifestCountMap('graph.edgesByKind', manifest.graph.edgesByKind, stats.edgesByKind, errors);
+  validateSnapshotManifestCountMap('graph.filesByLanguage', manifest.graph.filesByLanguage, stats.filesByLanguage, errors);
+}
+
+function validateSnapshotManifestValue(
+  label: string,
+  actual: unknown,
+  expected: string | number,
+  errors: string[],
+): void {
+  if (actual !== expected) {
+    errors.push(`Snapshot manifest ${label} does not match database: expected ${String(expected)}, got ${String(actual)}`);
+  }
+}
+
+function validateSnapshotManifestStringArray(
+  label: string,
+  actual: unknown,
+  expected: string[],
+  errors: string[],
+): void {
+  if (!Array.isArray(actual) || actual.some((value) => typeof value !== 'string')) {
+    errors.push(`Snapshot manifest ${label} must be an array of strings`);
+    return;
+  }
+  const sorted = [...actual].sort();
+  if (sorted.length !== expected.length || sorted.some((value, index) => value !== expected[index])) {
+    errors.push(`Snapshot manifest ${label} does not match database`);
+  }
+}
+
+function validateSnapshotManifestCountMap(
+  label: string,
+  actual: unknown,
+  expected: Record<string, number>,
+  errors: string[],
+): void {
+  if (!isRecord(actual)) {
+    errors.push(`Snapshot manifest ${label} must be an object`);
+    return;
+  }
+  const actualEntries = Object.entries(actual).sort(([a], [b]) => a.localeCompare(b));
+  const expectedEntries = Object.entries(expected).sort(([a], [b]) => a.localeCompare(b));
+  const same = actualEntries.length === expectedEntries.length &&
+    actualEntries.every(([key, value], index) => {
+      const expectedEntry = expectedEntries[index];
+      return expectedEntry !== undefined && key === expectedEntry[0] && value === expectedEntry[1];
+    });
+  if (!same) {
+    errors.push(`Snapshot manifest ${label} does not match database`);
   }
 }
 
