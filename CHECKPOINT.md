@@ -188,8 +188,23 @@ Boundary rules:
 - [x] Latest benchmark validation after P0 explore-surface parity: `npm run benchmark` -> commit `e3c0dd6`, `7 queries`, `OmniWeave-wins 5 / tied 1 / grep-wins 1`; no benchmark result file diff after regeneration.
 - [x] Latest P1 trust-boundary full validation: after snapshot reindex/read-surface/status/verify hardening and SCIP stale-base/range/text containment, full `npx vitest run` -> `85 files | 1714 passed | 4 skipped`; real `node dist/bin/omniweave.js status --json` reports `pendingChanges: { added: 0, modified: 0, removed: 0 }`, `snapshotImport: null`, and `journalMode: "wal"`.
 - [x] Latest P1 SCIP trust-boundary full validation: after MCP module-skew guard, source-backed SCIP fallback names, SCIP diagnostic escaping, and impact SCIP provenance labels, full `npx vitest run` -> `86 files | 1718 passed | 4 skipped`.
+- [x] 2026-06-23 session re-verification: live `omniweave_explore` returns honest output with no `isLowSignalSourceQuery` (the daemon-skew that made the tool lie last session was a stale transport killed on refresh; current daemon serves current `dist`). Two-phase `npm test` -> `1719 passed | 4 skipped` across 86 files; README badge/line and this checkpoint synced to 1719.
+- [x] Round 7 agent A/B (`eval-results/agent-ab-2026-06-23/`): isolated the 71-commit output-honesty pass (`ec6d0eb..b246dae`) against `fc91305` on the **same index** (schema identical). Deterministic output-diff: a missing-symbol `explore` dropped from `24,273` chars citing 5 gitignored competitor snapshots to `558` chars of recovery guidance; feature/ordinary queries went from 1–7 snapshot leaks to 0. MiMo-driven agent A/B (3 arms × 2 honesty-sensitive tasks): correctness ties everywhere; the hardening saves ~2 tool calls / ~2 turns of snapshot-discounting and removes ~68K input tokens of competitor source the pre-hardening `explore` dumped. Honest boundary recorded: snapshot suppression is **not** a moat vs a gitignore-aware grep (it fixed omniweave having been dirtier than grep, not a win over it). `npm run benchmark` unchanged at `5 wins / 1 tied / 1 grep` (no product source changed this round).
 - [ ] Site low advisory cleanup is blocked on an Astro 7 migration; do not force it until Starlight declares compatible peers and the docs build is revalidated.
 - [ ] Full release matrix must still be built before publishing: all six targets + `SHA256SUMS` + generated npm packages.
+
+## 已证伪 / PARK — 带证据，不要再投（防自主 loop 重投死方向）
+
+These directions are **closed on evidence**. Do not reopen without a *new* A/B number that contradicts the recorded finding.
+
+| 方向 | 裁定 | 证据 |
+|---|---|---|
+| Cross-process edges × large repo | **NO-GO** | round5 轨道A：跨进程的效率赢是「小仓现象」，大仓蒸发。15 仓实测（MAESTRO 1729 文件平手）证 quarTeT 式干净静态多跳兄弟脚本链不在 ≥1000 文件自然出现；大仓跨进程 idiom 多在诚实天花板上（运行时命令串、Perl 编排器）。`round5/RESULTS-round5.md`。 |
+| Vertical PR-review / bio 三表闭环 | **NO-GO** | A/B round5 + STATUS §0.14/§0.15：领域包（`src/domain/` bio 三表）与语义层（`src/semantic/` LSP 兜顶）已评估无证据收益；垂直闭环偏离「结构控制层」定位。 |
+| Lower the fixed MCP/shape tax (server-instructions + tool schema bytes + ToolSearch gating) | **不可降 / 不要抠** | round6 轨道3 决定性纠偏：round5 的「~34k 固定层」绝大部分是 **base Claude Code harness（两臂都有）**；omniweave 边际固定成本实测仅 **+682 tok**（schema 默认 deferred）。关 ToolSearch 门控**反贵 +16k**（eager 全载）→ 门控已 token 最优。裁字节的 ROI ≤682 不抵差异化风险。`round6/RESULTS-round6.md` + `round6/in-process-mode-derisk.md`。 |
+| In-process / embedded query mode (§1.5①) | **NO-GO（de-risked，别硬建）** | 上一条的推论：ROI 上限从 34k 降到 682 + 无第二方宿主 testbed = 双重 NO-GO。 |
+| prompt-routing 再迭代（server-instructions 决策树） | **已到顶** | round5 轨道B：路由 4 版迭代，纯单点形态税已削平（138k→92k 追平 grep）、反向 win 不退；agent find-then-read 习惯 + 固定 MCP 附着 prompt 不可降。别再迭代。 |
+| 堆第 N 类边 / 第 M 门语言换正确性 | **不改胜负** | round1–6：正确性全档追平 grep（单点/反向/大仓/虚分派陷阱/跨进程，sonnet+haiku 两模型）。正确性不是护城河；护城河是努力/成本/token（随规模放大、模型越弱越宽）。 |
 
 ## 设计决策
 
