@@ -314,6 +314,68 @@ describe('explore surface parity', () => {
     expect(cliAmbiguousText).not.toContain('omniweave_explore');
   }, 30000);
 
+  it('keeps large-repo not-shown follow-ups free of research snapshots across surfaces', async () => {
+    writeProjectFile(
+      projectRoot,
+      'src/scip/importer.ts',
+      [
+        'export interface ImportScipResult {',
+        "  provenance: 'scip';",
+        '  source: string;',
+        '}',
+        '',
+        'export function importScipIndex(indexPath: string): ImportScipResult {',
+        "  return { provenance: 'scip', source: indexPath.endsWith('index.scip') ? 'index.scip' : indexPath };",
+        '}',
+        '',
+      ].join('\n'),
+    );
+    writeProjectFile(
+      projectRoot,
+      'src/scip/protobuf.ts',
+      [
+        'export interface ScipIndex {',
+        '  documents: string[];',
+        '}',
+        '',
+        'export function decodeScipIndex(bytes: Uint8Array): ScipIndex {',
+        '  return { documents: [String(bytes.length)] };',
+        '}',
+        '',
+      ].join('\n'),
+    );
+    writeProjectFile(
+      projectRoot,
+      'research/2026-06-23-codegraph-ecosystem/repos/cgc/src/tools/scip.ts',
+      [
+        'export class ScipIndexParser {',
+        '  parse(): string {',
+        "    return 'external scip index parser';",
+        '  }',
+        '}',
+        '',
+      ].join('\n'),
+    );
+    for (let i = 0; i < 505; i++) {
+      writeProjectFile(projectRoot, `src/filler/file-${i}.ts`, `export function filler${i}(): number { return ${i}; }\n`);
+    }
+    await indexProject(projectRoot);
+
+    const query = 'scip import index.scip provenance';
+    const mcpText = await runMcpExplore(projectRoot, { query, maxFiles: 1 });
+    const cliText = runCliExplore(projectRoot, query, 1);
+
+    for (const text of [mcpText, cliText]) {
+      expect(text).toContain('Candidate graph:');
+      expect(text).toContain('Source shown below covers 1 file');
+      expect(text).toContain('#### src/scip/importer.ts');
+      expect(text).toContain('importScipIndex');
+      expect(text).toContain('### Not shown above — explore these names for their source');
+      expect(text).toContain('src/scip/protobuf.ts');
+      expect(text).not.toContain('research/2026-06-23-codegraph-ecosystem/repos/cgc/');
+    }
+  }, 40000);
+
   it('keeps hard-ceiling truncation aligned across MCP and CLI', async () => {
     for (let i = 0; i < 505; i++) {
       writeProjectFile(projectRoot, `noise/noise${i}.ts`, `export const noise${i} = ${i};\n`);
