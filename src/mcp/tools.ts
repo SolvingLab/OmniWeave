@@ -3346,9 +3346,12 @@ export class ToolHandler {
     // Small projects (per budget) skip this — the relevant story already fits
     // in the source section, and a trailing pointer list is pure overhead.
     if (budget.includeAdditionalFiles) {
-      const remainingRelevant = sortedFiles.filter(([filePath]) => !shownSourceFiles.has(filePath));
+      const allowLowSignalAdditionalFiles = queryAllowsLowSignalSources(query);
+      const shouldShowAdditionalFile = (filePath: string): boolean =>
+        !shownSourceFiles.has(filePath) && (allowLowSignalAdditionalFiles || !isLowValue(filePath));
+      const remainingRelevant = sortedFiles.filter(([filePath]) => shouldShowAdditionalFile(filePath));
       const peripheralFiles = [...fileGroups.entries()]
-        .filter(([, group]) => group.score < 3)
+        .filter(([filePath, group]) => group.score < 3 && shouldShowAdditionalFile(filePath))
         .sort((a, b) => b[1].score - a[1].score);
       const remainingFiles = [...remainingRelevant, ...peripheralFiles];
       if (remainingFiles.length > 0) {

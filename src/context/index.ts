@@ -44,6 +44,10 @@ function queryAllowsLowSignalSources(query: string): boolean {
     || /(?:^|\/)research\/[^/]+\/repos(?:\/|$)/i.test(query);
 }
 
+function isSpecificSymbolToken(token: string): boolean {
+  return /[.\/]|::/.test(token) || isDistinctiveIdentifier(token);
+}
+
 /**
  * Extract likely symbol names from a natural language query
  *
@@ -145,7 +149,7 @@ function extractSymbolsFromQuery(query: string): string[] {
     'start', 'starts', 'stop', 'stops', 'run', 'runs', 'running',
   ]);
 
-  if ([...symbols].some(isDistinctiveIdentifier)) {
+  if ([...symbols].some(isSpecificSymbolToken)) {
     const queryWords = (query.match(/[A-Za-z_$][\w$]*/g) ?? [])
       .filter((word) => /^[a-z][a-z0-9_$]{2,}$/.test(word))
       .filter((word) => !commonWords.has(word.toLowerCase()));
@@ -165,9 +169,7 @@ function extractSymbolsFromQuery(query: string): string[] {
 function narrowSymbolLookupTermsForBroadQuery(symbols: string[]): string[] {
   if (symbols.length <= 3) return symbols;
 
-  const specific = symbols.filter((symbol) =>
-    /[.\/]|::/.test(symbol) || isDistinctiveIdentifier(symbol)
-  );
+  const specific = symbols.filter(isSpecificSymbolToken);
   return specific.length > 0 ? specific : symbols;
 }
 

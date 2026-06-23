@@ -243,6 +243,7 @@ describe('omniweave_explore — low-signal repository snapshots', () => {
     const firstPartyMcp = path.join(testDir, 'src', 'mcp');
     const firstPartyContext = path.join(testDir, 'src', 'context');
     const firstPartySrc = path.join(testDir, 'src');
+    const firstPartyScip = path.join(testDir, 'src', 'scip');
     const siteLib = path.join(testDir, 'site', 'src', 'lib');
     const exampleHelpers = path.join(testDir, 'examples', 'helpers');
     const overloads = path.join(testDir, 'src', 'overloads');
@@ -256,14 +257,25 @@ describe('omniweave_explore — low-signal repository snapshots', () => {
       'src',
       'mcp'
     );
+    const snapshotScip = path.join(
+      testDir,
+      'research',
+      '2026-06-23-codegraph-ecosystem',
+      'repos',
+      'cgc',
+      'src',
+      'tools'
+    );
     fs.mkdirSync(firstPartyMcp, { recursive: true });
     fs.mkdirSync(firstPartyContext, { recursive: true });
     fs.mkdirSync(firstPartySrc, { recursive: true });
+    fs.mkdirSync(firstPartyScip, { recursive: true });
     fs.mkdirSync(siteLib, { recursive: true });
     fs.mkdirSync(exampleHelpers, { recursive: true });
     fs.mkdirSync(overloads, { recursive: true });
     fs.mkdirSync(scripts, { recursive: true });
     fs.mkdirSync(snapshotMcp, { recursive: true });
+    fs.mkdirSync(snapshotScip, { recursive: true });
 
     fs.writeFileSync(
       path.join(firstPartyMcp, 'tools.ts'),
@@ -316,6 +328,25 @@ export function verifySnapshot(): VerifySnapshotResult {
 
 export function importSnapshot(): string {
   return verifySnapshot().targetChecked ? 'imported' : 'unchecked';
+}
+`
+    );
+    fs.writeFileSync(
+      path.join(firstPartyScip, 'importer.ts'),
+      `export interface ImportScipResult {
+  provenance: 'scip';
+  source: string;
+}
+
+export function importScipIndex(indexPath: string): ImportScipResult {
+  return { provenance: 'scip', source: indexPath.endsWith('index.scip') ? 'index.scip' : indexPath };
+}
+`
+    );
+    fs.writeFileSync(
+      path.join(firstPartyScip, 'protobuf.ts'),
+      `export interface ScipIndex {
+  documents: string[];
 }
 `
     );
@@ -378,6 +409,15 @@ export function snapshotBuildExploreOutputCaller(): string {
       `export class Symbol {
   parseFrom(): string {
     return 'external snapshot symbol';
+  }
+}
+`
+    );
+    fs.writeFileSync(
+      path.join(snapshotScip, 'scip.ts'),
+      `export class ScipIndexParser {
+  parse(): string {
+    return 'external scip index parser';
   }
 }
 `
@@ -536,6 +576,21 @@ export function snapshotBuildExploreOutputCaller(): string {
     expect(text).not.toContain('scripts/npm-sdk.js');
   });
 
+  it('uses dotted artifact names to recover lower-case compound API names', async () => {
+    const handler = new ToolHandler(cg);
+    const result = await handler.execute('omniweave_explore', {
+      query: 'scip import index.scip provenance',
+      maxFiles: 5,
+    });
+    const text = result.content.map((part) => part.text).join('\n');
+
+    expect(text).toContain('#### src/scip/importer.ts');
+    expect(text).toContain('importScipIndex');
+    expect(text).toContain('provenance');
+    expect(text).not.toContain('No relevant code found');
+    expect(text).not.toContain('research/2026-06-23-codegraph-ecosystem/repos/cgc/');
+  });
+
   it('flags a bare overloaded symbol as ambiguous instead of implying completeness', async () => {
     const handler = new ToolHandler(cg);
     const result = await handler.execute('omniweave_explore', {
@@ -551,5 +606,87 @@ export function snapshotBuildExploreOutputCaller(): string {
     expect(text).toContain('do not treat that subset as the full overload set');
     expect(text).toContain('omniweave_node');
     expect(text).not.toContain('Read them directly');
+  });
+});
+
+describe('omniweave_explore — large-repo additional-file filtering', () => {
+  it('keeps research snapshots out of default follow-up names for artifact queries', async () => {
+    const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omniweave-large-scip-rank-'));
+    let cg: OmniWeave | undefined;
+
+    try {
+      const firstPartyScip = path.join(testDir, 'src', 'scip');
+      const filler = path.join(testDir, 'src', 'filler');
+      const snapshotScip = path.join(
+        testDir,
+        'research',
+        '2026-06-23-codegraph-ecosystem',
+        'repos',
+        'cgc',
+        'src',
+        'tools'
+      );
+      fs.mkdirSync(firstPartyScip, { recursive: true });
+      fs.mkdirSync(filler, { recursive: true });
+      fs.mkdirSync(snapshotScip, { recursive: true });
+
+      fs.writeFileSync(
+        path.join(firstPartyScip, 'importer.ts'),
+        `export interface ImportScipResult {
+  provenance: 'scip';
+  source: string;
+}
+
+export function importScipIndex(indexPath: string): ImportScipResult {
+  return { provenance: 'scip', source: indexPath.endsWith('index.scip') ? 'index.scip' : indexPath };
+}
+`
+      );
+      fs.writeFileSync(
+        path.join(firstPartyScip, 'protobuf.ts'),
+        `export interface ScipIndex {
+  documents: string[];
+}
+`
+      );
+      fs.writeFileSync(
+        path.join(snapshotScip, 'scip.ts'),
+        `export class ScipIndexParser {
+  parse(): string {
+    return 'external scip index parser';
+  }
+}
+`
+      );
+      for (let i = 0; i < 505; i++) {
+        fs.writeFileSync(
+          path.join(filler, `file-${i}.ts`),
+          `export function filler${i}(): number {
+  return ${i};
+}
+`
+        );
+      }
+
+      cg = OmniWeave.initSync(testDir, {
+        config: { include: ['**/*.ts'], exclude: [] },
+      });
+      await cg.indexAll();
+
+      const handler = new ToolHandler(cg);
+      const result = await handler.execute('omniweave_explore', {
+        query: 'scip import index.scip provenance',
+        maxFiles: 5,
+      });
+      const text = result.content.map((part) => part.text).join('\n');
+
+      expect(text).toContain('#### src/scip/importer.ts');
+      expect(text).toContain('importScipIndex');
+      expect(text).not.toContain('No relevant code found');
+      expect(text).not.toContain('research/2026-06-23-codegraph-ecosystem/repos/cgc/');
+    } finally {
+      if (cg) cg.destroy();
+      fs.rmSync(testDir, { recursive: true, force: true });
+    }
   });
 });
