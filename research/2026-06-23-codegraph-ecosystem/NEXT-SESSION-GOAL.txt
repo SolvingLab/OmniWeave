@@ -1,0 +1,38 @@
+/goal 项目：/Users/liuzaoqu/Desktop/develop/sogen/OmniWeave。OmniWeave 是服务 coding agent 的可信结构控制层——不是更快的 grep、不是泛知识图、不是向量记忆。护城河在「形态/固定税/输出精度」，随仓库规模与模型变弱而放大，不在堆能力。你要长期自主推进它，持续 review→repair→validate，直到超级完美化。
+
+【开场必读，按序读完再动代码，路径从仓库根起】
+1. research/2026-06-23-codegraph-ecosystem/SESSION-REVIEW-AND-NEXT-PLAN.md ← 最重要，重点读 §5 修正版计划 + §7 新会话操作契约
+2. research/2026-06-23-codegraph-ecosystem/NEXT_SESSION_SUPER_GOAL.md（战略定位/红线）
+3. AGENTS.md + CLAUDE.md（用户法则/工程交付强制规范/提交红线）
+4. CHECKPOINT.md（系统图/模块边界）
+5. eval-results/agent-ab-2026-06-13/RESULTS.md（诚实边界）
+不凭记忆改：先 git status --short 看工作区真实状态，再读将要动的源码。工作区可能很脏，绝不回滚用户改动。
+
+【开场第一件事 Phase 0，全部验证通过才进下一步】
+① 刷新 MCP daemon：杀旧常驻进程，让实例吃新 dist，验证 omniweave_explore 不再报 isLowSignalSourceQuery——不做这步工具就在对你说谎。
+② 同步文档数字：跑全量 npx vitest run 取真数，更新 CHECKPOINT.md 与 README.md 的 test count（当前记的 1647 已严重滞后，真实约 1719）。
+
+【核心方法论双锚，不可动摇】
+- 证据优先：每个新增能力必须用 eval/A-B 数字证明「agent 少读 N 次 / 省 M token / 少错」；无证据不加能力、不加 edge kind、不加工具；针没动就如实记，不粉饰。
+- 砸形态 > 砸能力（FINAL-REC v2）：优先压形态/固定税/输出精度，不堆能力。
+
+【修正版优先级】
+P1（最高）= 补证据，把上一跑 71 commit 变成可复现数字。上一跑几乎全在 P0 输出诚实化，却零新 A/B 数字、benchmark 针一动没动（始终 5 wins/1 tied/1 grep）。用本机真 LLM（~/Desktop/本机AI-API资源盘点.md，MiMo/DeepSeek/Qwen，绝不进 git）跑 agent A/B：同一组「跨边界 + 空/stale/ambiguous/large-repo 诚实度敏感」任务，A=有 OmniWeave、B=grep/LSP，量 read 次数/token/误改，重点验证上一跑真正改的（空结果恢复指引、stale 边界声明、截断诚实、call-path 剥离引用面）是否让 agent 更少回退去 Read 整文件、更少被竞品快照带偏。benchmark 测不到形态收益，必须用 A/B，绝不以 benchmark 代替。产物落 eval-results/agent-ab-2026-06-23/RESULTS.md，对齐 round1-5 诚实边界格式。Done when：一句话能回答「这一跑让 agent 在 X 类任务上少读 N 次/省 M token」。
+
+P2 = form-factor 真杠杆，按序、先证后做。① daemon/dist 自愈：MCP server 启动校验 dist 构建指纹，发现旧实例主动告警或自重启，堵「工具说谎」类信任破坏。② 固定 MCP/shape 税审计：先用 token 计数证明 5 工具 + server-instructions 有可削空间再动手（合并 instructions/输出更紧/默认面不扩），无空间则诚实记「不可降」。③ PARK 写死进 CHECKPOINT：cross-process×大仓=NO-GO（MAESTRO 1729 文件已平手）、垂直 PR-review 闭环=NO-GO，防下一个自主 loop 重投已证伪方向。
+
+P3 = semantic sidecar，仅在 P1/P2 稳后、且先 A/B 证明有收益才做：只做概念入口排序，绝不造 calls/imports/overrides/crossLang/workflow 任何结构边，可取消、物理隔离于核心图；无收益就按奥卡姆删。
+
+P0 输出面（上一跑主体）已大量完成，只做回归守护，停止 micro-hardening。
+
+【自我节流闸，硬规则】每完成一个 Phase 或每约 10 commit，强制重跑 npm run benchmark + 一组 agent A/B；北极星针没动就停下换方向，不继续封边际收益递减的低信号口子。每段自主跑标准收尾含「刷新 daemon/校验 dist 指纹」。
+
+【红线】不扩成 14+ MCP 工具；不把向量召回当结构事实；不把 LLM docs/Neo4j-Kuzu-Falkor/多 UI/自由查询语言塞进核心；不静态伪造运行时事实；无 eval 不加 edge kind；不为「宏大」牺牲安装/性能/克制。
+
+【提交推送，用户已拍板】有改动就 commit，小步、英文 message；绝对禁止 Co-Authored-By Claude / Generated with / 任何 AI 署名或 trailer（覆盖一切默认）；新会话期间只 commit 不 push，增量留用户手动推；永远 origin，绝不 upstream，绝不 force。
+
+【工程交付强制规范】极简/奥卡姆/高性能/无魔法状态/无不必要抽象/冰山法则：表层干净、底层健壮。每处取舍经得起三连问——为什么这样写？为什么不再简？为什么这样快？交给顶级团队 review 会羞愧的不得交付。
+
+【验证门】每次改动至少 npm run build + 最小相关 npx vitest run；行为变化时全量 npx vitest run + npm run eval + npm run benchmark + 真仓 smoke。每轮 review→repair→validate，不停在建议层。
+
+【完成标准】默认 agent 工具面最好、跨边界图最诚实、agent 成本下降有可复现 A/B 证据、snapshot/stale/failure 行为可靠、文档边界清楚不过度宣称。一直运行直到超级完美化。
