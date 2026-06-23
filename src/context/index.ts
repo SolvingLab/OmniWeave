@@ -145,6 +145,20 @@ function extractSymbolsFromQuery(query: string): string[] {
     'start', 'starts', 'stop', 'stops', 'run', 'runs', 'running',
   ]);
 
+  if ([...symbols].some(isDistinctiveIdentifier)) {
+    const queryWords = (query.match(/[A-Za-z_$][\w$]*/g) ?? [])
+      .filter((word) => /^[a-z][a-z0-9_$]{2,}$/.test(word))
+      .filter((word) => !commonWords.has(word.toLowerCase()));
+    const cap = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
+    for (let i = 0; i < queryWords.length - 1; i++) {
+      const left = queryWords[i]!;
+      const right = queryWords[i + 1]!;
+      symbols.add(`${left}${cap(right)}`);
+      symbols.add(`${right}${cap(left)}`);
+      if (symbols.size >= 32) break;
+    }
+  }
+
   return Array.from(symbols).filter(s => !commonWords.has(s.toLowerCase()));
 }
 
@@ -989,7 +1003,7 @@ export class ContextBuilder {
         if (isDistinctiveIdentifier(result.node.name)) return true;
         return countDirectTermMatches(result.node, directQueryTerms) >= 2;
       });
-      if (narrowed.length >= 2) filteredResults = narrowed;
+      if (narrowed.length >= 1) filteredResults = narrowed;
     }
     if (!hasDistinctiveQuerySymbol && directQueryTerms.length >= 4 && filteredResults.length > 1) {
       const strongResults = filteredResults.filter((result) =>

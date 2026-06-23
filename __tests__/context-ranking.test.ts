@@ -246,6 +246,7 @@ describe('omniweave_explore — low-signal repository snapshots', () => {
     const siteLib = path.join(testDir, 'site', 'src', 'lib');
     const exampleHelpers = path.join(testDir, 'examples', 'helpers');
     const overloads = path.join(testDir, 'src', 'overloads');
+    const scripts = path.join(testDir, 'scripts');
     const snapshotMcp = path.join(
       testDir,
       'research',
@@ -261,6 +262,7 @@ describe('omniweave_explore — low-signal repository snapshots', () => {
     fs.mkdirSync(siteLib, { recursive: true });
     fs.mkdirSync(exampleHelpers, { recursive: true });
     fs.mkdirSync(overloads, { recursive: true });
+    fs.mkdirSync(scripts, { recursive: true });
     fs.mkdirSync(snapshotMcp, { recursive: true });
 
     fs.writeFileSync(
@@ -322,6 +324,13 @@ export function importSnapshot(): string {
       `export function format(value: string): string {
   return value.trim();
 }
+`
+    );
+    fs.writeFileSync(
+      path.join(scripts, 'npm-sdk.js'),
+      `var target = process.platform + '-' + process.arch;
+
+module.exports = target;
 `
     );
     fs.writeFileSync(
@@ -524,6 +533,7 @@ export function snapshotBuildExploreOutputCaller(): string {
     expect(text).toContain('#### src/snapshot.ts');
     expect(text).toContain('verifySnapshot');
     expect(text).not.toContain('research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/');
+    expect(text).not.toContain('scripts/npm-sdk.js');
   });
 
   it('flags a bare overloaded symbol as ambiguous instead of implying completeness', async () => {
