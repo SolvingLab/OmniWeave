@@ -187,7 +187,7 @@ function buildScipImportPlan(
         ?? (context.hasVerifiedSourceText ? ensureFileNode(context, nodesById) : null);
       if (!sourceNode) {
         skippedReferences++;
-        warnings.push(`Skipping SCIP reference without matching OmniWeave source node or embedded text: ${context.filePath} ${occurrence.symbol}`);
+        warnings.push(`Skipping SCIP reference without matching OmniWeave source node or embedded text: ${formatScipDiagnosticValue(context.filePath)} ${formatScipDiagnosticValue(occurrence.symbol)}`);
         continue;
       }
       const edge = createScipEdge(sourceNode.id, target.nodeId, 'references', occurrence, {
@@ -254,37 +254,37 @@ function buildDocumentContexts(
     const filePath = normalizeScipRelativePath(document.relativePath);
     const fullPath = filePath ? validatePathWithinRoot(projectRoot, filePath) : null;
     if (!filePath || !fullPath) {
-      throw new Error(`Invalid SCIP document path: ${document.relativePath || '(empty)'}`);
+      throw new Error(`Invalid SCIP document path: ${formatScipDiagnosticValue(document.relativePath || '(empty)')}`);
     }
     let stat: fs.Stats;
     try {
       stat = fs.statSync(fullPath);
     } catch {
-      warnings.push(`Skipping SCIP document with missing source file: ${filePath}`);
+      warnings.push(`Skipping SCIP document with missing source file: ${formatScipDiagnosticValue(filePath)}`);
       continue;
     }
     if (!stat.isFile()) {
-      throw new Error(`SCIP document path is not a regular file: ${filePath}`);
+      throw new Error(`SCIP document path is not a regular file: ${formatScipDiagnosticValue(filePath)}`);
     }
     const indexedFile = queries.getFileByPath(filePath);
     if (!indexedFile) {
-      warnings.push(`Skipping SCIP document outside OmniWeave index: ${filePath}`);
+      warnings.push(`Skipping SCIP document outside OmniWeave index: ${formatScipDiagnosticValue(filePath)}`);
       continue;
     }
     const currentContent = fs.readFileSync(fullPath, 'utf8');
     if (hashContent(currentContent) !== indexedFile.contentHash) {
-      warnings.push(`Skipping SCIP document because the OmniWeave index is stale for source file: ${filePath}`);
+      warnings.push(`Skipping SCIP document because the OmniWeave index is stale for source file: ${formatScipDiagnosticValue(filePath)}`);
       continue;
     }
     const hasVerifiedSourceText = document.text.length > 0;
     if (hasVerifiedSourceText && currentContent !== document.text) {
-      warnings.push(`Skipping SCIP document with stale embedded text: ${filePath}`);
+      warnings.push(`Skipping SCIP document with stale embedded text: ${formatScipDiagnosticValue(filePath)}`);
       continue;
     }
     const nodesInFile = queries.getNodesByFile(filePath).filter((node) => !node.id.startsWith('scip:'));
     const language = resolveScipDocumentLanguage(document.language, indexedFile.language);
     if (language.language === 'unknown') {
-      warnings.push(`Skipping SCIP document with unsupported language "${document.language || 'unknown'}": ${filePath}`);
+      warnings.push(`Skipping SCIP document with unsupported language "${formatScipDiagnosticValue(document.language || 'unknown')}": ${formatScipDiagnosticValue(filePath)}`);
       continue;
     }
     if (
@@ -293,7 +293,7 @@ function buildDocumentContexts(
       !compatibleDocumentLanguage(language.explicitLanguage, language.indexedLanguage)
     ) {
       warnings.push(
-        `Skipping SCIP document with language mismatch: ${filePath} (SCIP ${language.explicitLanguage}, indexed ${language.indexedLanguage})`
+        `Skipping SCIP document with language mismatch: ${formatScipDiagnosticValue(filePath)} (SCIP ${language.explicitLanguage}, indexed ${language.indexedLanguage})`
       );
       continue;
     }
@@ -323,7 +323,7 @@ function createDefinitionRecord(
     info.displayName.trim() || (context.hasVerifiedSourceText ? displayNameFromSymbol(info.symbol).trim() : '')
   );
   if (!artifactName) {
-    warnings.push(`Skipping SCIP definition without displayName or embedded text: ${context.filePath} ${info.symbol}`);
+    warnings.push(`Skipping SCIP definition without displayName or embedded text: ${formatScipDiagnosticValue(context.filePath)} ${formatScipDiagnosticValue(info.symbol)}`);
     return null;
   }
   const kind = scipKindToNodeKind(info.kind);
@@ -342,16 +342,16 @@ function createDefinitionRecord(
     };
   }
   if (!existing && !context.hasVerifiedSourceText) {
-    warnings.push(`Skipping SCIP definition without matching OmniWeave node or embedded text: ${context.filePath} ${info.symbol}`);
+    warnings.push(`Skipping SCIP definition without matching OmniWeave node or embedded text: ${formatScipDiagnosticValue(context.filePath)} ${formatScipDiagnosticValue(info.symbol)}`);
     return null;
   }
   if (!existing && !hasConcreteOccurrenceRange(occurrence)) {
-    warnings.push(`Skipping SCIP definition without concrete definition range: ${context.filePath} ${info.symbol}`);
+    warnings.push(`Skipping SCIP definition without concrete definition range: ${formatScipDiagnosticValue(context.filePath)} ${formatScipDiagnosticValue(info.symbol)}`);
     return null;
   }
   const name = sourceBackedScipDisplayName(context, occurrence, artifactName);
   if (!name) {
-    warnings.push(`Skipping SCIP definition whose displayName does not match verified source text: ${context.filePath} ${info.symbol}`);
+    warnings.push(`Skipping SCIP definition whose displayName does not match verified source text: ${formatScipDiagnosticValue(context.filePath)} ${formatScipDiagnosticValue(info.symbol)}`);
     return null;
   }
   const nodeId = scipNodeId(info.symbol, context.filePath);
@@ -502,14 +502,14 @@ function validateOccurrenceRange(
     return false;
   }
   if (!occurrenceRangeWithinDocument(occurrence, context.lineLengths)) {
-    warnings.push(`Skipping SCIP ${role} with out-of-bounds range: ${context.filePath} ${occurrence.symbol}`);
+    warnings.push(`Skipping SCIP ${role} with out-of-bounds range: ${formatScipDiagnosticValue(context.filePath)} ${formatScipDiagnosticValue(occurrence.symbol)}`);
     return false;
   }
   return true;
 }
 
 function malformedRangeWarning(filePath: string, role: 'definition' | 'reference', occurrence: ScipOccurrence): string {
-  return `Skipping SCIP ${role} with malformed range (${occurrence.range.length} values): ${filePath} ${occurrence.symbol}`;
+  return `Skipping SCIP ${role} with malformed range (${occurrence.range.length} values): ${formatScipDiagnosticValue(filePath)} ${formatScipDiagnosticValue(occurrence.symbol)}`;
 }
 
 function createScipEdge(
@@ -740,6 +740,20 @@ function sanitizeScipDisplayName(value: string): string {
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, MAX_SCIP_DISPLAY_NAME_LENGTH);
+}
+
+function formatScipDiagnosticValue(value: string): string {
+  const escaped = value
+    .replace(/\\/g, '\\\\')
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n')
+    .replace(/\t/g, '\\t')
+    .replace(/"/g, '\\"')
+    .replace(/`/g, '\\`')
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '?');
+  return escaped.length > MAX_SCIP_DISPLAY_NAME_LENGTH
+    ? `${escaped.slice(0, MAX_SCIP_DISPLAY_NAME_LENGTH)}...`
+    : escaped;
 }
 
 function sourceBackedScipDisplayName(
