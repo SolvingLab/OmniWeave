@@ -4,9 +4,16 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import OmniWeave from '../src/index';
+import type { Edge } from '../src/types';
 
 const BIN = path.resolve(__dirname, '../dist/bin/omniweave.js');
 const CLIENT_INFO = { name: 'surface-parity-test', version: '0.0.0' };
+
+interface EdgeInserter {
+  queries: {
+    insertEdge(edge: Edge): void;
+  };
+}
 
 function writeProjectFile(projectRoot: string, relativePath: string, contents: string): void {
   const fullPath = path.join(projectRoot, relativePath);
@@ -373,6 +380,159 @@ describe('explore surface parity', () => {
       expect(text).toContain('### Not shown above — explore these names for their source');
       expect(text).toContain('src/scip/protobuf.ts');
       expect(text).not.toContain('research/2026-06-23-codegraph-ecosystem/repos/cgc/');
+    }
+  }, 40000);
+
+  it('keeps flow and supporting-relationship evidence aligned across surfaces', async () => {
+    for (let i = 0; i < 505; i++) {
+      writeProjectFile(projectRoot, `noise/noise${i}.ts`, `export const noise${i} = ${i};\n`);
+    }
+    writeProjectFile(
+      projectRoot,
+      'src/entry.ts',
+      [
+        "import { runWorkflow, runPythonReport, normalizeInput } from './workflow';",
+        "import type { Config } from './types';",
+        '',
+        'export function entryPoint(config: Config): string {',
+        '  return runWorkflow(config) + runPythonReport(config.name) + normalizeInput(config.name);',
+        '}',
+        '',
+        'export function emitDone(): string {',
+        "  return 'done';",
+        '}',
+        '',
+      ].join('\n'),
+    );
+    writeProjectFile(
+      projectRoot,
+      'src/workflow.ts',
+      [
+        "import type { Config } from './types';",
+        '',
+        'export function runWorkflow(config: Config): string {',
+        '  return stepOne(config.name);',
+        '}',
+        '',
+        'export function stepOne(name: string): string {',
+        '  return name.trim();',
+        '}',
+        '',
+        'export function normalizeInput(name: string): string {',
+        '  return buildPayload(name.trim());',
+        '}',
+        '',
+        'export function buildPayload(name: string): string {',
+        '  return sendPayload(name.toUpperCase());',
+        '}',
+        '',
+        'export function sendPayload(value: string): string {',
+        '  return value;',
+        '}',
+        '',
+        'export function runPythonReport(name: string): string {',
+        '  return name;',
+        '}',
+        '',
+      ].join('\n'),
+    );
+    writeProjectFile(
+      projectRoot,
+      'src/handler.ts',
+      [
+        'export function handleDone(): string {',
+        "  return 'handled';",
+        '}',
+        '',
+      ].join('\n'),
+    );
+    writeProjectFile(
+      projectRoot,
+      'src/types.ts',
+      [
+        'export interface Config {',
+        '  name: string;',
+        '}',
+        '',
+      ].join('\n'),
+    );
+    writeProjectFile(
+      projectRoot,
+      'scripts/report.py',
+      [
+        'def renderReport():',
+        '    return "report"',
+        '',
+      ].join('\n'),
+    );
+
+    const cg = OmniWeave.initSync(projectRoot, {
+      config: { include: ['**/*.ts', '**/*.py'], exclude: [] },
+    });
+    try {
+      await cg.indexAll();
+      const emitDone = cg.getNodesByName('emitDone').find((n) => n.kind === 'function');
+      const handleDone = cg.getNodesByName('handleDone').find((n) => n.kind === 'function');
+      const runPythonReport = cg.getNodesByName('runPythonReport').find((n) => n.kind === 'function');
+      const renderReport = cg.getNodesByName('renderReport').find((n) => n.kind === 'function');
+      expect(emitDone).toBeTruthy();
+      expect(handleDone).toBeTruthy();
+      expect(runPythonReport).toBeTruthy();
+      expect(renderReport).toBeTruthy();
+      (cg as unknown as EdgeInserter).queries.insertEdge({
+        source: emitDone!.id,
+        target: handleDone!.id,
+        kind: 'calls',
+        line: 8,
+        provenance: 'heuristic',
+        metadata: {
+          synthesizedBy: 'event-emitter',
+          event: 'done',
+          registeredAt: 'src/wiring.ts:12',
+          confidence: 0.75,
+        },
+      });
+      (cg as unknown as EdgeInserter).queries.insertEdge({
+        source: runPythonReport!.id,
+        target: renderReport!.id,
+        kind: 'crossLang',
+        line: 9,
+        provenance: 'heuristic',
+        metadata: {
+          synthesizedBy: 'general-crosslang',
+          confidence: 0.9,
+        },
+      });
+    } finally {
+      cg.destroy();
+    }
+
+    const query = 'entryPoint runPythonReport renderReport emitDone handleDone Config';
+    const mcpText = await runMcpExplore(projectRoot, { query, maxFiles: 8 });
+    const cliText = runCliExplore(projectRoot, query, 8);
+
+    for (const text of [mcpText, cliText]) {
+      expect(text).toContain('## Flow (call path among the symbols you queried)');
+      expect(text).toMatch(/1\. entryPoint[\s\S]*2\. runPythonReport[\s\S]*3\. renderReport/);
+      expect(text).toContain('dynamic: general crosslang');
+      expect(text).toContain('### Supporting relationships (not necessarily the call path)');
+      expect(text).not.toContain('### Relationships');
+
+      const sourceIndex = text.indexOf('### Source Code');
+      const relationshipsIndex = text.indexOf('### Supporting relationships');
+      expect(sourceIndex).toBeGreaterThan(-1);
+      expect(relationshipsIndex).toBeGreaterThan(-1);
+      expect(sourceIndex).toBeLessThan(relationshipsIndex);
+
+      const callsIndex = text.indexOf('**calls:**');
+      const referencesIndex = text.indexOf('**references:**');
+      const importsIndex = text.indexOf('**imports:**');
+      expect(callsIndex).toBeGreaterThan(-1);
+      if (referencesIndex >= 0) expect(callsIndex).toBeLessThan(referencesIndex);
+      if (importsIndex >= 0) expect(callsIndex).toBeLessThan(importsIndex);
+      expect(text).toMatch(
+        /emitDone → handleDone\s+\[src\/entry\.ts:8; dynamic: event `done` @src\/wiring\.ts:12; confidence 0\.75\]/
+      );
     }
   }, 40000);
 
