@@ -1415,7 +1415,12 @@ export class ToolHandler {
       }
     }
 
-    const snapshotImport = cg.getSnapshotImportInfo();
+    let snapshotImport;
+    try {
+      snapshotImport = cg.getSnapshotImportInfo?.() ?? null;
+    } catch {
+      return result;
+    }
     if (!snapshotImport) return result;
 
     const [first, ...rest] = result.content;
