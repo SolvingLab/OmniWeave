@@ -258,6 +258,9 @@ async function verifySnapshotWithStaging(
     : undefined;
   const targetChecked = targetRoot !== undefined;
   const checkTargetNow = targetRoot !== undefined && options.deferTargetCheck !== true;
+  if (!targetChecked) {
+    warnings.push('Target project not checked; pass a project root to validate target staleness and import policy.');
+  }
 
   const parsedManifest = parseSnapshotManifest(manifestPath, errors);
   const manifest = parsedManifest?.manifest;

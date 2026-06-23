@@ -800,6 +800,7 @@ describe('snapshot import and verify', () => {
     expect(payload.ok).toBe(true);
     expect(payload.targetChecked).toBe(false);
     expect(payload.staleness).toBeUndefined();
+    expect(payload.warnings).toContain('Target project not checked; pass a project root to validate target staleness and import policy.');
 
     const text = runBuiltCli(targetRoot, ['snapshot', 'verify', outputDir]);
 
