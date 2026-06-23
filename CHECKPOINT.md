@@ -65,7 +65,7 @@ Boundary rules:
 ## 当前进度
 
 - [x] Core build is clean with `npm run build`.
-- [x] Full Vitest suite current: `npx vitest run` -> `1647 passed | 4 skipped` across 84 files.
+- [x] Full Vitest suite current: `npm test` (two-phase: `test:unit` + `test:mcp-daemon`) -> `1719 passed | 4 skipped` across 86 files.
 - [x] Top-level full dependency audit baseline: `npm audit` -> clean.
 - [x] Source-run Node floor is enforced at the CLI boundary (`>=22.5.0`) and pinned against `package.json` `engines`.
 - [x] Site build baseline: `cd site && npm run build`.
