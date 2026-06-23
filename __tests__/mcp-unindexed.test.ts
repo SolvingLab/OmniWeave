@@ -191,6 +191,8 @@ describe('No-error policy on expected conditions', () => {
       expect(res.content[0]!.text).toMatch(/index is initialized but contains 0 files/);
       expect(res.content[0]!.text).toMatch(/empty index state, not a tool failure/);
       expect(res.content[0]!.text).toMatch(/Continue with normal file tools/);
+      expect(res.content[0]!.text).toMatch(/Refresh the index after source files are present/);
+      expect(res.content[0]!.text).not.toMatch(/omniweave sync/);
     } finally {
       cg.close();
     }

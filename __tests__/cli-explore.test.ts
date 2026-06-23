@@ -74,6 +74,8 @@ describe('CLI explore unavailable-index policy', () => {
     expect(result.stdout).toContain('empty index state, not a tool failure');
     expect(result.stdout).toContain('Continue with normal file tools');
     expect(result.stdout).toContain('supported and not excluded');
+    expect(result.stdout).toContain('omniweave sync');
+    expect(result.stdout).not.toContain('omniweave_explore');
   });
 });
 

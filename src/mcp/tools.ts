@@ -4405,6 +4405,10 @@ export class ToolHandler {
     outputSurface: 'mcp' | 'cli' = 'mcp'
   ): string {
     if (fileCount === 0) {
+      const refreshStep = outputSurface === 'cli'
+        ? '- Run `omniweave sync` after source files are present.'
+        : '- Refresh the index after source files are present.';
+
       return [
         `No relevant code found for "${query}".`,
         '',
@@ -4415,7 +4419,7 @@ export class ToolHandler {
         'Next best steps:',
         '- Continue with normal file tools for this task; there is no graph content to query yet.',
         '- If source files exist, confirm they are supported and not excluded by project config.',
-        '- Refresh the index after source files are present.',
+        refreshStep,
       ].join('\n');
     }
 
