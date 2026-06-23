@@ -24,7 +24,7 @@ import { HOST_PPID_ENV } from '../extraction/wasm-runtime-flags';
 import { DaemonClientHello, DaemonHello, MAX_HELLO_LINE_BYTES } from './daemon';
 import { supervisionLostReason } from './ppid-watchdog';
 import { treatStdinFailureAsShutdown } from './stdin-teardown';
-import { OmniWeavePackageVersion } from './version';
+import { OmniWeaveBuildFingerprint } from './version';
 import { SERVER_INFO, PROTOCOL_VERSION } from './session';
 import { SERVER_INSTRUCTIONS } from './server-instructions';
 import { getStaticTools } from './tools';
@@ -100,7 +100,7 @@ export interface ProxyResult {
  */
 export async function runProxy(
   socketPath: string,
-  expectedVersion: string = OmniWeavePackageVersion,
+  expectedVersion: string = OmniWeaveBuildFingerprint,
 ): Promise<ProxyResult> {
   // POSIX: refuse to connect to a stale socket file that points at no
   // listening process. `fs.existsSync` is a cheap pre-check; a real
@@ -148,7 +148,7 @@ export async function runProxy(
  */
 export async function connectWithHello(
   socketPath: string,
-  expectedVersion: string = OmniWeavePackageVersion,
+  expectedVersion: string = OmniWeaveBuildFingerprint,
 ): Promise<net.Socket | 'version-mismatch' | null> {
   if (process.platform !== 'win32' && !fs.existsSync(socketPath)) return null;
   const socket = net.createConnection(socketPath);

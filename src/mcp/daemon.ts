@@ -53,7 +53,7 @@ import {
   getDaemonPidPath,
   getDaemonSocketPath,
 } from './daemon-paths';
-import { OmniWeavePackageVersion } from './version';
+import { OmniWeavePackageVersion, OmniWeaveBuildFingerprint } from './version';
 
 /** Default idle linger after the last client disconnects. */
 const DEFAULT_IDLE_TIMEOUT_MS = 300_000;
@@ -79,12 +79,14 @@ const MAX_HELLO_LINE_BYTES = 4096;
 
 /**
  * Wire format for the one-shot hello line the daemon emits on every new
- * connection. Versioned with the package's own semver so a 0.9.x proxy never
- * pipes through a 0.10.x daemon (or vice-versa) — the proxy falls back to
- * direct mode on mismatch rather than risk subtle wire incompatibilities.
+ * connection. The `omniweave` field is the build fingerprint (version +
+ * compiled-output hash) so a proxy never pipes through a daemon running
+ * different code — a different semver OR the same semver rebuilt with new
+ * logic. On mismatch the proxy falls back to direct mode rather than risk
+ * subtle wire incompatibilities or stale behavior.
  */
 export interface DaemonHello {
-  omniweave: string; // package version (must match the proxy's own version)
+  omniweave: string; // build fingerprint: OmniWeaveBuildFingerprint (version[+buildId])
   pid: number;       // daemon pid (informational; for `ps` debugging)
   socketPath: string; // echoed back so the proxy can log it
   protocol: 1;       // bump if the hello shape changes
@@ -254,7 +256,7 @@ export class Daemon {
     // Hello first so the proxy can verify versions before piping any
     // application bytes. The proxy reads exactly one line, then forwards.
     const hello: DaemonHello = {
-      omniweave: OmniWeavePackageVersion,
+      omniweave: OmniWeaveBuildFingerprint,
       pid: process.pid,
       socketPath: this.socketPath,
       protocol: 1,
