@@ -4,6 +4,7 @@ import * as path from 'path';
 import { getOmniWeaveDir, isInitialized, unsafeIndexRootReason, validateDirectory } from '../directory';
 import { DatabaseConnection, getDatabasePath } from '../db';
 import { QueryBuilder } from '../db/queries';
+import { hashContent } from '../extraction';
 import { FileLock, validatePathWithinRoot } from '../utils';
 import { LANGUAGES, type Edge, type EdgeKind, type Language, type Node as GraphNode, type NodeKind } from '../types';
 import {
@@ -270,8 +271,13 @@ function buildDocumentContexts(
       warnings.push(`Skipping SCIP document outside OmniWeave index: ${filePath}`);
       continue;
     }
+    const currentContent = fs.readFileSync(fullPath, 'utf8');
+    if (hashContent(currentContent) !== indexedFile.contentHash) {
+      warnings.push(`Skipping SCIP document because the OmniWeave index is stale for source file: ${filePath}`);
+      continue;
+    }
     const hasVerifiedSourceText = document.text.length > 0;
-    if (hasVerifiedSourceText && fs.readFileSync(fullPath, 'utf8') !== document.text) {
+    if (hasVerifiedSourceText && currentContent !== document.text) {
       warnings.push(`Skipping SCIP document with stale embedded text: ${filePath}`);
       continue;
     }

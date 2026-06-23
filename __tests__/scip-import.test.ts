@@ -521,6 +521,20 @@ describe('SCIP importer', () => {
     ]);
   });
 
+  it('skips SCIP documents when the OmniWeave base index is stale', async () => {
+    fs.appendFileSync(path.join(projectRoot, 'src', 'a.ts'), '\nexport const changed = true;\n');
+
+    const result = await importScipIndex(projectRoot, indexPath);
+
+    expect(result.documentsRead).toBe(2);
+    expect(result.documentsImported).toBe(1);
+    expect(result.referencesImported).toBe(0);
+    expect(result.relationshipsImported).toBe(1);
+    expect(result.warnings).toEqual([
+      'Skipping SCIP document because the OmniWeave index is stale for source file: src/a.ts',
+    ]);
+  });
+
   it('skips explicit SCIP document languages that mismatch indexed file languages', async () => {
     writeScipIndex(indexPath, 'python');
 
