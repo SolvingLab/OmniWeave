@@ -27,7 +27,6 @@ import { logDebug } from '../errors';
 import { validatePathWithinRoot, isConfigLeafNode } from '../utils';
 import {
   isLowSignalSourceFile,
-  isLowSignalSourceQuery,
   isRepositorySnapshotFile,
   isRepositorySnapshotQuery,
   extractSearchTerms,
@@ -36,6 +35,11 @@ import {
   isDistinctiveIdentifier,
 } from '../search/query-utils';
 import { LOW_CONFIDENCE_MARKER } from './markers';
+
+function queryAllowsLowSignalSources(query: string): boolean {
+  return /\b(test|tests|testing|spec|verify|verifies)\b/i.test(query)
+    || /\b(research|snapshot|snapshots|external|upstream|vendor|vendored|third[-_ ]?party)\b/i.test(query);
+}
 
 /**
  * Extract likely symbol names from a natural language query
@@ -653,7 +657,7 @@ export class ContextBuilder {
       }
     }
 
-    const isLowSignalQuery = isLowSignalSourceQuery(query);
+    const isLowSignalQuery = queryAllowsLowSignalSources(query);
 
     // Deprioritize test/example/research-snapshot files early so they don't take
     // multi-term boost slots for ordinary first-party code questions.

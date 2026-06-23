@@ -24,7 +24,6 @@ import type { Node, Edge, SearchResult, Subgraph, NodeKind, EdgeKind } from '../
 import {
   isDistinctiveIdentifier,
   isLowSignalSourceFile,
-  isLowSignalSourceQuery,
   isRepositorySnapshotFile,
   isRepositorySnapshotQuery,
   isTestFile,
@@ -100,6 +99,11 @@ const CONTAINER_NODE_KINDS = new Set<NodeKind>([
 ]);
 
 const CALL_SURFACE_EDGE_KINDS = new Set<EdgeKind>(['calls', 'crossLang', 'invokes', 'instantiates']);
+
+function queryAllowsLowSignalSources(query: string): boolean {
+  return /\b(test|tests|testing|spec|verify|verifies)\b/i.test(query)
+    || /\b(research|snapshot|snapshots|external|upstream|vendor|vendored|third[-_ ]?party)\b/i.test(query);
+}
 
 interface AmbiguousExploreToken {
   token: string;
@@ -1886,7 +1890,7 @@ export class ToolHandler {
       // CONTAINER class is itself named in the query.
       const segPool = new Set<string>();
       for (const t of tokens) for (const s of t.toLowerCase().split(/::|\./)) if (s) segPool.add(s);
-      const allowLowSignalSeeds = isLowSignalSourceQuery(query);
+      const allowLowSignalSeeds = queryAllowsLowSignalSources(query);
       const named = new Map<string, Node>();
       // Nodes whose token is SPECIFIC — a (near-)unique callable name (<=3 defs in
       // the whole graph). These are safe to SPARE a file on: the agent named THIS
@@ -2424,7 +2428,7 @@ export class ToolHandler {
       const isTestPath = (p: string) => /(^|\/)(tests?|specs?|__tests__|testdata|mocks?|fixtures?)\//i.test(p) || /\.(test|spec)\.[a-z]+$/i.test(p);
       const bodyLines = (n: Node) => Math.max(0, (n.endLine ?? n.startLine) - n.startLine);
       const tokens = extractExploreNameTokens(query, { includePrecedingPlainTokens: true });
-      const allowLowSignalSeeds = isLowSignalSourceQuery(query);
+      const allowLowSignalSeeds = queryAllowsLowSignalSources(query);
       // PascalCase tokens in the query are type/file disambiguators — when the
       // agent writes "DataRequest task validate", the `task`/`validate` it wants
       // are DataRequest's, NOT the same-named overloads in Validation.swift /
@@ -2553,7 +2557,7 @@ export class ToolHandler {
     // legitimate "explore the tests" case — and only cut if ≥2 non-test candidates
     // remain (else tests are the only signal for this area).
     {
-      const queryMentionsLowSignalPath = isLowSignalSourceQuery(query);
+      const queryMentionsLowSignalPath = queryAllowsLowSignalSources(query);
       if (!isRepositorySnapshotQuery(query)) {
         relevantFiles = relevantFiles.filter(([p]) => !isRepositorySnapshotFile(p));
       }
@@ -2725,7 +2729,7 @@ export class ToolHandler {
     if (blastRadius) lines.push(blastRadius);
 
     // Relationship map — supporting graph facts, not necessarily the main call path.
-    const allowLowSignalRelationships = isLowSignalSourceQuery(query);
+    const allowLowSignalRelationships = queryAllowsLowSignalSources(query);
     const significantEdges = subgraph.edges.filter(e =>
       e.kind !== 'contains' // skip contains — it's implied by file grouping
     ).filter((edge) => {
