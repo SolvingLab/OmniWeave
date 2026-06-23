@@ -253,6 +253,8 @@ export function snapshotCaller(): string {
     expect(result.stdout).toContain('run `omniweave sync`');
     expect(result.stdout).toContain('use normal file tools for that path');
     expect(result.stdout).toContain('No relevant code found for "brandNewCliFeature"');
+    expect(result.stdout).not.toContain('omniweave_node');
+    expect(result.stdout).not.toContain('omniweave_explore');
     expect(result.stdout).not.toContain('elsewhere in this project changed since the last index');
   });
 
@@ -288,6 +290,8 @@ export function snapshotCaller(): string {
     expect(result.stdout).toContain('index is behind the worktree');
     expect(result.stdout).toContain('src/mcp/tools.ts (modified)');
     expect(result.stdout).toContain('omniweave sync');
+    expect(result.stdout).toContain('omniweave node <path>');
+    expect(result.stdout).not.toContain('omniweave_node <path>');
     expect(result.stdout).toContain('fresh ranking budget truncation call path edge significance');
   });
 
@@ -312,6 +316,8 @@ export function snapshotCaller(): string {
     expect(result.stdout).toContain('src/mcp/tools.ts (removed)');
     expect(result.stdout).toContain('indexed but missing on disk');
     expect(result.stdout).toContain('Treat these symbol and relationship hits as stale');
+    expect(result.stdout).toContain('omniweave node <path>');
+    expect(result.stdout).not.toContain('omniweave_node <path>');
     expect(result.stdout).not.toContain('elsewhere in this project changed since the last index');
   });
 
@@ -321,8 +327,10 @@ export function snapshotCaller(): string {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('### Ambiguous named symbols');
     expect(result.stdout).toContain('`reconcile` matched 5 callable definitions');
-    expect(result.stdout).toContain('key: `omniweave_node symbol="reconcile" file="src/overloads/');
-    expect(result.stdout).toContain('omniweave_node');
+    expect(result.stdout).toContain('cmd: `omniweave node "reconcile" --file "src/overloads/');
+    expect(result.stdout).toContain('omniweave node ... --file ... --line');
+    expect(result.stdout).not.toContain('omniweave_node');
+    expect(result.stdout).not.toContain('omniweave_explore');
   });
 
   it('prints continuation keys for CLI query results', () => {
@@ -331,8 +339,9 @@ export function snapshotCaller(): string {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('Search Results for "buildExploreOutput"');
     expect(result.stdout).toContain(
-      'key: omniweave_node symbol="buildExploreOutput" file="src/mcp/tools.ts" line=1'
+      'cmd: omniweave node "buildExploreOutput" --file "src/mcp/tools.ts" --line 1'
     );
+    expect(result.stdout).not.toContain('omniweave_node');
   });
 
   it('uses MCP-style bounded integer parsing for CLI query limits', () => {
@@ -341,8 +350,10 @@ export function snapshotCaller(): string {
 
     expect(capped.status).toBe(0);
     expect(invalid.status).toBe(0);
-    expect(capped.stdout.match(/key: omniweave_node/g)?.length ?? 0).toBe(2);
-    expect(invalid.stdout.match(/key: omniweave_node/g)?.length ?? 0).toBeGreaterThan(2);
+    expect(capped.stdout.match(/cmd: omniweave node/g)?.length ?? 0).toBe(2);
+    expect(invalid.stdout.match(/cmd: omniweave node/g)?.length ?? 0).toBeGreaterThan(2);
+    expect(capped.stdout).not.toContain('omniweave_node');
+    expect(invalid.stdout).not.toContain('omniweave_node');
   });
 
   it('maps CLI query kind=type the same way as MCP search', () => {
@@ -351,7 +362,8 @@ export function snapshotCaller(): string {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('Search Results for "FlowAlias"');
     expect(result.stdout).toContain('type_alias');
-    expect(result.stdout).toContain('key: omniweave_node symbol="FlowAlias" file="src/mcp/flow.ts"');
+    expect(result.stdout).toContain('cmd: omniweave node "FlowAlias" --file "src/mcp/flow.ts"');
+    expect(result.stdout).not.toContain('omniweave_node');
   });
 
   it('falls back instead of parseInt-truncating invalid CLI node limits', () => {

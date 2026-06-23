@@ -181,6 +181,38 @@ describe('omniweave_explore — dynamic boundaries', () => {
     expect(text).not.toMatch(/\buse Read\b/i);
   });
 
+  it('uses shell follow-ups in CLI-surface dynamic-boundary guidance', async () => {
+    await setup({
+      'router.ts': [
+        'type Handler = (p: unknown) => void;',
+        'export class Router {',
+        '  private table: Record<string, Handler> = {};',
+        '  add(key: string, fn: Handler) { this.table[key] = fn; }',
+        '  routeSave(payload: unknown) {',
+        "    this.table['save'](payload);",
+        '  }',
+        '}',
+      ].join('\n'),
+      'handlers.ts': [
+        "import { Router } from './router';",
+        'export function onSave(payload: unknown) { return payload; }',
+        'export function wire(r: Router) { r.add("save", onSave); }',
+      ].join('\n'),
+    }, ['**/*.ts']);
+
+    const res = await handler.execute('omniweave_explore', {
+      query: 'routeSave onSave',
+      __outputSurface: 'cli',
+    });
+    const text = res.content[0].text as string;
+
+    expect(text).toContain('## Dynamic boundaries');
+    expect(text).toContain('omniweave explore "<candidate>"');
+    expect(text).toContain('omniweave node "<candidate>"');
+    expect(text).not.toContain('omniweave_explore');
+    expect(text).not.toContain('omniweave_node');
+  });
+
   it('announces a runtime-keyed boundary with no candidate list', async () => {
     await setup({
       'bus.ts': [

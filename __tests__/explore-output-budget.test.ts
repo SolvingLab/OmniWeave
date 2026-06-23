@@ -334,6 +334,17 @@ describe('omniweave_explore hard-ceiling truncation', () => {
     expect((text.match(/```/g) ?? []).length % 2).toBe(0);
   });
 
+  it('uses shell follow-ups in CLI-surface hard-ceiling truncation', async () => {
+    const query = Array.from({ length: 8 }, (_, i) => `targetBudget${i}`).join(' ');
+    const result = await handler.execute('omniweave_explore', { query, maxFiles: 8, __outputSurface: 'cli' });
+    const text = result.content?.[0]?.text ?? '';
+
+    expect(text).toContain('output truncated to budget');
+    expect(text).toContain('omniweave explore "<names>"');
+    expect(text).not.toContain('omniweave_explore');
+    expect(text).not.toContain('omniweave_node');
+  });
+
   it('keeps stale-wrapped hard-ceiling output inside the inline ceiling', async () => {
     const query = Array.from({ length: 8 }, (_, i) => `targetBudget${i}`).join(' ');
     const targetPath = path.join(testDir, 'src', 'target0.ts');
@@ -362,6 +373,21 @@ describe('omniweave_explore hard-ceiling truncation', () => {
     expect(text).not.toContain('output truncated to budget');
     expect(text).not.toContain('Complete source for 1 files is included above');
     expect(text).toContain('Source shown above is complete only for the displayed blocks/ranges');
+  });
+
+  it('uses shell follow-ups in CLI-surface partial-source footers', async () => {
+    const result = await handler.execute('omniweave_explore', {
+      query: 'targetBudget0',
+      maxFiles: 1,
+      __outputSurface: 'cli',
+    });
+    const text = result.content?.[0]?.text ?? '';
+
+    expect(text).toContain('Source shown above is complete only for the displayed blocks/ranges');
+    expect(text).toContain('omniweave explore "<symbol>"');
+    expect(text).toContain('omniweave node "<symbol>"');
+    expect(text).not.toContain('omniweave_explore');
+    expect(text).not.toContain('omniweave_node');
   });
 
   it('does not repeat displayed source files in the not-shown list', async () => {

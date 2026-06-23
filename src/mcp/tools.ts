@@ -108,6 +108,8 @@ interface AmbiguousExploreToken {
   alternatives: Node[];
 }
 
+export type OutputSurface = 'mcp' | 'cli';
+
 const EXPLORE_RELATIONSHIP_KIND_RANK: Record<EdgeKind, number> = {
   calls: 0,
   crossLang: 1,
@@ -362,9 +364,12 @@ function truncateExploreAtCompleteBoundary(output: string, hardCeiling: number, 
   return safe.trimEnd() + suffix;
 }
 
-function capExploreFinalText(text: string): string {
+function capExploreFinalText(text: string, outputSurface: OutputSurface = 'mcp'): string {
   if (text.length <= EXPLORE_INLINE_HARD_CEILING) return text;
-  const suffix = '\n\n... (output truncated to final inline budget after freshness/worktree notices; trailing sections were dropped whole to keep this inline and avoid partial source. Treat only complete source blocks shown above as already Read. For uncovered names/files, run another omniweave_explore with the specific names.)';
+  const retry = outputSurface === 'cli'
+    ? 'run another `omniweave explore "<names>"` with the specific names'
+    : 'run another omniweave_explore with the specific names';
+  const suffix = `\n\n... (output truncated to final inline budget after freshness/worktree notices; trailing sections were dropped whole to keep this inline and avoid partial source. Treat only complete source blocks shown above as already Read. For uncovered names/files, ${retry}.)`;
   return truncateExploreAtCompleteBoundary(text, EXPLORE_INLINE_HARD_CEILING, suffix);
 }
 
@@ -422,20 +427,26 @@ function numberSourceLines(slice: string, firstLineNumber: number): string {
  * The agent uses this to verify the listed files or refresh the graph before
  * trusting relationships/line ranges, without blocking on debounce (issue #403).
  */
-export function formatStaleBanner(stale: PendingFile[]): string {
+export function formatStaleBanner(stale: PendingFile[], outputSurface: OutputSurface = 'mcp'): string {
   const now = Date.now();
   const lines = stale.map((p) => {
     const ageMs = Math.max(0, now - p.lastSeenMs);
     const label = p.indexing ? 'indexing in progress' : 'pending sync';
     return `  - ${p.path} (edited ${ageMs}ms ago, ${label})`;
   });
+  const focusedRead = outputSurface === 'cli'
+    ? 'Use `omniweave node <path>`'
+    : 'Use `omniweave_node <path>`';
+  const syncStep = outputSurface === 'cli'
+    ? 'run `omniweave sync`'
+    : 'from a shell run `omniweave sync`';
   return (
     '⚠️ Some files referenced below were edited since the last index sync — ' +
     'their omniweave symbols, edges, or line ranges may be stale:\n' +
     lines.join('\n') +
     '\nIf source blocks are shown below, their bytes were re-read from disk, ' +
-    'but the graph context for those files may still be stale. Use `omniweave_node <path>` ' +
-    'for a focused current file read, or run `omniweave sync` before trusting relationships. ' +
+    `but the graph context for those files may still be stale. ${focusedRead} ` +
+    `for a focused current file read, or ${syncStep} before trusting relationships. ` +
     'The rest of this response is fresh.'
   );
 }
@@ -480,13 +491,15 @@ function changedFileEntries(changes: { added: string[]; modified: string[]; remo
  * MCP, disabled watcher policy). `getPendingFiles()` is empty there by design,
  * so we fall back to the same changed-file signal that powers status.
  */
-export function formatChangedIndexBanner(changed: ChangedFileEntry[]): string {
+export function formatChangedIndexBanner(changed: ChangedFileEntry[], outputSurface: OutputSurface = 'mcp'): string {
   const lines = changed.map((p) => `  - ${p.path} (${p.kind})`);
+  const focusedRead = outputSurface === 'cli' ? '`omniweave node <path>`' : '`omniweave_node <path>`';
+  const syncStep = outputSurface === 'cli' ? 'run `omniweave sync`' : 'from a shell, run `omniweave sync`';
   return (
     '⚠️ The OmniWeave index is behind the worktree — files referenced below changed or were removed since the last index:\n' +
     lines.join('\n') +
     '\nSource blocks below are re-read from disk when shown, but symbols, edges, ranking, and line ranges may still come from the old index. ' +
-    'Run `omniweave sync` before trusting relationships, or use `omniweave_node <path>` for focused current reads.'
+    `${syncStep} before trusting relationships, or use ${focusedRead} for focused current reads.`
   );
 }
 
@@ -505,7 +518,7 @@ export function formatChangedIndexFooter(changed: ChangedFileEntry[]): string {
   );
 }
 
-function formatStaleNoResultNotice(stale: PendingFile[]): string {
+function formatStaleNoResultNotice(stale: PendingFile[], outputSurface: OutputSurface = 'mcp'): string {
   const MAX = 5;
   const now = Date.now();
   const shown = stale.slice(0, MAX);
@@ -515,24 +528,26 @@ function formatStaleNoResultNotice(stale: PendingFile[]): string {
     return `  - ${p.path} (edited ${ageMs}ms ago, ${label})`;
   });
   const more = stale.length > MAX ? `\n  - …and ${stale.length - MAX} more` : '';
+  const syncStep = outputSurface === 'cli' ? 'run `omniweave sync`' : 'from a shell run `omniweave sync`';
   return (
     '⚠️ This empty explore result may be stale — files changed since the last index sync are not represented in the graph yet:\n' +
     lines.join('\n') +
     more +
-    '\nIf your query targets one of these files, wait for sync or run `omniweave sync` before trusting structural results. For immediate work on a newly created file, use normal file tools for that path.'
+    `\nIf your query targets one of these files, wait for sync or ${syncStep} before trusting structural results. For immediate work on a newly created file, use normal file tools for that path.`
   );
 }
 
-function formatChangedIndexNoResultNotice(changed: ChangedFileEntry[]): string {
+function formatChangedIndexNoResultNotice(changed: ChangedFileEntry[], outputSurface: OutputSurface = 'mcp'): string {
   const MAX = 5;
   const shown = changed.slice(0, MAX);
   const lines = shown.map((p) => `  - ${p.path} (${p.kind})`);
   const more = changed.length > MAX ? `\n  - …and ${changed.length - MAX} more` : '';
+  const syncStep = outputSurface === 'cli' ? 'run `omniweave sync`' : 'from a shell run `omniweave sync`';
   return (
     '⚠️ This empty explore result may be stale — files changed since the last index are not represented in the graph yet:\n' +
     lines.join('\n') +
     more +
-    '\nIf your query targets one of these files, run `omniweave sync` before trusting structural results. For immediate work on a newly created file, use normal file tools for that path.'
+    `\nIf your query targets one of these files, ${syncStep} before trusting structural results. For immediate work on a newly created file, use normal file tools for that path.`
   );
 }
 
@@ -1203,7 +1218,11 @@ export class ToolHandler {
    * Cost when nothing is pending — the common case — is one boolean check.
    * No I/O, no parsing of markdown beyond a per-pending-file substring scan.
    */
-  private withStalenessNotice(result: ToolResult, projectPath?: string): ToolResult {
+  private withStalenessNotice(
+    result: ToolResult,
+    projectPath?: string,
+    outputSurface: OutputSurface = 'mcp'
+  ): ToolResult {
     if (result.isError) return result;
 
     let cg: OmniWeave;
@@ -1245,7 +1264,7 @@ export class ToolHandler {
 
     if (pending.length > 0) {
       if (isExploreNoResultText(text)) {
-        const composed = [formatStaleNoResultNotice(pending), text].join('\n\n');
+        const composed = [formatStaleNoResultNotice(pending, outputSurface), text].join('\n\n');
         return { ...result, content: [{ type: 'text', text: composed }, ...rest] };
       }
 
@@ -1261,7 +1280,7 @@ export class ToolHandler {
 
       let banner = '';
       if (inResponse.length > 0) {
-        banner = formatStaleBanner(inResponse);
+        banner = formatStaleBanner(inResponse, outputSurface);
       }
       let footer = '';
       if (elsewhere.length > 0) {
@@ -1291,7 +1310,7 @@ export class ToolHandler {
     if (changedEntries.length === 0) return result;
 
     if (isExploreNoResultText(text)) {
-      const composed = [formatChangedIndexNoResultNotice(changedEntries), text].join('\n\n');
+      const composed = [formatChangedIndexNoResultNotice(changedEntries, outputSurface), text].join('\n\n');
       return { ...result, content: [{ type: 'text', text: composed }, ...rest] };
     }
 
@@ -1304,7 +1323,7 @@ export class ToolHandler {
 
     let banner = '';
     if (inResponse.length > 0) {
-      banner = formatChangedIndexBanner(inResponse);
+      banner = formatChangedIndexBanner(inResponse, outputSurface);
     }
     let footer = '';
     if (elsewhere.length > 0) {
@@ -1386,12 +1405,13 @@ export class ToolHandler {
         default:
           return this.errorResult(`Unknown tool: ${toolName}`);
       }
+      const outputSurface: OutputSurface = args.__outputSurface === 'cli' ? 'cli' : 'mcp';
       const withWorktree = this.withWorktreeNotice(result, args.projectPath as string | undefined);
-      const withStaleness = this.withStalenessNotice(withWorktree, args.projectPath as string | undefined);
+      const withStaleness = this.withStalenessNotice(withWorktree, args.projectPath as string | undefined, outputSurface);
       if (toolName === 'omniweave_explore') {
         const [first, ...rest] = withStaleness.content;
         if (first && first.type === 'text') {
-          return { ...withStaleness, content: [{ type: 'text', text: capExploreFinalText(first.text) }, ...rest] };
+          return { ...withStaleness, content: [{ type: 'text', text: capExploreFinalText(first.text, outputSurface) }, ...rest] };
         }
       }
       return withStaleness;
@@ -1828,7 +1848,7 @@ export class ToolHandler {
    * whose qualifiedName contains another named token (`PmsProductServiceImpl::list`),
    * dropping unrelated `OmsOrderService::list`.
    */
-  private buildFlowFromNamedSymbols(cg: OmniWeave, query: string): { text: string; pathNodeIds: Set<string>; namedNodeIds: Set<string>; uniqueNamedNodeIds: Set<string> } {
+  private buildFlowFromNamedSymbols(cg: OmniWeave, query: string, outputSurface: OutputSurface = 'mcp'): { text: string; pathNodeIds: Set<string>; namedNodeIds: Set<string>; uniqueNamedNodeIds: Set<string> } {
     const EMPTY = { text: '', pathNodeIds: new Set<string>(), namedNodeIds: new Set<string>(), uniqueNamedNodeIds: new Set<string>() };
     try {
       const CALLABLE = new Set(['method', 'function', 'component', 'constructor']);
@@ -1879,7 +1899,7 @@ export class ToolHandler {
         // body may still hold the dynamic-dispatch site that EXPLAINS the gap —
         // surface that instead of silently returning nothing.
         if (named.size === 0) return EMPTY;
-        const boundaries = this.buildDynamicBoundaries(cg, [...named.values()], named);
+        const boundaries = this.buildDynamicBoundaries(cg, [...named.values()], named, outputSurface);
         if (!boundaries) return EMPTY;
         const text = boundaries + '> Full source for these symbols is below.\n';
         return { text, pathNodeIds: new Set(), namedNodeIds: new Set(named.keys()), uniqueNamedNodeIds };
@@ -1944,7 +1964,7 @@ export class ToolHandler {
           if (hasMain) scanList.push(best![best!.length - 1]!.node);
           scanList.push(...uncovered.sort((a, b) =>
             (uniqueNamedNodeIds.has(b.id) ? 1 : 0) - (uniqueNamedNodeIds.has(a.id) ? 1 : 0)));
-          boundaryText = this.buildDynamicBoundaries(cg, scanList, named);
+          boundaryText = this.buildDynamicBoundaries(cg, scanList, named, outputSurface);
         }
       }
 
@@ -2023,7 +2043,7 @@ export class ToolHandler {
    * at runtime. Query-time, deterministic, zero graph mutation; a fully
    * connected flow never reaches this method.
    */
-  private buildDynamicBoundaries(cg: OmniWeave, scanList: Node[], named: Map<string, Node>): string {
+  private buildDynamicBoundaries(cg: OmniWeave, scanList: Node[], named: Map<string, Node>, outputSurface: OutputSurface = 'mcp'): string {
     const MAX_NOTES = 4;       // boundary bullets per explore
     const MAX_SCAN = 8;        // bodies scanned
     const MAX_TOTAL_CHARS = 200_000;
@@ -2063,7 +2083,9 @@ export class ToolHandler {
       '',
       ...notes,
       '',
-      '> These sites choose their call target at runtime (registry / bus / reflection) — the site shown IS where the flow continues. To follow it, run omniweave_explore or omniweave_node on a candidate; source for the sites above is included below.',
+      outputSurface === 'cli'
+        ? '> These sites choose their call target at runtime (registry / bus / reflection) — the site shown IS where the flow continues. To follow it, run `omniweave explore "<candidate>"` or `omniweave node "<candidate>"`; source for the sites above is included below.'
+        : '> These sites choose their call target at runtime (registry / bus / reflection) — the site shown IS where the flow continues. To follow it, run omniweave_explore or omniweave_node on a candidate; source for the sites above is included below.',
       '',
     ].join('\n');
   }
@@ -2294,6 +2316,7 @@ export class ToolHandler {
     if (typeof query !== 'string') return query;
 
     const cg = this.getOmniWeave(args.projectPath as string | undefined);
+    const outputSurface: OutputSurface = args.__outputSurface === 'cli' ? 'cli' : 'mcp';
     const projectRoot = cg.getProjectRoot();
 
     // Resolve adaptive output budget from project size. Falls back to the
@@ -2319,8 +2342,6 @@ export class ToolHandler {
       maxNodes: 200,
       minScore: 0.2,
     });
-
-    const outputSurface = args.__outputSurface === 'cli' ? 'cli' : 'mcp';
 
     if (subgraph.nodes.size === 0) {
       return this.textResult(this.buildNoExploreResultsMessage(query, fileCount, outputSurface));
@@ -2665,7 +2686,7 @@ export class ToolHandler {
     const coverageLineIndex = lines.length;
     lines.push('', '');
 
-    const ambiguity = this.buildAmbiguousExploreSection(ambiguousExploreTokens);
+    const ambiguity = this.buildAmbiguousExploreSection(ambiguousExploreTokens, outputSurface);
     if (ambiguity) lines.push(ambiguity);
 
     // Blast radius (always-on, compact): for the entry symbols, who depends on
@@ -2730,7 +2751,7 @@ export class ToolHandler {
     // Compute the flow spine once — used both to prepend the Flow section (below)
     // and to gate adaptive source sizing: files on the spine get full source,
     // off-spine peers skeletonize.
-    const flow = this.buildFlowFromNamedSymbols(cg, query);
+    const flow = this.buildFlowFromNamedSymbols(cg, query, outputSurface);
 
     // Polymorphic-sibling detector for adaptive sizing. A class that implements/
     // extends a supertype shared by >= MIN_SIBLINGS classes is one of many
@@ -2944,9 +2965,12 @@ export class ToolHandler {
           // (Session.swift, DataRequest.swift) that fired an over-investigation
           // spiral (the agent Read the skeletonized file, then kept digging).
           // CLAUDE.md: explore output must never tell the agent to Read.
+          const followUp = outputSurface === 'cli'
+            ? 'omniweave explore "<signature name>"'
+            : 'omniweave_explore a signature by name';
           const tag = bodyIds.size > 0
-            ? 'focused (the methods you named in full, the rest as signatures — omniweave_explore a signature by name for its body; do NOT Read)'
-            : 'skeleton (signatures only — omniweave_explore a name for its full body; do NOT Read)';
+            ? `focused (the methods you named in full, the rest as signatures — ${followUp} for its body; do NOT Read)`
+            : `skeleton (signatures only — ${followUp} for a full body; do NOT Read)`;
           lines.push(`#### ${filePath} — ${names} · ${tag}`, '', '```' + lang, skel.join('\n'), '```', '');
           anyPartialSourceView = true;
           totalChars += skel.join('\n').length + 120;
@@ -3124,7 +3148,10 @@ export class ToolHandler {
       // etc.). With line numbers on, the line-number jump also signals the gap.
       const GAP_MARKER = '\n\n... (gap) ...\n\n';
       const truncateOversizedSourceRange = (section: string, maxChars: number): { text: string; truncated: boolean } => {
-        const marker = '\n\n... (oversized source range omitted; rerun omniweave_explore with a narrower symbol/file query for the next window) ...';
+        const retry = outputSurface === 'cli'
+          ? 'rerun `omniweave explore "<symbol-or-file>"` with a narrower symbol/file query'
+          : 'rerun omniweave_explore with a narrower symbol/file query';
+        const marker = `\n\n... (oversized source range omitted; ${retry} for the next window) ...`;
         if (section.length <= maxChars) return { text: section, truncated: false };
         const limit = Math.max(0, maxChars - marker.length);
         if (limit <= 0) return { text: marker.trimStart(), truncated: true };
@@ -3295,10 +3322,16 @@ export class ToolHandler {
     if (budget.includeCompletenessSignal && !anyPartialSourceView && !anyFileTrimmed) {
       lines.push('');
       lines.push('---');
-      lines.push(`> **Complete source for ${filesIncluded} files is included above — do NOT re-read them.** If your question also needs files/symbols listed under "Not shown above" (or any area this call didn't cover), make ANOTHER omniweave_explore targeting those names — it returns the same source with line numbers and is cheaper and more complete than reading. Reserve Read for a single specific line range explore can't surface.`);
+      const followUp = outputSurface === 'cli'
+        ? 'make ANOTHER `omniweave explore "<names>"` call targeting those names'
+        : 'make ANOTHER omniweave_explore targeting those names';
+      lines.push(`> **Complete source for ${filesIncluded} files is included above — do NOT re-read them.** If your question also needs files/symbols listed under "Not shown above" (or any area this call didn't cover), ${followUp} — it returns the same source with line numbers and is cheaper and more complete than reading. Reserve Read for a single specific line range explore can't surface.`);
     } else if (budget.includeCompletenessSignal || anyFileTrimmed) {
       lines.push('');
-      lines.push(`> Source shown above is complete only for the displayed blocks/ranges; some file ranges or candidate files may be omitted for size. For a specific symbol you still need, run another \`omniweave_explore\` (or \`omniweave_node\`) with its exact name — line-numbered source, cheaper and more complete than Read.`);
+      const followUp = outputSurface === 'cli'
+        ? 'run `omniweave explore "<symbol>"` or `omniweave node "<symbol>"`'
+        : 'run another `omniweave_explore` (or `omniweave_node`)';
+      lines.push(`> Source shown above is complete only for the displayed blocks/ranges; some file ranges or candidate files may be omitted for size. For a specific symbol you still need, ${followUp} with its exact name — line-numbered source, cheaper and more complete than Read.`);
     }
 
     // Add explore budget note based on project size
@@ -3324,7 +3357,10 @@ export class ToolHandler {
     const output = flow.text + lines.join('\n');
     const hardCeiling = Math.min(Math.round(budget.maxOutputChars * 1.5), EXPLORE_INLINE_HARD_CEILING);
     if (output.length > hardCeiling) {
-      const suffix = '\n\n... (output truncated to budget; trailing sections were dropped whole to keep this inline and avoid partial source. Treat only complete source blocks shown above as already Read. For uncovered names/files, run another omniweave_explore with the specific names.)';
+      const retry = outputSurface === 'cli'
+        ? 'run another `omniweave explore "<names>"` with the specific names'
+        : 'run another omniweave_explore with the specific names';
+      const suffix = `\n\n... (output truncated to budget; trailing sections were dropped whole to keep this inline and avoid partial source. Treat only complete source blocks shown above as already Read. For uncovered names/files, ${retry}.)`;
       // Cut at a COMPLETE source-block boundary and reserve room for the suffix,
       // otherwise the hard ceiling can still spill over after the marker.
       return this.textResult(truncateExploreAtCompleteBoundary(output, hardCeiling, suffix));
@@ -4275,6 +4311,19 @@ export class ToolHandler {
     return `omniweave_node symbol="${quote(node.name)}" file="${quote(node.filePath)}" line=${line}`;
   }
 
+  private cliArg(value: string): string {
+    return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$/g, '\\$').replace(/`/g, '\\`')}"`;
+  }
+
+  private cliNodeCommand(node: Node): string {
+    const line = node.startLine || 1;
+    return `omniweave node ${this.cliArg(node.name)} --file ${this.cliArg(node.filePath)} --line ${line}`;
+  }
+
+  private nodeContinuation(node: Node, outputSurface: OutputSurface): string {
+    return outputSurface === 'cli' ? this.cliNodeCommand(node) : this.nodeContinuationKey(node);
+  }
+
   private formatExploreRelationshipEdge(edge: Edge, source: Node, target: Node): string {
     const notes: string[] = [];
     if (edge.line && edge.line > 0) notes.push(`${source.filePath}:${edge.line}`);
@@ -4402,7 +4451,7 @@ export class ToolHandler {
   private buildNoExploreResultsMessage(
     query: string,
     fileCount: number | null = null,
-    outputSurface: 'mcp' | 'cli' = 'mcp'
+    outputSurface: OutputSurface = 'mcp'
   ): string {
     if (fileCount === 0) {
       const refreshStep = outputSurface === 'cli'
@@ -4447,10 +4496,14 @@ export class ToolHandler {
     ].join('\n');
   }
 
-  private buildAmbiguousExploreSection(items: AmbiguousExploreToken[]): string {
+  private buildAmbiguousExploreSection(items: AmbiguousExploreToken[], outputSurface: OutputSurface = 'mcp'): string {
     if (items.length === 0) return '';
-    const formatNode = (n: Node): string =>
-      `\`${n.qualifiedName || n.name}\` (${n.filePath}:${n.startLine}; key: \`${this.nodeContinuationKey(n)}\`)`;
+    const formatNode = (n: Node): string => {
+      const continuation = outputSurface === 'cli'
+        ? `cmd: \`${this.nodeContinuation(n, outputSurface)}\``
+        : `key: \`${this.nodeContinuation(n, outputSurface)}\``;
+      return `\`${n.qualifiedName || n.name}\` (${n.filePath}:${n.startLine}; ${continuation})`;
+    };
     const lines = [
       '### Ambiguous named symbols',
       '',
@@ -4470,7 +4523,9 @@ export class ToolHandler {
     }
     lines.push(
       '',
-      '> Add an owning class, namespace, or file path and rerun `omniweave_explore`, or call `omniweave_node` with `symbol` + `file` to pin one definition.',
+      outputSurface === 'cli'
+        ? '> Add an owning class, namespace, or file path and rerun `omniweave explore "<query>"`, or run the printed `omniweave node ... --file ... --line ...` command to pin one definition.'
+        : '> Add an owning class, namespace, or file path and rerun `omniweave_explore`, or call `omniweave_node` with `symbol` + `file` to pin one definition.',
       ''
     );
     return lines.join('\n');

@@ -55,10 +55,13 @@ async function loadOmniWeave(): Promise<typeof import('../index')> {
   }
 }
 
-function nodeContinuationKey(node: Node): string {
-  const quote = (value: string) => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+function cliArg(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\$/g, '\\$').replace(/`/g, '\\`')}"`;
+}
+
+function nodeContinuationCommand(node: Node): string {
   const line = node.startLine || 1;
-  return `omniweave_node symbol="${quote(node.name)}" file="${quote(node.filePath)}" line=${line}`;
+  return `omniweave node ${cliArg(node.name)} --file ${cliArg(node.filePath)} --line ${line}`;
 }
 
 function parseCliIntOption(value: string | undefined, fallback: number, min: number, max: number): number {
@@ -1064,7 +1067,7 @@ program
               ' ' + score
             );
             console.log(chalk.dim(`  ${location}`));
-            console.log(chalk.dim(`  key: ${nodeContinuationKey(node)}`));
+            console.log(chalk.dim(`  cmd: ${nodeContinuationCommand(node)}`));
             if (node.signature) {
               console.log(chalk.dim(`  ${node.signature}`));
             }
