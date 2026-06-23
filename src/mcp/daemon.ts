@@ -194,7 +194,7 @@ export class Daemon {
     };
 
     process.stderr.write(
-      `[OmniWeave daemon] Listening on ${this.socketPath} (pid ${process.pid}, v${OmniWeavePackageVersion}). Idle timeout ${this.idleTimeoutMs}ms.\n`
+      `[OmniWeave daemon] Listening on ${this.socketPath} (pid ${process.pid}, build ${OmniWeaveBuildFingerprint}). Idle timeout ${this.idleTimeoutMs}ms.\n`
     );
 
     // No clients yet: arm the idle timer immediately so a daemon that nobody
