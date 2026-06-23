@@ -12,7 +12,7 @@ The relationships that matter most to an agent are exactly the ones a language s
 [![Local](https://img.shields.io/badge/100%25-local-brightgreen.svg)](#performance)
 [![Node](https://img.shields.io/badge/node-%E2%89%A522.5-blue.svg)](https://nodejs.org/)
 [![MCP](https://img.shields.io/badge/MCP-native-blueviolet.svg)](#use-it-from-an-agent)
-[![Tests](https://img.shields.io/badge/tests-1724%20passing-success.svg)](#engineering)
+[![Tests](https://img.shields.io/badge/tests-1729%20passing-success.svg)](#engineering)
 [![Agent A/B](https://img.shields.io/badge/agent_A%2FB-7_rounds_measured-orange.svg)](#does-an-agent-actually-do-better-with-omniweave)
 
 </div>
@@ -94,7 +94,7 @@ The cleanest result is deterministic (no LLM needed). Ask `explore` for a **symb
 
 | | pre-hardening | now |
 |---|---|---|
-| Output for a missing symbol | **24,273 chars** — a blast radius of `Embedder`, `Symbol`… from **5 gitignored competitor snapshots** (`serena`, `scip`, `semantic-search-mcp`) | **558 chars** — "empty result, not a tool failure" + a recovery path |
+| Output for a missing symbol | **24,273 chars** — a blast radius of unrelated `Symbol` classes pulled from **gitignored competitor checkouts** (`serena`, `scip`, `cgc`, `aider`…) | **558 chars** — "empty result, not a tool failure" + a recovery path |
 
 Pre-hardening, OmniWeave indexed source a `grep` *can't even see* (the repo vendors competitor checkouts under a gitignored path) and then **leaked it into the agent's context** — so on a missing symbol it was briefly **dirtier than `grep`**, handing the agent ~6 K tokens of someone else's code to be misled by. The hardening makes it **as clean as a gitignore-aware `grep`, plus a recovery path**. In the agent A/B, asking "does this repo do vector search?" (it doesn't — that's a deliberate non-feature), the pre-hardening `explore` dumped competitor embedding code and the agent spent **~2 extra tool calls / ~2 extra turns** discounting it as "not first-party"; on the weak model the worst pre-hardening run flailed to **8 turns / 160 K tokens** where the hardened arm held at 3–4. **Correctness tied every time** — a capable agent recovers either way — so, as everywhere else, the contribution is *effort and trust, not correctness*.
 
@@ -224,7 +224,7 @@ node dist/bin/omniweave.js serve --mcp
 ## Engineering
 
 - **Hand-written extractors, no `.scm`.** Each language is a focused TypeScript walker — adding a language or a relationship is a small, testable change, not a grammar rewrite.
-- **Eval-gated.** A recall/precision harness with edge, reachability, and **negative** assertions guards every capability — red before the feature, green after, with teeth that fail if a target regresses. **1724** unit tests, 25 evaluation gates, zero known false positives across six real repositories.
+- **Eval-gated.** A recall/precision harness with edge, reachability, and **negative** assertions guards every capability — red before the feature, green after, with teeth that fail if a target regresses. **1729** unit tests, 25 evaluation gates, zero known false positives across six real repositories.
 - **A §1.5 benchmark** (`npm run benchmark`) measures, honestly, the bounded class of queries where the graph wins, ties, or loses against `grep`/LSP — including the ones it loses.
 - **Adversarial agent A/B evaluation** (`scripts/agent-eval/`, seven rounds in `eval-results/`). Rather than trust a self-reported metric, every value claim is measured by running a real coding agent **with vs without** the graph attached, on real repositories, with human-judged ground truth — and the discipline is to *go looking for where the tool loses*: correctness ties were confirmed by building traps meant to break them, a prior round's "~34 K overhead" claim was retracted after direct measurement (+682), the cross-process-at-scale and in-process-mode bets were both retired as NO-GO, and round 7's headline win — suppressing leaked competitor-snapshot source — was recorded as OmniWeave fixing *itself* (it had been dirtier than `grep`), not as a moat over `grep`. The boundary in this README is drawn by that evaluation, not by marketing.
 

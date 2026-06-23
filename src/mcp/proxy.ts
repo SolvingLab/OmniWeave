@@ -122,7 +122,7 @@ export async function runProxy(
 
   if (hello.omniweave !== expectedVersion) {
     process.stderr.write(
-      `[OmniWeave MCP] Found a daemon on ${socketPath} but version (${hello.omniweave}) ` +
+      `[OmniWeave MCP] Found a daemon on ${socketPath} but build (${hello.omniweave}) ` +
       `differs from ours (${expectedVersion}); falling back to direct mode.\n`
     );
     socket.destroy();
@@ -162,7 +162,7 @@ export async function connectWithHello(
     // A daemon IS up but it's the wrong version — definitive, not a "not yet".
     // Don't poll; the caller serves in-process so we never run stale-vs-new.
     process.stderr.write(
-      `[OmniWeave MCP] Found a daemon on ${socketPath} but version (${hello.omniweave}) ` +
+      `[OmniWeave MCP] Found a daemon on ${socketPath} but build (${hello.omniweave}) ` +
       `differs from ours (${expectedVersion}); serving this session in-process.\n`
     );
     socket.destroy();
