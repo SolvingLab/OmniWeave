@@ -12,7 +12,7 @@
  * relies on.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -23,6 +23,8 @@ import {
 } from '../src/sync/worktree';
 import OmniWeave from '../src/index';
 import { ToolHandler } from '../src/mcp/tools';
+
+const BIN = path.resolve(__dirname, '../dist/bin/omniweave.js');
 
 function git(cwd: string, ...args: string[]): void {
   execFileSync('git', args, { cwd, stdio: ['ignore', 'ignore', 'ignore'] });
@@ -159,6 +161,30 @@ describe('worktree mismatch surfaces on hot read tools (issue #155)', () => {
     handler.setDefaultProjectHint(mainRepo);
     const res = await handler.execute('omniweave_search', { query: 'mainOnly' });
     expect(res.content[0].text).not.toContain('different git worktree');
+  });
+
+  it('does NOT warn when CLI explore explicitly targets the main checkout from a nested worktree', () => {
+    const result = spawnSync(process.execPath, [
+      BIN,
+      'explore',
+      'mainOnly',
+      '--path',
+      mainRepo,
+      '--max-files',
+      '1',
+    ], {
+      cwd: worktree,
+      encoding: 'utf-8',
+      env: {
+        ...process.env,
+        OMNIWEAVE_NO_DAEMON: '1',
+        OMNIWEAVE_NO_WATCH: '1',
+      },
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('mainOnly');
+    expect(result.stdout).not.toContain('different git worktree');
   });
 
   it('still shows the verbose warning on omniweave_status', async () => {

@@ -1110,6 +1110,7 @@ program
       const cg = await OmniWeave.open(projectPath);
       const { ToolHandler } = await import('../mcp/tools');
       const handler = new ToolHandler(cg);
+      handler.setDefaultProjectHint(projectPath);
 
       const args: Record<string, unknown> = {
         query: queryParts.join(' '),
