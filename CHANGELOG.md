@@ -22,6 +22,7 @@ and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Symlinked source files can now be indexed through an in-root symlink without relaxing content-serving protections, so `omniweave_node` still refuses out-of-root reads.
 - C++ extraction no longer invents phantom functions from macro-prefixed type declarations.
 - Synthesized dynamic-dispatch edges now have a generic MCP label fallback, so new heuristic bridges do not appear as bare static calls.
+- A long-running OmniWeave background daemon no longer keeps serving answers from outdated code after the package is upgraded or rebuilt under the same version. The daemon and the per-session client now compare a build fingerprint (version plus a hash of the compiled output) during their handshake, so a freshly-updated client detects a stale daemon and serves the session with current code instead of silently piping through the old one. Older installs without the fingerprint fall back to the previous version-only handshake unchanged.
 
 ## [1.0.0] - 2026-06-12
 
