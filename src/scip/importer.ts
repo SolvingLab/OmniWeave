@@ -241,6 +241,10 @@ function buildDocumentContexts(
       warnings.push(`Skipping SCIP document outside OmniWeave index: ${filePath}`);
       continue;
     }
+    if (document.text && fs.readFileSync(fullPath, 'utf8') !== document.text) {
+      warnings.push(`Skipping SCIP document with stale embedded text: ${filePath}`);
+      continue;
+    }
     const nodesInFile = queries.getNodesByFile(filePath).filter((node) => !node.id.startsWith('scip:'));
     const language = resolveScipDocumentLanguage(document.language, indexedFile.language);
     if (language.language === 'unknown') {

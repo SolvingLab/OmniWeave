@@ -49,7 +49,7 @@ async function indexProject(root: string): Promise<void> {
   cg.destroy();
 }
 
-function writeScipIndex(filePath: string, language = 'typescript'): void {
+function writeScipIndex(filePath: string, language = 'typescript', documentTexts: Record<string, string> = {}): void {
   const target = 'scip-typescript npm demo 1.0 src/a.ts/target().';
   const caller = 'scip-typescript npm demo 1.0 src/a.ts/caller().';
   const animal = 'scip-typescript npm demo 1.0 src/animals.ts/Animal#';
@@ -68,14 +68,14 @@ function writeScipIndex(filePath: string, language = 'typescript'): void {
     ], [
       symbolInfo(target, KIND_FUNCTION, 'target'),
       symbolInfo(caller, KIND_FUNCTION, 'caller'),
-    ])),
+    ], documentTexts['src/a.ts'])),
     fieldMsg(2, document('src/animals.ts', language, [
       occurrence([0, 17, 23], animal, ROLE_DEFINITION),
       occurrence([3, 13, 16], dog, ROLE_DEFINITION),
     ], [
       symbolInfo(animal, KIND_INTERFACE, 'Animal'),
       symbolInfo(dog, KIND_CLASS, 'Dog', [relationship(animal, { implementation: true })]),
-    ])),
+    ], documentTexts['src/animals.ts'])),
   );
 
   fs.writeFileSync(filePath, index);
@@ -255,6 +255,22 @@ describe('SCIP importer', () => {
     expect(result.warnings).toEqual([]);
   });
 
+  it('skips SCIP documents whose embedded text is stale', async () => {
+    const staleAText = fs.readFileSync(path.join(projectRoot, 'src', 'a.ts'), 'utf8')
+      .replace("return 'ok';", "return 'stale';");
+    writeScipIndex(indexPath, 'typescript', { 'src/a.ts': staleAText });
+
+    const result = await importScipIndex(projectRoot, indexPath);
+
+    expect(result.documentsRead).toBe(2);
+    expect(result.documentsImported).toBe(1);
+    expect(result.referencesImported).toBe(0);
+    expect(result.relationshipsImported).toBe(1);
+    expect(result.warnings).toEqual([
+      'Skipping SCIP document with stale embedded text: src/a.ts',
+    ]);
+  });
+
   it('skips explicit SCIP document languages that mismatch indexed file languages', async () => {
     writeScipIndex(indexPath, 'python');
 
@@ -388,12 +404,13 @@ describe('SCIP importer', () => {
   });
 });
 
-function document(relativePath: string, language: string, occurrences: Buffer[], symbols: Buffer[]): Buffer {
+function document(relativePath: string, language: string, occurrences: Buffer[], symbols: Buffer[], text?: string): Buffer {
   return msg(
     fieldString(1, relativePath),
     ...occurrences.map((occ) => fieldMsg(2, occ)),
     ...symbols.map((symbol) => fieldMsg(3, symbol)),
     fieldString(4, language),
+    text ? fieldString(5, text) : Buffer.alloc(0),
     fieldVarint(6, 2),
   );
 }
