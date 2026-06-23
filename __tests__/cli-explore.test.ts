@@ -388,6 +388,14 @@ export function snapshotCaller(): string {
     expect(pinned.stdout).not.toContain("return 'first';");
   });
 
+  it('prints shell continuations from CLI node symbol output', () => {
+    const result = runCli(testDir, ['node', 'buildExploreOutput', '--file', 'src/mcp/tools.ts', '--line', '1']);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('**Command:** `omniweave node "buildExploreOutput" --file "src/mcp/tools.ts" --line 1`');
+    expect(result.stdout).not.toContain('omniweave_node');
+  });
+
   it('keeps CLI callees on execution edges and omits snapshot noise', () => {
     const result = runCli(testDir, ['callees', 'entryPoint']);
 

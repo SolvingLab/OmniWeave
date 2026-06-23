@@ -600,6 +600,10 @@ export interface ToolResult {
   isError?: boolean;
 }
 
+export interface ToolExecutionOptions {
+  outputSurface?: OutputSurface;
+}
+
 /**
  * Common projectPath property for cross-project queries
  */
@@ -1339,8 +1343,13 @@ export class ToolHandler {
   /**
    * Execute a tool by name
    */
-  async execute(toolName: string, args: Record<string, unknown>): Promise<ToolResult> {
+  async execute(
+    toolName: string,
+    args: Record<string, unknown>,
+    options: ToolExecutionOptions = {},
+  ): Promise<ToolResult> {
     try {
+      const outputSurface: OutputSurface = options.outputSurface === 'cli' ? 'cli' : 'mcp';
       // Block the first tool call on the engine's post-open reconcile so we
       // never serve rows for files deleted/edited while no MCP server was
       // running. The gate is cleared after first await — subsequent calls
@@ -1392,9 +1401,9 @@ export class ToolHandler {
         case 'omniweave_impact':
           result = await this.handleImpact(args); break;
         case 'omniweave_explore':
-          result = await this.handleExplore(args); break;
+          result = await this.handleExplore(args, outputSurface); break;
         case 'omniweave_node':
-          result = await this.handleNode(args); break;
+          result = await this.handleNode(args, outputSurface); break;
         case 'omniweave_status':
           // status embeds the pending-files list as a first-class section
           // (see handleStatus), so we skip the auto-banner wrapper here to
@@ -1405,7 +1414,6 @@ export class ToolHandler {
         default:
           return this.errorResult(`Unknown tool: ${toolName}`);
       }
-      const outputSurface: OutputSurface = args.__outputSurface === 'cli' ? 'cli' : 'mcp';
       const withWorktree = this.withWorktreeNotice(result, args.projectPath as string | undefined);
       const withStaleness = this.withStalenessNotice(withWorktree, args.projectPath as string | undefined, outputSurface);
       if (toolName === 'omniweave_explore') {
@@ -2311,12 +2319,14 @@ export class ToolHandler {
    * `getExploreOutputBudget` — see #185 for why a fixed 35k cap was a
    * tax on small projects while earning its keep on large ones.
    */
-  private async handleExplore(args: Record<string, unknown>): Promise<ToolResult> {
+  private async handleExplore(
+    args: Record<string, unknown>,
+    outputSurface: OutputSurface = 'mcp',
+  ): Promise<ToolResult> {
     const query = this.validateString(args.query, 'query');
     if (typeof query !== 'string') return query;
 
     const cg = this.getOmniWeave(args.projectPath as string | undefined);
-    const outputSurface: OutputSurface = args.__outputSurface === 'cli' ? 'cli' : 'mcp';
     const projectRoot = cg.getProjectRoot();
 
     // Resolve adaptive output budget from project size. Falls back to the
@@ -3371,7 +3381,10 @@ export class ToolHandler {
   /**
    * Handle omniweave_node
    */
-  private async handleNode(args: Record<string, unknown>): Promise<ToolResult> {
+  private async handleNode(
+    args: Record<string, unknown>,
+    outputSurface: OutputSurface = 'mcp',
+  ): Promise<ToolResult> {
     const cg = this.getOmniWeave(args.projectPath as string | undefined);
     // Default to false to minimize context usage
     const includeCode = args.includeCode === true;
@@ -3388,7 +3401,7 @@ export class ToolHandler {
     // header (which files depend on it). `symbolsOnly` returns just the
     // structural map instead. Backed by the index: same bytes Read gives you.
     if (!symbolRaw && fileHint) {
-      return this.handleFileView(cg, fileHint, { offset, limit, symbolsOnly });
+      return this.handleFileView(cg, fileHint, { offset, limit, symbolsOnly, outputSurface });
     }
 
     const symbol = this.validateString(args.symbol, 'symbol');
@@ -3461,7 +3474,7 @@ export class ToolHandler {
 
     // Single definition — the common case.
     if (matches.length === 1) {
-      return this.textResult(this.truncateOutput(await this.renderNodeSection(cg, matches[0]!, includeCode)));
+      return this.textResult(this.truncateOutput(await this.renderNodeSection(cg, matches[0]!, includeCode, outputSurface)));
     }
 
     // Multiple definitions share this name — overloads, or same-named methods on
@@ -3475,8 +3488,11 @@ export class ToolHandler {
     const header = `**${matches.length} definitions named "${symbol}"**`;
     if (!includeCode) {
       const list = matches.map((n) => `- \`${n.name}\` (${n.kind}) — ${n.filePath}:${n.startLine}`);
+      const retry = outputSurface === 'cli'
+        ? 'Re-run `omniweave node <symbol>` with `--file` or `--line` to pin one definition'
+        : 'Re-query with `includeCode: true` to get every body in one call';
       return this.textResult(this.truncateOutput(
-        [header, '', 'Re-query with `includeCode: true` to get every body in one call — no need to pick one first.', '', ...list].join('\n'),
+        [header, '', `${retry} — no need to pick one first.`, '', ...list].join('\n'),
       ));
     }
 
@@ -3491,7 +3507,7 @@ export class ToolHandler {
     let used = 0;
     for (const n of matches) {
       if (rendered.length >= HARD_CAP) { listed.push(n); continue; }
-      const section = await this.renderNodeSection(cg, n, true);
+      const section = await this.renderNodeSection(cg, n, true, outputSurface);
       // Always emit the first; emit the rest only while within the char budget.
       if (rendered.length === 0 || used + section.length <= BODY_BUDGET) {
         rendered.push(section);
@@ -3516,9 +3532,12 @@ export class ToolHandler {
         ...shownList.map((n) => `- \`${n.name}\` (${n.kind}) — ${n.filePath}:${n.startLine}`),
       );
       if (listed.length > LIST_CAP) out.push(`- … +${listed.length - LIST_CAP} more`);
+      const retry = outputSurface === 'cli'
+        ? `Run \`${this.cliNodeCommand(listed[0]!)}\` for one listed definition — do NOT Read it.`
+        : `Call omniweave_node again with \`file\` (e.g. \`"${listed[0]!.filePath.split('/').pop()}"\`) or \`line\` — do NOT Read it.`;
       out.push(
         '',
-        `> Need one of these in full? Call omniweave_node again with \`file\` (e.g. \`"${listed[0]!.filePath.split('/').pop()}"\`) or \`line\` — do NOT Read it.`,
+        `> Need one of these in full? ${retry}`,
       );
     }
     return this.textResult(this.truncateOutput(out.join('\n')));
@@ -3540,7 +3559,7 @@ export class ToolHandler {
   private async handleFileView(
     cg: OmniWeave,
     fileArg: string,
-    opts: { offset?: number; limit?: number; symbolsOnly?: boolean } = {},
+    opts: { offset?: number; limit?: number; symbolsOnly?: boolean; outputSurface?: OutputSurface } = {},
   ): Promise<ToolResult> {
     const normalize = (p: string) => p.replace(/\\/g, '/').replace(/^(?:\.?\/+)+/, '').replace(/\/+$/, '');
     const wantLower = normalize(fileArg).toLowerCase();
@@ -3658,9 +3677,15 @@ export class ToolHandler {
 
     const out: string[] = [header, '', ...numbered];
     if (!complete) {
+      const nextRange = opts.outputSurface === 'cli'
+        ? '`--offset`/`--limit`'
+        : '`offset`/`limit`';
+      const oneSymbol = opts.outputSurface === 'cli'
+        ? '`omniweave node <symbol>`'
+        : '`omniweave_node <symbol>`';
       out.push(
         '',
-        `(lines ${offset}–${shownEnd} of ${total} — pass \`offset\`/\`limit\` for another range, or \`omniweave_node <symbol>\` for one symbol in full)`,
+        `(lines ${offset}–${shownEnd} of ${total} — pass ${nextRange} for another range, or ${oneSymbol} for one symbol in full)`,
       );
     }
     // Self-bounded to CHAR_BUDGET — do NOT route through truncateOutput (15k).
@@ -3668,7 +3693,12 @@ export class ToolHandler {
   }
 
   /** Render one symbol: details + (optional) body/outline + its caller/callee trail. */
-  private async renderNodeSection(cg: OmniWeave, node: Node, includeCode: boolean): Promise<string> {
+  private async renderNodeSection(
+    cg: OmniWeave,
+    node: Node,
+    includeCode: boolean,
+    outputSurface: OutputSurface = 'mcp',
+  ): Promise<string> {
     let code: string | null = null;
     let outline: string | null = null;
     if (includeCode) {
@@ -3683,7 +3713,7 @@ export class ToolHandler {
         code = await cg.getCode(node.id);
       }
     }
-    return this.formatNodeDetails(node, code, outline) + this.formatTrail(cg, node);
+    return this.formatNodeDetails(node, code, outline, outputSurface) + this.formatTrail(cg, node, outputSurface);
   }
 
   /**
@@ -3695,7 +3725,7 @@ export class ToolHandler {
    * dynamic dispatch the static graph couldn't resolve — that absence is itself
    * a signal (read that one hop) rather than a dead end.
    */
-  private formatTrail(cg: OmniWeave, node: Node): string {
+  private formatTrail(cg: OmniWeave, node: Node, outputSurface: OutputSurface = 'mcp'): string {
     const TRAIL_CAP = 12;
     const sourceIsLowSignal = isLowSignalSourceFile(node.filePath);
     let omittedLowSignal = 0;
@@ -3728,7 +3758,8 @@ export class ToolHandler {
     const callees = collect(cg.getCallees(node.id));
     const callers = collect(cg.getCallers(node.id));
     if (callees.length === 0 && callers.length === 0 && omittedLowSignal === 0 && omittedWeak === 0) return '';
-    const lines: string[] = ['', '### Trail — omniweave_node any of these to follow it (no Read needed)'];
+    const trailTool = outputSurface === 'cli' ? '`omniweave node`' : 'omniweave_node';
+    const lines: string[] = ['', `### Trail — ${trailTool} any of these to follow it (no Read needed)`];
     if (callees.length > 0) {
       lines.push(`**Calls →** ${callees.slice(0, TRAIL_CAP).map(fmt).join(', ')}${callees.length > TRAIL_CAP ? `, +${callees.length - TRAIL_CAP} more` : ''}`);
     }
@@ -4411,13 +4442,20 @@ export class ToolHandler {
     return lines.join('\n');
   }
 
-  private formatNodeDetails(node: Node, code: string | null, outline?: string | null): string {
+  private formatNodeDetails(
+    node: Node,
+    code: string | null,
+    outline?: string | null,
+    outputSurface: OutputSurface = 'mcp',
+  ): string {
     const location = node.startLine ? `:${node.startLine}` : '';
+    const continuation = this.nodeContinuation(node, outputSurface);
+    const continuationLabel = outputSurface === 'cli' ? 'Command' : 'Key';
     const lines: string[] = [
       `## ${node.name} (${node.kind})`,
       '',
       `**Location:** ${node.filePath}${location}`,
-      `**Key:** \`${this.nodeContinuationKey(node)}\``,
+      `**${continuationLabel}:** \`${continuation}\``,
     ];
 
     if (node.signature) {
@@ -4430,8 +4468,11 @@ export class ToolHandler {
     }
 
     if (outline) {
+      const memberRetry = outputSurface === 'cli'
+        ? `run \`omniweave node <member> --file ${this.cliArg(node.filePath)}\``
+        : 'call omniweave_node on a specific member';
       lines.push('', outline, '',
-        `> Structural outline only. Read \`${node.filePath}\` or call omniweave_node on a specific member for its body.`);
+        `> Structural outline only. Read \`${node.filePath}\` or ${memberRetry} for its body.`);
     } else if (code) {
       // Line-numbered (cat -n style, like omniweave_explore and Read) so the
       // agent can cite/edit exact lines without re-Reading the file for them.

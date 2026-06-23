@@ -1094,7 +1094,7 @@ program
  */
 program
   .command('explore <query...>')
-  .description('Explore an area: relevant symbols\' source + call paths in one shot (same output as the omniweave_explore MCP tool)')
+  .description('Explore an area: relevant symbols\' source + call paths in one shot')
   .option('-p, --path <path>', 'Project path')
   .option('--max-files <number>', 'Maximum number of files to include source from (default is adaptive by project size)')
   .action(async (queryParts: string[], options: { path?: string; maxFiles?: string }) => {
@@ -1113,10 +1113,9 @@ program
 
       const args: Record<string, unknown> = {
         query: queryParts.join(' '),
-        __outputSurface: 'cli',
       };
       if (options.maxFiles) args.maxFiles = options.maxFiles;
-      const result = await handler.execute('omniweave_explore', args);
+      const result = await handler.execute('omniweave_explore', args, { outputSurface: 'cli' });
 
       console.log(result.content[0]?.text ?? '');
       cg.destroy();
@@ -1136,7 +1135,7 @@ program
  */
 program
   .command('node <name>')
-  .description('One symbol\'s source + caller/callee trail, or read a file with line numbers + dependents (same output as the omniweave_node MCP tool)')
+  .description('One symbol\'s source + caller/callee trail, or read a file with line numbers + dependents')
   .option('-p, --path <path>', 'Project path')
   .option('-f, --file <file>', 'Treat as file mode (or disambiguate a symbol to this file)')
   .option('--line <number>', 'Symbol mode: disambiguate to the definition at or near this line')
@@ -1180,7 +1179,7 @@ program
       if (options.limit) args.limit = parseCliIntOption(options.limit, 2000, 1, 2000);
       if (options.symbolsOnly) args.symbolsOnly = true;
 
-      const result = await handler.execute('omniweave_node', args);
+      const result = await handler.execute('omniweave_node', args, { outputSurface: 'cli' });
 
       console.log(result.content[0]?.text ?? '');
       cg.destroy();

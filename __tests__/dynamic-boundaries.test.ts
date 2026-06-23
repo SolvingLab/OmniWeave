@@ -202,8 +202,7 @@ describe('omniweave_explore — dynamic boundaries', () => {
 
     const res = await handler.execute('omniweave_explore', {
       query: 'routeSave onSave',
-      __outputSurface: 'cli',
-    });
+    }, { outputSurface: 'cli' });
     const text = res.content[0].text as string;
 
     expect(text).toContain('## Dynamic boundaries');
