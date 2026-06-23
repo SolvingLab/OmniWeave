@@ -17,6 +17,9 @@ export const SNAPSHOT_FORMAT_VERSION = 1;
 export const SNAPSHOT_MANIFEST_FILENAME = 'omniweave-snapshot.json';
 export const SNAPSHOT_DATABASE_FILENAME = 'omniweave.db';
 
+const MAX_SNAPSHOT_INLINE_GRAPH_TEXT_LENGTH = 4_096;
+const MAX_SNAPSHOT_DOCSTRING_TEXT_LENGTH = 20_000;
+
 export interface SnapshotManifest {
   format: typeof SNAPSHOT_FORMAT;
   formatVersion: typeof SNAPSHOT_FORMAT_VERSION;
@@ -664,6 +667,7 @@ function validateStagedSnapshotDatabase(
     validateSnapshotPathColumn(conn.getDb(), 'unresolved_refs', 'file_path', 'unresolved_refs.file_path', errors);
     validateSnapshotDatabasePragmas(conn.getDb(), errors);
     validateSnapshotIndexedPathMembership(conn.getDb(), errors);
+    validateSnapshotGraphText(conn.getDb(), errors);
     if (targetRoot) {
       validateSnapshotTargetImportPolicy(targetRoot, conn.getDb(), errors);
     }
@@ -876,6 +880,71 @@ function validateSnapshotPathMembership(
       `Snapshot database contains ${label} values not present in files.path: ${summarizePaths(rows.map((row) => displayPathValue(row.value)))}`
     );
   }
+}
+
+function validateSnapshotGraphText(db: SqliteDatabase, errors: string[]): void {
+  let rows: Array<{
+    id: unknown;
+    name: unknown;
+    qualifiedName: unknown;
+    signature: unknown;
+    docstring: unknown;
+  }>;
+  try {
+    rows = db.prepare(`
+      SELECT id, name, qualified_name AS qualifiedName, signature, docstring
+      FROM nodes
+    `).all() as Array<{
+      id: unknown;
+      name: unknown;
+      qualifiedName: unknown;
+      signature: unknown;
+      docstring: unknown;
+    }>;
+  } catch (err) {
+    errors.push(`Snapshot database cannot validate nodes graph text: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+
+  const invalidInline: string[] = [];
+  const invalidDocstrings: string[] = [];
+  for (const row of rows) {
+    const id = displayPathValue(row.id);
+    if (!isSafeSnapshotInlineGraphText(row.name)) invalidInline.push(`nodes.name ${id}`);
+    if (!isSafeSnapshotInlineGraphText(row.qualifiedName)) invalidInline.push(`nodes.qualified_name ${id}`);
+    if (row.signature !== null && row.signature !== undefined && !isSafeSnapshotInlineGraphText(row.signature)) {
+      invalidInline.push(`nodes.signature ${id}`);
+    }
+    if (row.docstring !== null && row.docstring !== undefined && !isSafeSnapshotDocstringText(row.docstring)) {
+      invalidDocstrings.push(`nodes.docstring ${id}`);
+    }
+  }
+
+  if (invalidInline.length > 0) {
+    errors.push(`Snapshot database contains unsafe graph display text: ${summarizePaths(invalidInline)}`);
+  }
+  if (invalidDocstrings.length > 0) {
+    errors.push(`Snapshot database contains unsafe graph docstring text: ${summarizePaths(invalidDocstrings)}`);
+  }
+}
+
+function isSafeSnapshotInlineGraphText(value: unknown): value is string {
+  return typeof value === 'string' &&
+    value.length > 0 &&
+    value.length <= MAX_SNAPSHOT_INLINE_GRAPH_TEXT_LENGTH &&
+    !/[\r\n`]/.test(value) &&
+    !hasUnsafeSnapshotControlCharacter(value);
+}
+
+function isSafeSnapshotDocstringText(value: unknown): value is string {
+  return typeof value === 'string' &&
+    value.length <= MAX_SNAPSHOT_DOCSTRING_TEXT_LENGTH &&
+    !value.includes('```') &&
+    !hasUnsafeSnapshotControlCharacter(value);
+}
+
+function hasUnsafeSnapshotControlCharacter(value: string): boolean {
+  return /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value);
 }
 
 function validateSnapshotManifestMatchesDatabase(
