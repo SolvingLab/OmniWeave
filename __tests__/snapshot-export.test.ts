@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import OmniWeave from '../src/index';
+import { getDatabasePath } from '../src/db';
 import {
   exportSnapshot,
   SNAPSHOT_DATABASE_FILENAME,
@@ -88,6 +89,23 @@ describe('snapshot export', () => {
       manifestPath: path.join(outputDir, SNAPSHOT_MANIFEST_FILENAME),
     });
     expect(fs.existsSync(staleWal)).toBe(false);
+  });
+
+  it('refuses to export into the active OmniWeave index directory even when forced', async () => {
+    const indexDir = path.join(projectRoot, '.omniweave');
+    const nestedOutput = path.join(indexDir, 'snapshot');
+
+    await expect(exportSnapshot(projectRoot, indexDir, {
+      force: true,
+      omniweaveVersion: '9.9.9-test',
+    })).rejects.toThrow(/outside \.omniweave/);
+    await expect(exportSnapshot(projectRoot, nestedOutput, {
+      force: true,
+      omniweaveVersion: '9.9.9-test',
+    })).rejects.toThrow(/outside \.omniweave/);
+
+    expect(fs.existsSync(getDatabasePath(projectRoot))).toBe(true);
+    expect(fs.existsSync(nestedOutput)).toBe(false);
   });
 
   it('exports through the built CLI without changing the default MCP surface', () => {

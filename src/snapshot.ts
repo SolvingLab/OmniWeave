@@ -117,6 +117,7 @@ export async function exportSnapshot(
   }
 
   const outDir = path.resolve(outputDir);
+  assertSnapshotOutputOutsideIndex(outDir, root);
   prepareOutputDirectory(outDir, options.force === true);
 
   const dbSourcePath = getDatabasePath(root);
@@ -378,6 +379,36 @@ function prepareOutputDirectory(outputDir: string, force: boolean): void {
   if (force) {
     for (const file of existing) fs.rmSync(file, { force: true });
   }
+}
+
+function assertSnapshotOutputOutsideIndex(outputDir: string, projectRoot: string): void {
+  const indexDir = path.resolve(getOmniWeaveDir(projectRoot));
+  const indexReal = fs.existsSync(indexDir) ? fs.realpathSync(indexDir) : indexDir;
+  const candidates = [path.resolve(outputDir), realpathForPossiblyMissingPath(outputDir)];
+  if (fs.existsSync(outputDir)) candidates.push(fs.realpathSync(outputDir));
+
+  if (candidates.some((candidate) => isSameOrChildPath(candidate, indexDir) || isSameOrChildPath(candidate, indexReal))) {
+    throw new Error(`Snapshot output directory must be outside ${path.basename(indexDir)}: ${outputDir}`);
+  }
+}
+
+function realpathForPossiblyMissingPath(targetPath: string): string {
+  let current = path.resolve(targetPath);
+  const missingParts: string[] = [];
+
+  while (!fs.existsSync(current)) {
+    const parent = path.dirname(current);
+    if (parent === current) return path.resolve(targetPath);
+    missingParts.unshift(path.basename(current));
+    current = parent;
+  }
+
+  return path.join(fs.realpathSync(current), ...missingParts);
+}
+
+function isSameOrChildPath(child: string, parent: string): boolean {
+  const relative = path.relative(parent, child);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
 function parseSnapshotManifest(manifestPath: string, errors: string[]): SnapshotManifest | undefined {
