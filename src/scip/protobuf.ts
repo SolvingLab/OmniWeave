@@ -1,5 +1,9 @@
 import * as fs from 'fs';
 
+const MAX_SCIP_INDEX_BYTES = 256 * 1024 * 1024;
+const MAX_SCIP_LENGTH_DELIMITED_BYTES = 64 * 1024 * 1024;
+const MAX_REPEATED_ITEMS = 500_000;
+
 export const SCIP_SYMBOL_ROLE_DEFINITION = 0x1;
 export const SCIP_SYMBOL_ROLE_READ_ACCESS = 0x8;
 export const SCIP_SYMBOL_ROLE_FORWARD_DEFINITION = 0x40;
@@ -62,6 +66,10 @@ export interface ScipOccurrence {
 }
 
 export function decodeScipIndexFile(filePath: string): ScipIndex {
+  const size = fs.statSync(filePath).size;
+  if (size > MAX_SCIP_INDEX_BYTES) {
+    throw new Error(`SCIP index exceeds maximum supported size (${size} bytes > ${MAX_SCIP_INDEX_BYTES} bytes)`);
+  }
   return decodeScipIndex(fs.readFileSync(filePath));
 }
 
@@ -76,10 +84,10 @@ export function decodeScipIndex(bytes: Uint8Array): ScipIndex {
         index.metadata = decodeMessage(reader.readBytes(field.wireType), decodeMetadata);
         break;
       case 2:
-        index.documents.push(decodeMessage(reader.readBytes(field.wireType), decodeDocument));
+        pushLimited(index.documents, decodeMessage(reader.readBytes(field.wireType), decodeDocument), 'documents');
         break;
       case 3:
-        index.externalSymbols.push(decodeMessage(reader.readBytes(field.wireType), decodeSymbolInformation));
+        pushLimited(index.externalSymbols, decodeMessage(reader.readBytes(field.wireType), decodeSymbolInformation), 'externalSymbols');
         break;
       default:
         reader.skip(field.wireType);
@@ -127,7 +135,7 @@ function decodeToolInfo(bytes: Uint8Array): ScipToolInfo {
         toolInfo.version = reader.readString(field.wireType);
         break;
       case 3:
-        toolInfo.arguments.push(reader.readString(field.wireType));
+        pushLimited(toolInfo.arguments, reader.readString(field.wireType), 'toolInfo.arguments');
         break;
       default:
         reader.skip(field.wireType);
@@ -155,10 +163,10 @@ function decodeDocument(bytes: Uint8Array): ScipDocument {
         document.relativePath = reader.readString(field.wireType);
         break;
       case 2:
-        document.occurrences.push(decodeMessage(reader.readBytes(field.wireType), decodeOccurrence));
+        pushLimited(document.occurrences, decodeMessage(reader.readBytes(field.wireType), decodeOccurrence), 'document.occurrences');
         break;
       case 3:
-        document.symbols.push(decodeMessage(reader.readBytes(field.wireType), decodeSymbolInformation));
+        pushLimited(document.symbols, decodeMessage(reader.readBytes(field.wireType), decodeSymbolInformation), 'document.symbols');
         break;
       case 4:
         document.language = reader.readString(field.wireType);
@@ -195,10 +203,10 @@ function decodeSymbolInformation(bytes: Uint8Array): ScipSymbolInformation {
         info.symbol = reader.readString(field.wireType);
         break;
       case 3:
-        info.documentation.push(reader.readString(field.wireType));
+        pushLimited(info.documentation, reader.readString(field.wireType), 'symbol.documentation');
         break;
       case 4:
-        info.relationships.push(decodeMessage(reader.readBytes(field.wireType), decodeRelationship));
+        pushLimited(info.relationships, decodeMessage(reader.readBytes(field.wireType), decodeRelationship), 'symbol.relationships');
         break;
       case 5:
         info.kind = reader.readVarintForField(field.wireType);
@@ -375,6 +383,13 @@ function decodeMessage<T>(bytes: Uint8Array, decode: (bytes: Uint8Array) => T): 
   return decode(bytes);
 }
 
+function pushLimited<T>(items: T[], item: T, label: string): void {
+  if (items.length >= MAX_REPEATED_ITEMS) {
+    throw new Error(`SCIP protobuf ${label} exceeds maximum item count (${MAX_REPEATED_ITEMS})`);
+  }
+  items.push(item);
+}
+
 interface ProtoField {
   number: number;
   wireType: number;
@@ -468,6 +483,9 @@ class ProtoReader {
   private readLengthDelimited(): Uint8Array {
     const length = this.readVarint();
     if (length < 0) throw new Error('Invalid negative SCIP protobuf length');
+    if (length > MAX_SCIP_LENGTH_DELIMITED_BYTES) {
+      throw new Error(`SCIP protobuf length-delimited field exceeds maximum size (${length} bytes > ${MAX_SCIP_LENGTH_DELIMITED_BYTES} bytes)`);
+    }
     const start = this.offset;
     this.advance(length);
     return this.bytes.subarray(start, start + length);

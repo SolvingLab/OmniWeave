@@ -341,6 +341,21 @@ describe('SCIP importer', () => {
     ]);
   });
 
+  it('rejects oversized SCIP index files before reading them', async () => {
+    fs.truncateSync(indexPath, 256 * 1024 * 1024 + 1);
+
+    await expect(importScipIndex(projectRoot, indexPath)).rejects.toThrow(/exceeds maximum supported size/);
+  });
+
+  it('rejects oversized SCIP length-delimited fields before allocation', async () => {
+    fs.writeFileSync(indexPath, Buffer.concat([
+      key(2, 2),
+      varint(64 * 1024 * 1024 + 1),
+    ]));
+
+    await expect(importScipIndex(projectRoot, indexPath)).rejects.toThrow(/length-delimited field exceeds maximum size/);
+  });
+
   it('re-imports idempotently by replacing previous SCIP facts', async () => {
     await importScipIndex(projectRoot, indexPath);
     await importScipIndex(projectRoot, indexPath);
