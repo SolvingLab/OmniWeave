@@ -60,6 +60,27 @@ function writeSnapshotManifestForTest(outputDir: string, manifest: Record<string
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf-8');
 }
 
+function hashFileForTest(filePath: string): string {
+  return createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
+function runBuiltCli(cwd: string, args: string[]): { stdout: string; stderr: string; status: number | null } {
+  const result = spawnSync(process.execPath, [BIN, ...args], {
+    cwd,
+    encoding: 'utf-8',
+    env: {
+      ...process.env,
+      OMNIWEAVE_NO_DAEMON: '1',
+      OMNIWEAVE_NO_WATCH: '1',
+    },
+  });
+  return {
+    stdout: result.stdout ?? '',
+    stderr: result.stderr ?? '',
+    status: result.status,
+  };
+}
+
 function updateSnapshotManifestForTest(
   outputDir: string,
   update: (manifest: Record<string, unknown>) => void,
@@ -562,6 +583,7 @@ describe('snapshot import and verify', () => {
     expect(verify.status).toBe(0);
     const verified = JSON.parse(verify.stdout) as VerifySnapshotResult;
     expect(verified.ok).toBe(true);
+    expect(verified.targetChecked).toBe(true);
     expect(verified.staleness?.stale).toBe(false);
 
     const imported = spawnSync(process.execPath, [
@@ -605,6 +627,73 @@ describe('snapshot import and verify', () => {
     expect(status.status).toBe(0);
     const statusJson = JSON.parse(status.stdout) as { snapshotImport?: { manifestHash?: string } | null };
     expect(statusJson.snapshotImport?.manifestHash).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('treats CLI snapshot verify without --path as artifact-only verification', () => {
+    const json = runBuiltCli(targetRoot, ['snapshot', 'verify', outputDir, '--json']);
+
+    expect(json.status).toBe(0);
+    const payload = JSON.parse(json.stdout) as VerifySnapshotResult;
+    expect(payload.ok).toBe(true);
+    expect(payload.targetChecked).toBe(false);
+    expect(payload.staleness).toBeUndefined();
+
+    const text = runBuiltCli(targetRoot, ['snapshot', 'verify', outputDir]);
+
+    expect(text.status).toBe(0);
+    expect(text.stdout).toContain('Target project: not checked');
+    expect(text.stdout).toContain('pass --path <project>');
+  });
+
+  it('checks the exact CLI snapshot verify --path target instead of an initialized parent', async () => {
+    const parentRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omniweave-snapshot-parent-'));
+    try {
+      const childRoot = path.join(parentRoot, 'child');
+      writeProject(parentRoot, CHANGED_SOURCE);
+      writeProject(childRoot);
+      await indexProject(parentRoot);
+
+      const verify = runBuiltCli(childRoot, ['snapshot', 'verify', outputDir, '--path', childRoot, '--json']);
+
+      expect(verify.status).toBe(0);
+      const payload = JSON.parse(verify.stdout) as VerifySnapshotResult;
+      expect(payload.ok).toBe(true);
+      expect(payload.targetChecked).toBe(true);
+      expect(payload.staleness?.stale).toBe(false);
+      expect(payload.staleness?.changedFiles).toEqual([]);
+    } finally {
+      rmTree(parentRoot);
+    }
+  });
+
+  it('imports into the exact CLI snapshot --path target without replacing an initialized parent', async () => {
+    const parentRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omniweave-snapshot-parent-'));
+    try {
+      const childRoot = path.join(parentRoot, 'child');
+      writeProject(parentRoot, CHANGED_SOURCE);
+      writeProject(childRoot);
+      await indexProject(parentRoot);
+      const parentDb = getDatabasePath(parentRoot);
+      const parentHashBefore = hashFileForTest(parentDb);
+
+      const imported = runBuiltCli(childRoot, [
+        'snapshot',
+        'import',
+        outputDir,
+        '--path',
+        childRoot,
+        '--force',
+        '--json',
+      ]);
+
+      expect(imported.status).toBe(0);
+      const payload = JSON.parse(imported.stdout) as Awaited<ReturnType<typeof importSnapshot>>;
+      expect(payload.projectRoot).toBe(fs.realpathSync(childRoot));
+      expect(fs.existsSync(getDatabasePath(childRoot))).toBe(true);
+      expect(hashFileForTest(parentDb)).toBe(parentHashBefore);
+    } finally {
+      rmTree(parentRoot);
+    }
   });
 
   it('requires an explicit CLI flag for unsafe snapshot import roots', async () => {

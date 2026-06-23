@@ -1907,7 +1907,7 @@ snapshotCommand
     try {
       const { verifySnapshot } = await import('../snapshot');
       const result = await verifySnapshot(snapshotDir, {
-        projectRoot: options.path ? resolveProjectPath(options.path) : undefined,
+        projectRoot: options.path ? path.resolve(options.path) : undefined,
       });
 
       if (options.json) {
@@ -1918,6 +1918,9 @@ snapshotCommand
           if (result.manifest) {
             info(`Manifest: ${result.manifestPath}`);
             info(`Fingerprint: ${result.manifest.sourceRoot.fingerprint}`);
+          }
+          if (!result.targetChecked) {
+            info('Target project: not checked (pass --path <project> to validate target staleness and import policy).');
           }
         } else {
           error(`Snapshot verification failed: ${result.errors.join('; ')}`);
@@ -1941,7 +1944,7 @@ snapshotCommand
   .option('--allow-unsafe-root', 'Import into a filesystem root, home directory, or home ancestor')
   .option('-j, --json', 'Output import metadata as JSON')
   .action(async (snapshotDir: string, options: { path?: string; force?: boolean; allowStale?: boolean; allowUnsafeRoot?: boolean; json?: boolean }) => {
-    const projectPath = resolveProjectPath(options.path);
+    const projectPath = options.path ? path.resolve(options.path) : resolveProjectPath();
 
     try {
       const { importSnapshot } = await import('../snapshot');

@@ -79,6 +79,7 @@ export interface SnapshotStaleness {
 export interface VerifySnapshotResult {
   directory: string;
   manifestPath: string;
+  targetChecked: boolean;
   ok: boolean;
   errors: string[];
   warnings: string[];
@@ -217,6 +218,7 @@ export async function verifySnapshot(
     return {
       directory: verification.directory,
       manifestPath: verification.manifestPath,
+      targetChecked: verification.targetChecked,
       ok: verification.ok,
       errors: verification.errors,
       warnings: verification.warnings,
@@ -239,6 +241,7 @@ async function verifySnapshotWithStaging(
   const targetRoot = options.projectRoot
     ? resolveExistingDirectory(options.projectRoot, 'project root')
     : undefined;
+  const targetChecked = targetRoot !== undefined;
 
   const manifest = parseSnapshotManifest(manifestPath, errors);
   let stagingDir: string | undefined;
@@ -282,6 +285,7 @@ async function verifySnapshotWithStaging(
   return {
     directory,
     manifestPath,
+    targetChecked,
     ok: errors.length === 0,
     errors,
     warnings,
