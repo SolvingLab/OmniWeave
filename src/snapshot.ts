@@ -317,12 +317,14 @@ export async function importSnapshot(
     }
 
     const targetDir = getOmniWeaveDir(root);
+    const targetIdentity = snapshotDirectoryIdentity(targetDir);
     const lock = new FileLock(path.join(targetDir, 'omniweave.lock'));
 
     return await lock.withLockAsync(async () => {
       if (isInitialized(root) && options.force !== true) {
         throw new Error(`OmniWeave already initialized in ${root}; pass --force to replace known database files`);
       }
+      assertSnapshotDirectoryIdentity(targetDir, targetIdentity);
 
       installSnapshotArtifacts(verification.stagingDir!, targetDir, verification.manifest!);
 
@@ -564,6 +566,8 @@ function validateStagedSnapshotDatabase(
     validateSnapshotPathColumn(conn.getDb(), 'files', 'path', 'files.path', errors);
     validateSnapshotPathColumn(conn.getDb(), 'nodes', 'file_path', 'nodes.file_path', errors);
     validateSnapshotPathColumn(conn.getDb(), 'unresolved_refs', 'file_path', 'unresolved_refs.file_path', errors);
+    validateSnapshotDatabasePragmas(conn.getDb(), errors);
+    validateSnapshotIndexedPathMembership(conn.getDb(), errors);
   } catch (err) {
     errors.push(`Snapshot database validation failed: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
@@ -592,6 +596,55 @@ function validateSnapshotPathColumn(
     .map(displayPathValue);
   if (unsafeValues.length > 0) {
     errors.push(`Snapshot database contains unsafe ${label} values: ${summarizePaths(unsafeValues)}`);
+  }
+}
+
+function validateSnapshotDatabasePragmas(db: SqliteDatabase, errors: string[]): void {
+  const integrityRows = db.prepare('PRAGMA integrity_check').all() as Array<Record<string, unknown>>;
+  const integrityProblems = integrityRows
+    .map((row) => String(Object.values(row)[0] ?? ''))
+    .filter((value) => value && value !== 'ok');
+  if (integrityProblems.length > 0) {
+    errors.push(`Snapshot database failed integrity_check: ${summarizePaths(integrityProblems)}`);
+  }
+
+  const foreignKeyRows = db.prepare('PRAGMA foreign_key_check').all() as Array<Record<string, unknown>>;
+  if (foreignKeyRows.length > 0) {
+    errors.push(`Snapshot database failed foreign_key_check: ${foreignKeyRows.length} violation${foreignKeyRows.length === 1 ? '' : 's'}`);
+  }
+}
+
+function validateSnapshotIndexedPathMembership(db: SqliteDatabase, errors: string[]): void {
+  validateSnapshotPathMembership(db, 'nodes', 'file_path', 'nodes.file_path', errors);
+  validateSnapshotPathMembership(db, 'unresolved_refs', 'file_path', 'unresolved_refs.file_path', errors);
+}
+
+function validateSnapshotPathMembership(
+  db: SqliteDatabase,
+  table: string,
+  column: string,
+  label: string,
+  errors: string[],
+): void {
+  let rows: Array<{ value: unknown }>;
+  try {
+    rows = db.prepare(`
+      SELECT DISTINCT ${table}.${column} AS value
+      FROM ${table}
+      LEFT JOIN files ON files.path = ${table}.${column}
+      WHERE ${table}.${column} IS NOT NULL
+        AND ${table}.${column} != ''
+        AND files.path IS NULL
+    `).all() as Array<{ value: unknown }>;
+  } catch (err) {
+    errors.push(`Snapshot database cannot validate ${label} membership: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+
+  if (rows.length > 0) {
+    errors.push(
+      `Snapshot database contains ${label} values not present in files.path: ${summarizePaths(rows.map((row) => displayPathValue(row.value)))}`
+    );
   }
 }
 
@@ -726,6 +779,35 @@ function restoreKnownGraphFiles(backupDir: string, targetDir: string): void {
 function removeKnownGraphFiles(targetDir: string): void {
   for (const name of knownGraphFileNames()) {
     fs.rmSync(path.join(targetDir, name), { force: true });
+  }
+}
+
+interface SnapshotDirectoryIdentity {
+  realpath: string;
+  dev: number;
+  ino: number;
+}
+
+function snapshotDirectoryIdentity(targetDir: string): SnapshotDirectoryIdentity {
+  const stat = fs.lstatSync(targetDir);
+  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+    throw new Error(`Invalid OmniWeave directory: ${targetDir}`);
+  }
+  return {
+    realpath: fs.realpathSync(targetDir),
+    dev: stat.dev,
+    ino: stat.ino,
+  };
+}
+
+function assertSnapshotDirectoryIdentity(targetDir: string, expected: SnapshotDirectoryIdentity): void {
+  const stat = fs.lstatSync(targetDir);
+  if (stat.isSymbolicLink() || !stat.isDirectory()) {
+    throw new Error(`OmniWeave directory changed during snapshot import: ${targetDir}`);
+  }
+  const realpath = fs.realpathSync(targetDir);
+  if (realpath !== expected.realpath || stat.dev !== expected.dev || stat.ino !== expected.ino) {
+    throw new Error(`OmniWeave directory changed during snapshot import: ${targetDir}`);
   }
 }
 

@@ -7,6 +7,7 @@ import * as path from 'path';
 import OmniWeave from '../src/index';
 import { DatabaseConnection, getDatabasePath } from '../src/db';
 import { CURRENT_SCHEMA_VERSION } from '../src/db/migrations';
+import { FileLock } from '../src/utils';
 import {
   exportSnapshot,
   importSnapshot,
@@ -244,6 +245,29 @@ describe('snapshot import and verify', () => {
     expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
   });
 
+  it('rejects snapshots whose node file paths are not tracked files', async () => {
+    const conn = DatabaseConnection.open(path.join(outputDir, SNAPSHOT_DATABASE_FILENAME));
+    try {
+      const now = Date.now();
+      conn.getDb().prepare(
+        `INSERT INTO nodes
+          (id, kind, name, qualified_name, file_path, language, start_line, end_line, start_column, end_column, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run('ghost-node', 'function', 'ghostPwn', 'ghostPwn', 'src/ghost.ts', 'typescript', 1, 1, 0, 0, now);
+      conn.getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      conn.close();
+    }
+    refreshSnapshotDatabaseManifest(outputDir);
+
+    const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+
+    expect(verification.ok).toBe(false);
+    expect(verification.errors.join('\n')).toContain('nodes.file_path values not present in files.path');
+    await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
+    expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+  });
+
   it('rejects snapshots whose unresolved reference file paths are unsafe', async () => {
     const conn = DatabaseConnection.open(path.join(outputDir, SNAPSHOT_DATABASE_FILENAME));
     try {
@@ -268,6 +292,30 @@ describe('snapshot import and verify', () => {
     expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
   });
 
+  it('rejects snapshots whose unresolved reference file paths are not tracked files', async () => {
+    const conn = DatabaseConnection.open(path.join(outputDir, SNAPSHOT_DATABASE_FILENAME));
+    try {
+      const node = conn.getDb().prepare('SELECT id FROM nodes LIMIT 1').get() as { id: string } | undefined;
+      expect(node).toBeDefined();
+      conn.getDb().prepare(
+        `INSERT INTO unresolved_refs
+          (from_node_id, reference_name, reference_kind, line, col, candidates, file_path, language)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(node!.id, 'ghostRef', 'call', 1, 1, '[]', 'src/ghost-ref.ts', 'typescript');
+      conn.getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      conn.close();
+    }
+    refreshSnapshotDatabaseManifest(outputDir);
+
+    const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+
+    expect(verification.ok).toBe(false);
+    expect(verification.errors.join('\n')).toContain('unresolved_refs.file_path values not present in files.path');
+    await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
+    expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+  });
+
   it('rejects import when the target OmniWeave directory is a symlink', async () => {
     const symlinkTarget = fs.mkdtempSync(path.join(os.tmpdir(), 'omniweave-snapshot-linked-index-'));
     try {
@@ -281,6 +329,32 @@ describe('snapshot import and verify', () => {
       expect(fs.existsSync(path.join(symlinkTarget, SNAPSHOT_DATABASE_FILENAME))).toBe(false);
     } finally {
       rmTree(symlinkTarget);
+    }
+  });
+
+  it('aborts when the target OmniWeave directory changes after locking', async () => {
+    const symlinkTarget = fs.mkdtempSync(path.join(os.tmpdir(), 'omniweave-snapshot-race-target-'));
+    const targetIndexDir = path.join(targetRoot, '.omniweave');
+    const originalWithLockAsync = FileLock.prototype.withLockAsync;
+    let replaced = false;
+    FileLock.prototype.withLockAsync = async function patchedWithLockAsync<T>(fn: () => Promise<T>): Promise<T> {
+      return await originalWithLockAsync.call(this, async () => {
+        if (!replaced) {
+          replaced = true;
+          fs.rmSync(targetIndexDir, { recursive: true, force: true });
+          fs.symlinkSync(symlinkTarget, targetIndexDir, 'dir');
+        }
+        return await fn();
+      });
+    };
+
+    try {
+      await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/changed during snapshot import/);
+      expect(fs.existsSync(path.join(symlinkTarget, SNAPSHOT_DATABASE_FILENAME))).toBe(false);
+    } finally {
+      FileLock.prototype.withLockAsync = originalWithLockAsync;
+      rmTree(symlinkTarget);
+      fs.rmSync(targetIndexDir, { recursive: true, force: true });
     }
   });
 
