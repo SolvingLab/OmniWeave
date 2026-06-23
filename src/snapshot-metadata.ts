@@ -36,6 +36,17 @@ export function readSnapshotImportInfo(read: (key: string) => string | null): Sn
   };
 }
 
+export function describeSnapshotImportWarning(info: SnapshotImportInfo): string {
+  const parts = [
+    `Index was imported from a snapshot at ${info.importedAt ?? 'unknown time'}; graph facts are from an external artifact.`,
+  ];
+  if (info.allowStale) {
+    parts.push(`allowStale=true${formatStalenessCounts(info.staleness)}.`);
+  }
+  parts.push('Run a local full index to clear this warning.');
+  return parts.join(' ');
+}
+
 function parseStaleness(raw: string | null): SnapshotImportInfo['staleness'] {
   if (!raw) return null;
   try {
@@ -54,4 +65,9 @@ function parseStaleness(raw: string | null): SnapshotImportInfo['staleness'] {
 
 function numberValue(value: unknown): number {
   return Number.isSafeInteger(value) && typeof value === 'number' ? value : 0;
+}
+
+function formatStalenessCounts(staleness: SnapshotImportInfo['staleness']): string {
+  if (!staleness) return '';
+  return `; stale target counts: changed=${staleness.changedFiles}, missing=${staleness.missingFiles}, unreadable=${staleness.unreadableFiles}, unsafe=${staleness.unsafeFiles}`;
 }

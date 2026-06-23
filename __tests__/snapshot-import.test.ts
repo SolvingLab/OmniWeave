@@ -315,6 +315,24 @@ describe('snapshot import and verify', () => {
     expect(result.staleness?.stale).toBe(true);
     expect(result.staleness?.changedFiles).toContain('src/index.ts');
     expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(true);
+
+    const cg = OmniWeave.openSync(targetRoot);
+    try {
+      const status = await new ToolHandler(cg).execute('omniweave_status', {});
+      const text = status.content[0].text;
+      expect(text).toContain('allowStale=true');
+      expect(text).toContain('changed=1');
+      expect(text).toContain('missing=0');
+      expect(text).toContain('unreadable=0');
+      expect(text).toContain('unsafe=0');
+    } finally {
+      cg.destroy();
+    }
+
+    const cliStatus = runBuiltCli(targetRoot, ['status']);
+    expect(cliStatus.status).toBe(0);
+    expect(cliStatus.stdout).toContain('allowStale=true');
+    expect(cliStatus.stdout).toContain('changed=1');
   });
 
   it('rejects snapshots whose indexed file paths escape the target root', async () => {

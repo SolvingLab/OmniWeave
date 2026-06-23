@@ -40,6 +40,7 @@ import { buildNode25BlockBanner, buildNodeTooOldBanner, isNodeTooOld } from './n
 import { relaunchWithWasmRuntimeFlagsIfNeeded } from '../extraction/wasm-runtime-flags';
 import { EXTRACTION_VERSION } from '../extraction/extraction-version';
 import { getTelemetry, TELEMETRY_DOCS, recordIndexEvent } from '../telemetry';
+import { describeSnapshotImportWarning } from '../snapshot-metadata';
 
 // Lazy-load heavy modules (OmniWeave, runInstaller) to keep CLI startup fast.
 async function loadOmniWeave(): Promise<typeof import('../index')> {
@@ -935,10 +936,7 @@ program
         warn(worktreeMismatchWarning(worktreeMismatch));
       }
       if (snapshotImport) {
-        warn(
-          `Index was imported from a snapshot at ${snapshotImport.importedAt ?? 'unknown time'}; ` +
-          'graph facts are from an external artifact. Run a local full index to clear this warning.'
-        );
+        warn(describeSnapshotImportWarning(snapshotImport));
       }
       console.log();
 

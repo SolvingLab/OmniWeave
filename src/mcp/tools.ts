@@ -36,6 +36,7 @@ import {
 import { clamp, validatePathWithinRoot, validateProjectPath, isConfigLeafNode, CONFIG_LEAF_LANGUAGES } from '../utils';
 import { isGeneratedFile } from '../extraction/generated-detection';
 import { scanDynamicDispatch } from './dynamic-boundaries';
+import { describeSnapshotImportWarning } from '../snapshot-metadata';
 
 /**
  * An expected, recoverable "omniweave can't serve this" condition — most
@@ -3861,7 +3862,7 @@ export class ToolHandler {
     }
     if (snapshotImport) {
       lines.push(
-        `> ⚠ Index was imported from a snapshot at ${snapshotImport.importedAt ?? 'unknown time'}; graph facts are from an external artifact. Run a local full index to clear this warning.`,
+        `> ⚠ ${describeSnapshotImportWarning(snapshotImport)}`,
         ''
       );
     }
