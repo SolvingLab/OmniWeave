@@ -160,6 +160,27 @@ describe('MCP staleness banner', () => {
     expect(text).toContain('### Source Code');
   });
 
+  it('shows changed files in omniweave_status when no watcher is active', async () => {
+    fs.writeFileSync(
+      path.join(testDir, 'src', 'alpha-only.ts'),
+      'export function alphaOnly() { return 99; }\n',
+    );
+    fs.writeFileSync(
+      path.join(testDir, 'src', 'new-feature.ts'),
+      'export function brandNewFeature() { return 42; }\n',
+    );
+
+    const res = await handler.execute('omniweave_status', {});
+    expect(res.isError).toBeFalsy();
+    const text = res.content[0].text;
+
+    expect(text).toContain('### Changed since last index:');
+    expect(text).toContain('src/alpha-only.ts (modified)');
+    expect(text).toContain('src/new-feature.ts (added)');
+    expect(text).toContain('Run `omniweave sync` before trusting structural relationships.');
+    expect(text).not.toContain('### Pending sync:');
+  });
+
   it('warns that empty explore results may be stale when new files are not indexed yet', async () => {
     fs.writeFileSync(
       path.join(testDir, 'src', 'new-feature.ts'),

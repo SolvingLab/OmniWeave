@@ -3872,6 +3872,15 @@ export class ToolHandler {
         const label = p.indexing ? 'indexing in progress' : 'pending sync';
         lines.push(`- ${p.path} (edited ${ageMs}ms ago, ${label})`);
       }
+    } else if (!cg.isWatching()) {
+      const changed = changedFileEntries(cg.getChangedFiles());
+      if (changed.length > 0) {
+        lines.push('', '### Changed since last index:');
+        for (const p of changed) {
+          lines.push(`- ${p.path} (${p.kind})`);
+        }
+        lines.push('', 'Run `omniweave sync` before trusting structural relationships.');
+      }
     }
 
     return this.textResult(lines.join('\n'));
