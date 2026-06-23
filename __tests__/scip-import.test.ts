@@ -98,6 +98,24 @@ function writeUnsupportedLanguageScipIndex(filePath: string): void {
   ));
 }
 
+function writeRelationshipKindScipIndex(filePath: string): void {
+  const target = 'scip-typescript npm demo 1.0 src/a.ts/target().';
+  const caller = 'scip-typescript npm demo 1.0 src/a.ts/caller().';
+  fs.writeFileSync(filePath, msg(
+    fieldMsg(2, document('src/a.ts', 'typescript', [
+      occurrence([0, 16, 22], target, ROLE_DEFINITION),
+      occurrence([3, 16, 22], caller, ROLE_DEFINITION),
+    ], [
+      symbolInfo(target, KIND_FUNCTION, 'target'),
+      symbolInfo(caller, KIND_FUNCTION, 'caller', [
+        relationship(target, { reference: true }),
+        relationship(target, { definition: true }),
+        relationship(target, { typeDefinition: true }),
+      ]),
+    ])),
+  ));
+}
+
 describe('SCIP importer', () => {
   let projectRoot: string;
   let indexPath: string;
@@ -147,6 +165,31 @@ describe('SCIP importer', () => {
         kind: 'implements',
         provenance: 'scip',
       }));
+    } finally {
+      cg.destroy();
+    }
+  });
+
+  it('keeps SCIP relationship facts inside the allowed structural edge set', async () => {
+    writeRelationshipKindScipIndex(indexPath);
+
+    const result = await importScipIndex(projectRoot, indexPath);
+
+    expect(result.relationshipsImported).toBe(3);
+    expect(result.referencesImported).toBe(0);
+
+    const cg = OmniWeave.openSync(projectRoot);
+    try {
+      const caller = cg.searchNodes('caller', { limit: 5 }).find((match) => match.node.filePath === 'src/a.ts')?.node;
+      expect(caller).toBeDefined();
+
+      const allowedRelationshipKinds = new Set(['implements', 'references', 'type_of']);
+      const scipKinds = cg.getOutgoingEdges(caller!.id)
+        .filter((edge) => edge.provenance === 'scip')
+        .map((edge) => edge.kind);
+
+      expect(new Set(scipKinds)).toEqual(new Set(['references', 'type_of']));
+      expect(scipKinds.every((kind) => allowedRelationshipKinds.has(kind))).toBe(true);
     } finally {
       cg.destroy();
     }
