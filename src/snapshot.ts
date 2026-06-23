@@ -8,6 +8,7 @@ import { CURRENT_SCHEMA_VERSION } from './db/migrations';
 import { QueryBuilder } from './db/queries';
 import { detectLanguage, scanDirectory } from './extraction';
 import { loadExtensionOverrides } from './project-config';
+import { SNAPSHOT_IMPORT_METADATA_KEYS } from './snapshot-metadata';
 import { FileLock, validatePathWithinRoot } from './utils';
 import type { FileRecord, GraphStats, SchemaVersion } from './types';
 
@@ -342,6 +343,7 @@ export async function importSnapshot(
       installSnapshotArtifacts(verification.stagingDir!, targetDir, verification.manifest!);
 
       const databasePath = getDatabasePath(root);
+      await recordSnapshotImportMetadata(databasePath, verification.manifest!, verification.manifestPath, staleness, options);
       return {
         directory: verification.directory,
         projectRoot: root,
@@ -1100,4 +1102,33 @@ function sha256File(filePath: string): Promise<string> {
     stream.on('error', reject);
     stream.on('end', () => resolve(hash.digest('hex')));
   });
+}
+
+async function recordSnapshotImportMetadata(
+  databasePath: string,
+  manifest: SnapshotManifest,
+  manifestPath: string,
+  staleness: SnapshotStaleness | null,
+  options: ImportSnapshotOptions,
+): Promise<void> {
+  const manifestHash = await sha256File(manifestPath);
+  const conn = DatabaseConnection.open(databasePath);
+  try {
+    const queries = new QueryBuilder(conn.getDb());
+    queries.setMetadata(SNAPSHOT_IMPORT_METADATA_KEYS.imported, 'true');
+    queries.setMetadata(SNAPSHOT_IMPORT_METADATA_KEYS.importedAt, new Date().toISOString());
+    queries.setMetadata(SNAPSHOT_IMPORT_METADATA_KEYS.manifestHash, manifestHash);
+    queries.setMetadata(SNAPSHOT_IMPORT_METADATA_KEYS.sourceFingerprint, manifest.sourceRoot.fingerprint);
+    queries.setMetadata(SNAPSHOT_IMPORT_METADATA_KEYS.sourceOmniWeaveVersion, manifest.omniweaveVersion);
+    queries.setMetadata(SNAPSHOT_IMPORT_METADATA_KEYS.allowStale, options.allowStale === true ? 'true' : 'false');
+    queries.setMetadata(SNAPSHOT_IMPORT_METADATA_KEYS.staleness, JSON.stringify({
+      stale: staleness?.stale === true,
+      changedFiles: staleness?.changedFiles.length ?? 0,
+      missingFiles: staleness?.missingFiles.length ?? 0,
+      unreadableFiles: staleness?.unreadableFiles.length ?? 0,
+      unsafeFiles: staleness?.unsafeFiles.length ?? 0,
+    }));
+  } finally {
+    conn.close();
+  }
 }

@@ -3811,6 +3811,7 @@ export class ToolHandler {
       } catch { /* closed instance — leave as is */ }
     }
     const stats = cg.getStats();
+    const snapshotImport = cg.getSnapshotImportInfo();
 
     // Warn when this index actually belongs to a different git working tree
     // (e.g. the server resolved up from a nested worktree to the main checkout).
@@ -3825,6 +3826,12 @@ export class ToolHandler {
     ];
     if (mismatch) {
       lines.push(`> ⚠ ${worktreeMismatchWarning(mismatch).replace(/\n/g, '\n> ')}`, '');
+    }
+    if (snapshotImport) {
+      lines.push(
+        `> ⚠ Index was imported from a snapshot at ${snapshotImport.importedAt ?? 'unknown time'}; graph facts are from an external artifact. Run a local full index to clear this warning.`,
+        ''
+      );
     }
     lines.push(
       `**Files indexed:** ${stats.fileCount}`,

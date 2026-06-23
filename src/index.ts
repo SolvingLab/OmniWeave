@@ -51,6 +51,11 @@ import { EXTRACTION_VERSION } from './extraction/extraction-version';
 import { getOmniWeaveDir } from './directory';
 import { deriveProjectNameTokens } from './search/query-utils';
 import { OmniWeavePackageVersion } from './mcp/version';
+import {
+  readSnapshotImportInfo,
+  SNAPSHOT_IMPORT_METADATA_KEYS,
+  type SnapshotImportInfo,
+} from './snapshot-metadata';
 
 // Re-export types for consumers
 export * from './types';
@@ -431,6 +436,7 @@ export class OmniWeave {
           try {
             this.queries.setMetadata('indexed_with_version', OmniWeavePackageVersion);
             this.queries.setMetadata('indexed_with_extraction_version', String(EXTRACTION_VERSION));
+            this.queries.setMetadata(SNAPSHOT_IMPORT_METADATA_KEYS.imported, 'false');
           } catch { /* metadata is advisory — never fail an index over it */ }
         }
 
@@ -656,6 +662,10 @@ export class OmniWeave {
     const ev = this.queries.getMetadata('indexed_with_extraction_version');
     const parsed = ev != null ? parseInt(ev, 10) : NaN;
     return { version, extractionVersion: Number.isFinite(parsed) ? parsed : null };
+  }
+
+  getSnapshotImportInfo(): SnapshotImportInfo | null {
+    return readSnapshotImportInfo((key) => this.queries.getMetadata(key));
   }
 
   /**

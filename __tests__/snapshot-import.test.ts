@@ -7,6 +7,7 @@ import * as path from 'path';
 import OmniWeave from '../src/index';
 import { DatabaseConnection, getDatabasePath, type OpenDatabaseOptions } from '../src/db';
 import { CURRENT_SCHEMA_VERSION } from '../src/db/migrations';
+import { ToolHandler } from '../src/mcp/tools';
 import { FileLock } from '../src/utils';
 import {
   exportSnapshot,
@@ -241,8 +242,21 @@ describe('snapshot import and verify', () => {
 
     const cg = OmniWeave.openSync(targetRoot);
     try {
+      const snapshotImport = cg.getSnapshotImportInfo();
+      expect(snapshotImport).toEqual(expect.objectContaining({
+        manifestHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        sourceFingerprint: result.manifest.sourceRoot.fingerprint,
+        sourceOmniWeaveVersion: '9.9.9-test',
+        allowStale: false,
+      }));
       const matches = cg.searchNodes('entry', { limit: 5 });
       expect(matches.some((match) => match.node.name === 'entry')).toBe(true);
+
+      const status = await new ToolHandler(cg).execute('omniweave_status', {});
+      expect(status.content[0].text).toContain('imported from a snapshot');
+
+      await cg.indexAll();
+      expect(cg.getSnapshotImportInfo()).toBeNull();
     } finally {
       cg.destroy();
     }
@@ -572,6 +586,25 @@ describe('snapshot import and verify', () => {
     const result = JSON.parse(imported.stdout) as Awaited<ReturnType<typeof importSnapshot>>;
     expect(result.manifest.format).toBe(SNAPSHOT_FORMAT);
     expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(true);
+
+    const status = spawnSync(process.execPath, [
+      BIN,
+      'status',
+      targetRoot,
+      '--json',
+    ], {
+      cwd: targetRoot,
+      encoding: 'utf-8',
+      env: {
+        ...process.env,
+        OMNIWEAVE_NO_DAEMON: '1',
+        OMNIWEAVE_NO_WATCH: '1',
+      },
+    });
+
+    expect(status.status).toBe(0);
+    const statusJson = JSON.parse(status.stdout) as { snapshotImport?: { manifestHash?: string } | null };
+    expect(statusJson.snapshotImport?.manifestHash).toMatch(/^[a-f0-9]{64}$/);
   });
 
   it('requires an explicit CLI flag for unsafe snapshot import roots', async () => {

@@ -888,6 +888,7 @@ program
 
       const buildInfo = cg.getIndexBuildInfo();
       const reindexRecommended = cg.isIndexStale();
+      const snapshotImport = cg.getSnapshotImportInfo();
 
       // JSON output mode
       if (options.json) {
@@ -920,6 +921,7 @@ program
             currentExtractionVersion: EXTRACTION_VERSION,
             reindexRecommended,
           },
+          snapshotImport,
         }));
         cg.destroy();
         return;
@@ -931,6 +933,12 @@ program
       console.log(chalk.cyan('Project:'), projectPath);
       if (worktreeMismatch) {
         warn(worktreeMismatchWarning(worktreeMismatch));
+      }
+      if (snapshotImport) {
+        warn(
+          `Index was imported from a snapshot at ${snapshotImport.importedAt ?? 'unknown time'}; ` +
+          'graph facts are from an external artifact. Run a local full index to clear this warning.'
+        );
       }
       console.log();
 
