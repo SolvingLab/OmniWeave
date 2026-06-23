@@ -19,6 +19,9 @@ export const SNAPSHOT_DATABASE_FILENAME = 'omniweave.db';
 
 const MAX_SNAPSHOT_INLINE_GRAPH_TEXT_LENGTH = 4_096;
 const MAX_SNAPSHOT_DOCSTRING_TEXT_LENGTH = 20_000;
+const MAX_SNAPSHOT_GRAPH_JSON_TEXT_LENGTH = 20_000;
+const MAX_SNAPSHOT_GRAPH_JSON_DEPTH = 8;
+const MAX_SNAPSHOT_GRAPH_JSON_ITEMS = 1_000;
 
 export interface SnapshotManifest {
   format: typeof SNAPSHOT_FORMAT;
@@ -883,7 +886,14 @@ function validateSnapshotPathMembership(
 }
 
 function validateSnapshotGraphText(db: SqliteDatabase, errors: string[]): void {
+  validateSnapshotNodeGraphText(db, errors);
+  validateSnapshotEdgeGraphText(db, errors);
+  validateSnapshotUnresolvedRefGraphText(db, errors);
+}
+
+function validateSnapshotNodeGraphText(db: SqliteDatabase, errors: string[]): void {
   let rows: Array<{
+    rowid: unknown;
     id: unknown;
     name: unknown;
     qualifiedName: unknown;
@@ -892,9 +902,10 @@ function validateSnapshotGraphText(db: SqliteDatabase, errors: string[]): void {
   }>;
   try {
     rows = db.prepare(`
-      SELECT id, name, qualified_name AS qualifiedName, signature, docstring
+      SELECT rowid, id, name, qualified_name AS qualifiedName, signature, docstring
       FROM nodes
     `).all() as Array<{
+      rowid: unknown;
       id: unknown;
       name: unknown;
       qualifiedName: unknown;
@@ -909,14 +920,15 @@ function validateSnapshotGraphText(db: SqliteDatabase, errors: string[]): void {
   const invalidInline: string[] = [];
   const invalidDocstrings: string[] = [];
   for (const row of rows) {
-    const id = displayPathValue(row.id);
-    if (!isSafeSnapshotInlineGraphText(row.name)) invalidInline.push(`nodes.name ${id}`);
-    if (!isSafeSnapshotInlineGraphText(row.qualifiedName)) invalidInline.push(`nodes.qualified_name ${id}`);
+    const label = snapshotRowLabel('nodes', row.rowid);
+    if (!isSafeSnapshotInlineGraphText(row.id)) invalidInline.push(`nodes.id ${label}`);
+    if (!isSafeSnapshotInlineGraphText(row.name)) invalidInline.push(`nodes.name ${label}`);
+    if (!isSafeSnapshotInlineGraphText(row.qualifiedName)) invalidInline.push(`nodes.qualified_name ${label}`);
     if (row.signature !== null && row.signature !== undefined && !isSafeSnapshotInlineGraphText(row.signature)) {
-      invalidInline.push(`nodes.signature ${id}`);
+      invalidInline.push(`nodes.signature ${label}`);
     }
     if (row.docstring !== null && row.docstring !== undefined && !isSafeSnapshotDocstringText(row.docstring)) {
-      invalidDocstrings.push(`nodes.docstring ${id}`);
+      invalidDocstrings.push(`nodes.docstring ${label}`);
     }
   }
 
@@ -926,6 +938,94 @@ function validateSnapshotGraphText(db: SqliteDatabase, errors: string[]): void {
   if (invalidDocstrings.length > 0) {
     errors.push(`Snapshot database contains unsafe graph docstring text: ${summarizePaths(invalidDocstrings)}`);
   }
+}
+
+function validateSnapshotEdgeGraphText(db: SqliteDatabase, errors: string[]): void {
+  let rows: Array<{
+    rowid: unknown;
+    kind: unknown;
+    provenance: unknown;
+    metadata: unknown;
+  }>;
+  try {
+    rows = db.prepare(`
+      SELECT rowid, kind, provenance, metadata
+      FROM edges
+    `).all() as Array<{
+      rowid: unknown;
+      kind: unknown;
+      provenance: unknown;
+      metadata: unknown;
+    }>;
+  } catch (err) {
+    errors.push(`Snapshot database cannot validate edges graph text: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+
+  const invalidInline: string[] = [];
+  const invalidJson: string[] = [];
+  for (const row of rows) {
+    const label = snapshotRowLabel('edges', row.rowid);
+    if (!isSafeSnapshotInlineGraphText(row.kind)) invalidInline.push(`edges.kind ${label}`);
+    if (row.provenance !== null && row.provenance !== undefined && !isSafeSnapshotInlineGraphText(row.provenance)) {
+      invalidInline.push(`edges.provenance ${label}`);
+    }
+    if (row.metadata !== null && row.metadata !== undefined && !isSafeSnapshotGraphJsonText(row.metadata, 'object')) {
+      invalidJson.push(`edges.metadata ${label}`);
+    }
+  }
+
+  if (invalidInline.length > 0) {
+    errors.push(`Snapshot database contains unsafe graph display text: ${summarizePaths(invalidInline)}`);
+  }
+  if (invalidJson.length > 0) {
+    errors.push(`Snapshot database contains unsafe graph JSON text: ${summarizePaths(invalidJson)}`);
+  }
+}
+
+function validateSnapshotUnresolvedRefGraphText(db: SqliteDatabase, errors: string[]): void {
+  let rows: Array<{
+    rowid: unknown;
+    referenceName: unknown;
+    referenceKind: unknown;
+    candidates: unknown;
+  }>;
+  try {
+    rows = db.prepare(`
+      SELECT rowid, reference_name AS referenceName, reference_kind AS referenceKind, candidates
+      FROM unresolved_refs
+    `).all() as Array<{
+      rowid: unknown;
+      referenceName: unknown;
+      referenceKind: unknown;
+      candidates: unknown;
+    }>;
+  } catch (err) {
+    errors.push(`Snapshot database cannot validate unresolved_refs graph text: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+
+  const invalidInline: string[] = [];
+  const invalidJson: string[] = [];
+  for (const row of rows) {
+    const label = snapshotRowLabel('unresolved_refs', row.rowid);
+    if (!isSafeSnapshotInlineGraphText(row.referenceName)) invalidInline.push(`unresolved_refs.reference_name ${label}`);
+    if (!isSafeSnapshotInlineGraphText(row.referenceKind)) invalidInline.push(`unresolved_refs.reference_kind ${label}`);
+    if (row.candidates !== null && row.candidates !== undefined && !isSafeSnapshotGraphJsonText(row.candidates, 'array')) {
+      invalidJson.push(`unresolved_refs.candidates ${label}`);
+    }
+  }
+
+  if (invalidInline.length > 0) {
+    errors.push(`Snapshot database contains unsafe graph display text: ${summarizePaths(invalidInline)}`);
+  }
+  if (invalidJson.length > 0) {
+    errors.push(`Snapshot database contains unsafe graph JSON text: ${summarizePaths(invalidJson)}`);
+  }
+}
+
+function snapshotRowLabel(table: string, rowid: unknown): string {
+  return `${table} row ${typeof rowid === 'number' && Number.isSafeInteger(rowid) ? rowid : '?'}`;
 }
 
 function isSafeSnapshotInlineGraphText(value: unknown): value is string {
@@ -940,6 +1040,51 @@ function isSafeSnapshotDocstringText(value: unknown): value is string {
   return typeof value === 'string' &&
     value.length <= MAX_SNAPSHOT_DOCSTRING_TEXT_LENGTH &&
     !value.includes('```') &&
+    !hasUnsafeSnapshotControlCharacter(value);
+}
+
+function isSafeSnapshotGraphJsonText(value: unknown, rootKind: 'object' | 'array'): value is string {
+  if (typeof value !== 'string') return false;
+  if (value.length > MAX_SNAPSHOT_GRAPH_JSON_TEXT_LENGTH) return false;
+  if (/[\r\n`]/.test(value) || hasUnsafeSnapshotControlCharacter(value)) return false;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return false;
+  }
+  if (rootKind === 'array' && !Array.isArray(parsed)) return false;
+  if (rootKind === 'object' && (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed))) return false;
+  return isSafeSnapshotGraphJsonValue(parsed, 0);
+}
+
+function isSafeSnapshotGraphJsonValue(value: unknown, depth: number): boolean {
+  if (depth > MAX_SNAPSHOT_GRAPH_JSON_DEPTH) return false;
+  if (value === null || typeof value === 'boolean') return true;
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (typeof value === 'string') return isSafeSnapshotJsonLeafText(value);
+  if (Array.isArray(value)) {
+    return value.length <= MAX_SNAPSHOT_GRAPH_JSON_ITEMS &&
+      value.every((item) => isSafeSnapshotGraphJsonValue(item, depth + 1));
+  }
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>);
+    return entries.length <= MAX_SNAPSHOT_GRAPH_JSON_ITEMS &&
+      entries.every(([key, child]) => isSafeSnapshotJsonKeyText(key) && isSafeSnapshotGraphJsonValue(child, depth + 1));
+  }
+  return false;
+}
+
+function isSafeSnapshotJsonKeyText(value: string): boolean {
+  return value.length > 0 &&
+    value.length <= MAX_SNAPSHOT_INLINE_GRAPH_TEXT_LENGTH &&
+    !/[\r\n`]/.test(value) &&
+    !hasUnsafeSnapshotControlCharacter(value);
+}
+
+function isSafeSnapshotJsonLeafText(value: string): boolean {
+  return value.length <= MAX_SNAPSHOT_INLINE_GRAPH_TEXT_LENGTH &&
+    !/[\r\n`]/.test(value) &&
     !hasUnsafeSnapshotControlCharacter(value);
 }
 

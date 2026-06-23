@@ -1,0 +1,11 @@
+【新会话 GOAL — OmniWeave 超严格审计 + 有用性深度证明，自主 loop 到 super perfect】
+
+这是全新会话（无上一会话记忆）。你在 `~/Desktop/develop/sogen/OmniWeave`，我（liuzaoqu）极度重视此项目。**第一步：完整读 `./NEXT-SESSION-AUDIT-AND-PROOF.md`（作战手册：先读清单、审计矩阵、§7 靠谱测试题库、DONE 定义、护栏）**，再读 CLAUDE.md/AGENTS.md（《工程交付强制规范》§0–§10 = 审计标准）、CHECKPOINT.md（**PARK 表已证伪方向，无新反证 A/B 数字不许重开**）、eval-results/agent-ab-2026-06-23。
+
+铁律（违反=失信）：①证据优先——有真实命令输出才算数，读真源码，不信 README/记忆。②真实优先于 mock——agent A/B 用真 LLM（`~/Desktop/本机AI-API资源盘点.md`：MiMo 主力/DeepSeek/Qwen），**绝不把 key 写进任何文件/commit/日志**。③自动化优先禁甩手动。④ultracode——每个实质任务起 Workflow 并行 + 对抗式核验（skeptic agent 默认证伪每条 win）；token 不是约束，完整正确才是。⑤commit 只描述改动、**绝不加 AI 署名/Co-Authored-By/Generated**；push 只 origin 绝不 upstream，不 force main。⑥**改 CLAUDE.md 必同步 AGENTS.md**（两文件须逐字一致，仅 header+git 署名 Claude/Codex 不同——本会话已多次手滑漂移，每次务必核对）。⑦daemon-skew：MCP 输出可疑先疑旧 daemon，rebuild+重连。
+
+任务一·超严格审计：把《工程交付强制规范》§0–§10 每条 invariant 当断言，对真源码+真测试逐条核（Workflow fan-out，每桶一 agent，schema 产出 {断言→PASS/FAIL→真实值→durable锚点(名字非行号)→证据命令}）。重点打：错边/默认5工具(小仓3)/25k硬顶在所有wrapper后/5档预算per-file单调/截断不留半截围栏/**S4确定性边(不带provenance)vs crossLang启发式边(带confidence)的分层**/涟漪6处一致性/FileLock活PID拒抢/daemon指纹skew/CLI-MCP同查询不矛盾/数值clamp。每个FAIL立刻修+红→绿回归，全程build+test绿。删可删未删的工具/边/分支（奥卡姆），清不诚实输出。spec与代码冲突优先让代码达标；spec有错则修spec并同步两文件。
+
+任务二·有用性深度证明 + vs codegraph（一定多做实验）：竞品就在 `research/2026-06-23-codegraph-ecosystem/repos/`（codegraph上游正牌+codebase-memory/serena/codanna/aider/scip…）。要超越已有 rounds1-7 基线：①vs codegraph 逐能力对照（同批真实仓+同问题集，量 codegraph 拿不到而 OmniWeave 拿得到的边：S4分派/crossLang/workflow DAG/invokes），产出能力矩阵+真实 explore 输出对照。②agent A/B 真 LLM（扩展 scripts/agent-eval/ab-sufficiency.sh，fail-closed），用**手册§7 的靠谱题库**（每题先定死 ground truth 再跑；A 差异化赢点/B 诚实平手/C 输出诚实，**必含 tie 与 no-help 题，只挑 win=cherry-pick=失信**）。③诚实纪律：平手记平手，**绝不宣称「更正确」**（护城河=努力/信任/可达性，随仓放大、模型越弱越宽）；任何 win 可复现。产物落 eval-results/agent-ab-<新日期>/RESULTS.md，同步 README/CHECKPOINT/CHANGELOG/memory。
+
+DONE（super perfect，全满足才停 loop）：①§0–§10 每条 invariant 有 PASS 证据，FAIL 全修+回归绿；②build干净、npm test 全绿(含mcp-daemon 10/10)、eval门禁全过、benchmark不退或诚实更新；③死代码/复杂度/不诚实输出清零，§9七问逐条过；④vs codegraph+生态能力矩阵 + 真LLM agent A/B 证据落盘可复现、诚实边界(含平手/no-help)写清；⑤所有文档与最新真值同步、CLAUDE.md↔AGENTS.md同步。每轮loop末尾跑verify门禁+把进度/新证据/下一步写进CHECKPOINT并commit checkpoint。**不做「差不多」，未达任一项即继续loop。细节恒以 `./NEXT-SESSION-AUDIT-AND-PROOF.md` 为准。**
