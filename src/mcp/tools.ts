@@ -551,6 +551,18 @@ function formatChangedIndexNoResultNotice(changed: ChangedFileEntry[], outputSur
   );
 }
 
+function emptyIndexMessage(outputSurface: OutputSurface = 'mcp'): string {
+  const refreshStep = outputSurface === 'cli'
+    ? 'Run `omniweave sync` after source files are present.'
+    : 'Refresh the index after source files are present.';
+  return [
+    'No files indexed.',
+    'The OmniWeave index is initialized but contains 0 files.',
+    'This is an empty index state, not a tool failure.',
+    refreshStep,
+  ].join(' ');
+}
+
 function isExploreNoResultText(text: string): boolean {
   return text.startsWith('No relevant code found for ');
 }
@@ -1410,7 +1422,7 @@ export class ToolHandler {
           // avoid duplicating the same info at the top of the response.
           return await this.handleStatus(args);
         case 'omniweave_files':
-          result = await this.handleFiles(args); break;
+          result = await this.handleFiles(args, outputSurface); break;
         default:
           return this.errorResult(`Unknown tool: ${toolName}`);
       }
@@ -3564,7 +3576,7 @@ export class ToolHandler {
     const normalize = (p: string) => p.replace(/\\/g, '/').replace(/^(?:\.?\/+)+/, '').replace(/\/+$/, '');
     const wantLower = normalize(fileArg).toLowerCase();
     const allFiles = cg.getFiles();
-    if (allFiles.length === 0) return this.textResult('No files indexed. Run `omniweave index` first.');
+    if (allFiles.length === 0) return this.textResult(emptyIndexMessage(opts.outputSurface));
 
     let resolved = allFiles.find((f) => f.path.toLowerCase() === wantLower);
     let candidates: typeof allFiles = [];
@@ -3868,7 +3880,7 @@ export class ToolHandler {
   /**
    * Handle omniweave_files - get project file structure from the index
    */
-  private async handleFiles(args: Record<string, unknown>): Promise<ToolResult> {
+  private async handleFiles(args: Record<string, unknown>, outputSurface: OutputSurface = 'mcp'): Promise<ToolResult> {
     const cg = this.getOmniWeave(args.projectPath as string | undefined);
     const pathFilter = args.path as string | undefined;
     const pattern = args.pattern as string | undefined;
@@ -3880,7 +3892,7 @@ export class ToolHandler {
     const allFiles = cg.getFiles();
 
     if (allFiles.length === 0) {
-      return this.textResult('No files indexed. Run `omniweave index` first.');
+      return this.textResult(emptyIndexMessage(outputSurface));
     }
 
     // Filter by path prefix. Stored paths are project-relative POSIX (e.g.

@@ -77,6 +77,25 @@ describe('CLI explore unavailable-index policy', () => {
     expect(result.stdout).toContain('omniweave sync');
     expect(result.stdout).not.toContain('omniweave_explore');
   });
+
+  it('keeps file and node empty-index guidance aligned with the CLI surface', () => {
+    const cg = OmniWeave.initSync(testDir, {
+      config: { include: ['**/*.ts'], exclude: [] },
+    });
+    cg.destroy();
+
+    const files = runCli(testDir, ['files']);
+    const node = runCli(testDir, ['node', 'src/missing.ts']);
+
+    for (const result of [files, node]) {
+      expect(result.status).toBe(0);
+      expect(result.stderr).not.toContain('failed');
+      expect(result.stdout).toContain('initialized but contains 0 files');
+      expect(result.stdout).toContain('empty index state, not a tool failure');
+      expect(result.stdout).toContain('omniweave sync');
+      expect(result.stdout).not.toContain('omniweave index');
+    }
+  });
 });
 
 describe('CLI explore parity', () => {

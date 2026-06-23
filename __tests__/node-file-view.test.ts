@@ -115,4 +115,48 @@ describe('omniweave_node file-view (Read replacement)', () => {
     const out = await text({ file: 'does-not-exist.ts' });
     expect(out).toMatch(/no indexed file matches/i);
   });
+
+  it('reports an initialized 0-file index without telling MCP agents to rebuild from shell', async () => {
+    const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-empty-fileview-'));
+    let emptyCg: OmniWeave | undefined;
+
+    try {
+      emptyCg = OmniWeave.initSync(emptyDir, {
+        config: { include: ['**/*.ts'], exclude: [] },
+      });
+      const emptyHandler = new ToolHandler(emptyCg);
+
+      const mcpNode = (await emptyHandler.execute('omniweave_node', { file: 'src/missing.ts' }))
+        .content.map((c) => c.text).join('\n');
+      const mcpFiles = (await emptyHandler.execute('omniweave_files', {}))
+        .content.map((c) => c.text).join('\n');
+      const cliNode = (await emptyHandler.execute(
+        'omniweave_node',
+        { file: 'src/missing.ts' },
+        { outputSurface: 'cli' },
+      )).content.map((c) => c.text).join('\n');
+      const cliFiles = (await emptyHandler.execute(
+        'omniweave_files',
+        {},
+        { outputSurface: 'cli' },
+      )).content.map((c) => c.text).join('\n');
+
+      for (const out of [mcpNode, mcpFiles]) {
+        expect(out).toContain('initialized but contains 0 files');
+        expect(out).toContain('empty index state, not a tool failure');
+        expect(out).toContain('Refresh the index');
+        expect(out).not.toContain('omniweave index');
+        expect(out).not.toContain('omniweave sync');
+      }
+      for (const out of [cliNode, cliFiles]) {
+        expect(out).toContain('initialized but contains 0 files');
+        expect(out).toContain('empty index state, not a tool failure');
+        expect(out).toContain('omniweave sync');
+        expect(out).not.toContain('omniweave index');
+      }
+    } finally {
+      emptyCg?.close();
+      fs.rmSync(emptyDir, { recursive: true, force: true });
+    }
+  });
 });

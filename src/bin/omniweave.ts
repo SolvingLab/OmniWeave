@@ -1225,7 +1225,7 @@ program
       let files = cg.getFiles();
 
       if (files.length === 0) {
-        info('No files indexed. Run "omniweave index" first.');
+        info('No files indexed. The OmniWeave index is initialized but contains 0 files. This is an empty index state, not a tool failure. Run "omniweave sync" after source files are present.');
         cg.destroy();
         return;
       }
