@@ -8,6 +8,23 @@ import OmniWeave from '../src/index';
 const BIN = path.resolve(__dirname, '../dist/bin/omniweave.js');
 const CLIENT_INFO = { name: 'surface-parity-test', version: '0.0.0' };
 
+function writeProjectFile(projectRoot: string, relativePath: string, contents: string): void {
+  const fullPath = path.join(projectRoot, relativePath);
+  fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+  fs.writeFileSync(fullPath, contents);
+}
+
+async function indexProject(projectRoot: string): Promise<void> {
+  const cg = OmniWeave.initSync(projectRoot, {
+    config: { include: ['**/*.ts', '**/*.py'], exclude: [] },
+  });
+  try {
+    await cg.indexAll();
+  } finally {
+    cg.destroy();
+  }
+}
+
 function spawnServer(cwd: string): ChildProcessWithoutNullStreams {
   return spawn(process.execPath, [BIN, 'serve', '--mcp', '--no-watch'], {
     cwd,
@@ -135,9 +152,9 @@ describe('explore surface parity', () => {
   }, 20000);
 
   it('returns the same source envelope for a tiny indexed repo', async () => {
-    fs.mkdirSync(path.join(projectRoot, 'src'), { recursive: true });
-    fs.writeFileSync(
-      path.join(projectRoot, 'src', 'tiny.ts'),
+    writeProjectFile(
+      projectRoot,
+      'src/tiny.ts',
       [
         'export function tinyExploreNeedle(): string {',
         "  return 'needle';",
@@ -145,9 +162,7 @@ describe('explore surface parity', () => {
         '',
       ].join('\n'),
     );
-    const cg = OmniWeave.initSync(projectRoot);
-    await cg.indexAll();
-    cg.destroy();
+    await indexProject(projectRoot);
 
     const mcpText = await runMcpExplore(projectRoot, { query: 'src/tiny.ts', maxFiles: 1 });
     const cliText = runCliExplore(projectRoot, 'src/tiny.ts', 1);
@@ -164,4 +179,160 @@ describe('explore surface parity', () => {
     }
     expect(cliText.trim()).toBe(mcpText.trim());
   }, 20000);
+
+  it('keeps stale new-file recovery trustworthy across MCP and CLI', async () => {
+    writeProjectFile(
+      projectRoot,
+      'src/indexed.ts',
+      [
+        'export function indexedStableAnchor(): string {',
+        "  return 'indexed';",
+        '}',
+        '',
+      ].join('\n'),
+    );
+    const cg = OmniWeave.initSync(projectRoot, {
+      config: { include: ['**/*.ts', '**/*.py'], exclude: [] },
+    });
+    let mcpText = '';
+    let cliText = '';
+    try {
+      await cg.indexAll();
+      writeProjectFile(
+        projectRoot,
+        'src/mcp/brand-new.ts',
+        [
+          'export function brandNewCliFeature(): string {',
+          "  return 'new';",
+          '}',
+          '',
+        ].join('\n'),
+      );
+
+      cliText = runCliExplore(projectRoot, 'brandNewCliFeature', 3);
+      mcpText = await runMcpExplore(projectRoot, { query: 'brandNewCliFeature', maxFiles: 3 });
+    } finally {
+      cg.destroy();
+    }
+
+    // The MCP server intentionally gates the first tool call on catch-up sync,
+    // so it serves current source instead of a stale empty result.
+    expect(mcpText.startsWith('⚠️')).toBe(false);
+    expect(mcpText).toContain('#### src/mcp/brand-new.ts');
+    expect(mcpText).toContain('brandNewCliFeature');
+    expect(mcpText).not.toContain('No relevant code found');
+    expect(mcpText).not.toContain('empty explore result may be stale');
+
+    // The CLI is a one-shot read of the existing index, so it must make the
+    // stale boundary explicit instead of pretending the empty result is complete.
+    expect(cliText.startsWith('⚠️')).toBe(true);
+    expect(cliText).toContain('empty explore result may be stale');
+    expect(cliText).toContain('src/mcp/brand-new.ts (added)');
+    expect(cliText).toContain('use normal file tools for that path');
+    expect(cliText).toContain('No relevant code found for "brandNewCliFeature"');
+    expect(cliText).not.toContain('elsewhere in this project changed since the last index');
+    expect(cliText).toContain('run `omniweave sync`');
+    expect(cliText).not.toContain('from a shell run');
+    expect(cliText).not.toContain('omniweave_explore');
+    expect(cliText).not.toContain('omniweave_node');
+  }, 30000);
+
+  it('keeps snapshot suppression and overload ambiguity aligned across surfaces', async () => {
+    writeProjectFile(
+      projectRoot,
+      'src/mcp/tools.ts',
+      [
+        'export function buildExploreOutput(): string {',
+        "  return 'ranking budget truncation call path edge significance';",
+        '}',
+        '',
+      ].join('\n'),
+    );
+    writeProjectFile(
+      projectRoot,
+      'research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/tools.ts',
+      [
+        'export function buildExploreOutput(): string {',
+        "  return 'external snapshot ranking budget truncation call path';",
+        '}',
+        '',
+      ].join('\n'),
+    );
+    for (const name of ['alpha', 'bravo', 'charlie', 'delta', 'echo']) {
+      writeProjectFile(
+        projectRoot,
+        `src/overloads/${name}.ts`,
+        [
+          'export function reconcile(): string {',
+          `  return '${name}';`,
+          '}',
+          '',
+        ].join('\n'),
+      );
+    }
+    await indexProject(projectRoot);
+
+    const mcpSnapshotText = await runMcpExplore(projectRoot, {
+      query: 'buildExploreOutput ranking budget truncation',
+      maxFiles: 5,
+    });
+    const cliSnapshotText = runCliExplore(projectRoot, 'buildExploreOutput ranking budget truncation', 5);
+
+    for (const text of [mcpSnapshotText, cliSnapshotText]) {
+      expect(text).toContain('#### src/mcp/tools.ts');
+      expect(text).toContain('buildExploreOutput');
+      expect(text).not.toContain(
+        'research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/tools.ts',
+      );
+    }
+
+    const mcpAmbiguousText = await runMcpExplore(projectRoot, { query: 'reconcile', maxFiles: 5 });
+    const cliAmbiguousText = runCliExplore(projectRoot, 'reconcile', 5);
+
+    for (const text of [mcpAmbiguousText, cliAmbiguousText]) {
+      expect(text).toContain('### Ambiguous named symbols');
+      expect(text).toContain('`reconcile` matched 5 callable definitions');
+      expect(text).toContain('do not treat that subset as the full overload set');
+      expect(text).toContain('src/overloads/');
+    }
+    expect(mcpAmbiguousText).toContain('key: `omniweave_node symbol="reconcile" file="src/overloads/');
+    expect(cliAmbiguousText).toContain('cmd: `omniweave node "reconcile" --file "src/overloads/');
+    expect(cliAmbiguousText).not.toContain('omniweave_node');
+    expect(cliAmbiguousText).not.toContain('omniweave_explore');
+  }, 30000);
+
+  it('keeps hard-ceiling truncation aligned across MCP and CLI', async () => {
+    for (let i = 0; i < 505; i++) {
+      writeProjectFile(projectRoot, `noise/noise${i}.ts`, `export const noise${i} = ${i};\n`);
+    }
+    for (let fileIndex = 0; fileIndex < 8; fileIndex++) {
+      const body: string[] = [`export function targetBudget${fileIndex}(): string {`];
+      body.push('  const values = [');
+      for (let line = 0; line < 240; line++) {
+        body.push(`    "targetBudget${fileIndex}-payload-${line.toString().padStart(3, '0')}-abcdefghijklmnopqrstuvwxyz",`);
+      }
+      body.push('  ];');
+      body.push("  return values.join('\\n');");
+      body.push('}');
+      writeProjectFile(projectRoot, `src/target${fileIndex}.ts`, body.join('\n'));
+    }
+    await indexProject(projectRoot);
+
+    const query = Array.from({ length: 8 }, (_, i) => `targetBudget${i}`).join(' ');
+    const mcpText = await runMcpExplore(projectRoot, { query, maxFiles: 8 });
+    const cliText = runCliExplore(projectRoot, query, 8);
+
+    for (const text of [mcpText, cliText]) {
+      expect(text).toContain('output truncated to budget');
+      expect(text.length).toBeLessThanOrEqual(25000);
+      expect(text).toContain('Treat only complete source blocks shown above as already Read');
+      expect(text).toContain('#### src/target');
+      expect(text).toContain('```typescript');
+      expect((text.match(/```/g) ?? []).length % 2).toBe(0);
+    }
+    expect(mcpText).toContain('run another omniweave_explore with the specific names');
+    expect(cliText).toContain('omniweave explore "<names>"');
+    expect(cliText).not.toContain('omniweave_explore');
+    expect(cliText).not.toContain('omniweave_node');
+  }, 40000);
 });
