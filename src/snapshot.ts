@@ -24,7 +24,7 @@ export interface SnapshotManifest {
   createdAt: string;
   schemaVersion: number | null;
   sourceRoot: {
-    path: string;
+    path?: string;
     fingerprint: string;
     indexedFileCount: number;
     languages: string[];
@@ -172,7 +172,6 @@ export async function exportSnapshot(
       createdAt: new Date().toISOString(),
       schemaVersion: schema?.version ?? null,
       sourceRoot: {
-        path: root,
         fingerprint: fingerprintIndexedFiles(files),
         indexedFileCount: files.length,
         languages: Object.entries(stats.filesByLanguage)

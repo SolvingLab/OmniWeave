@@ -61,10 +61,12 @@ describe('snapshot export', () => {
     expect(manifest.formatVersion).toBe(SNAPSHOT_FORMAT_VERSION);
     expect(manifest.omniweaveVersion).toBe('9.9.9-test');
     expect(manifest.schemaVersion).toEqual(expect.any(Number));
-    expect(manifest.sourceRoot.path).toBe(fs.realpathSync(projectRoot));
+    expect(manifest.sourceRoot.path).toBeUndefined();
     expect(manifest.sourceRoot.fingerprint).toMatch(/^[a-f0-9]{64}$/);
     expect(manifest.sourceRoot.indexedFileCount).toBe(1);
     expect(manifest.sourceRoot.languages).toEqual(['typescript']);
+    expect(JSON.stringify(manifest)).not.toContain(fs.realpathSync(projectRoot));
+    expect(JSON.stringify(manifest)).not.toContain(os.homedir());
     expect(manifest.graph.fileCount).toBe(1);
     expect(manifest.graph.nodeCount).toBeGreaterThan(0);
     expect(manifest.graph.edgeCount).toBeGreaterThan(0);
