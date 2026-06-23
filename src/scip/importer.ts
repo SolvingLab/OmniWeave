@@ -82,6 +82,7 @@ interface ScipLanguageResolution {
 }
 
 const supportedLanguages = new Set<string>(LANGUAGES);
+const MAX_SCIP_DISPLAY_NAME_LENGTH = 200;
 
 export async function importScipIndex(
   projectRoot: string,
@@ -318,7 +319,9 @@ function createDefinitionRecord(
   nodesById: Map<string, GraphNode>,
   warnings: string[],
 ): DefinitionRecord | null {
-  const name = info.displayName.trim() || (context.hasVerifiedSourceText ? displayNameFromSymbol(info.symbol).trim() : '');
+  const name = sanitizeScipDisplayName(
+    info.displayName.trim() || (context.hasVerifiedSourceText ? displayNameFromSymbol(info.symbol).trim() : '')
+  );
   if (!name) {
     warnings.push(`Skipping SCIP definition without displayName or embedded text: ${context.filePath} ${info.symbol}`);
     return null;
@@ -361,7 +364,6 @@ function createScipDefinitionNode(
   kind: NodeKind,
 ): GraphNode {
   const range = occurrenceRange(occurrence);
-  const signature = info.signature?.text || undefined;
   return {
     id,
     kind,
@@ -373,8 +375,6 @@ function createScipDefinitionNode(
     endLine: range.endLine,
     startColumn: range.startColumn,
     endColumn: range.endColumn,
-    docstring: info.documentation[0],
-    signature,
     updatedAt: Date.now(),
   };
 }
@@ -714,6 +714,14 @@ function displayNameFromSymbol(symbol: string): string {
   const stripped = symbol.trim().replace(/[.#:!]+$/g, '').replace(/\([^)]*\)\.?$/g, '');
   const match = stripped.match(/`([^`]+)`$|([A-Za-z0-9_$+-]+)$/);
   return (match?.[1] || match?.[2] || symbol).replace(/``/g, '`');
+}
+
+function sanitizeScipDisplayName(value: string): string {
+  return value
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_SCIP_DISPLAY_NAME_LENGTH);
 }
 
 function scipNodeId(symbol: string, filePath: string): string {
