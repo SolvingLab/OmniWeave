@@ -235,6 +235,21 @@ describe('snapshot import and verify', () => {
     expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
   });
 
+  it('rejects non-string scalar manifest fields before installing bytes', async () => {
+    updateSnapshotManifestForTest(outputDir, (manifest) => {
+      manifest.omniweaveVersion = { value: 'bad' };
+      manifest.createdAt = 123;
+    });
+
+    const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+
+    expect(verification.ok).toBe(false);
+    expect(verification.errors.join('\n')).toContain('omniweaveVersion must be a string');
+    expect(verification.errors.join('\n')).toContain('createdAt must be a string');
+    await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
+    expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+  });
+
   it('rejects snapshot artifact symlinks even when the target bytes match the manifest', async () => {
     const dbPath = path.join(outputDir, SNAPSHOT_DATABASE_FILENAME);
     const realDbPath = path.join(outputDir, 'real-omniweave.db');
@@ -280,6 +295,37 @@ describe('snapshot import and verify', () => {
       expect(cg.getSnapshotImportInfo()).toBeNull();
     } finally {
       cg.destroy();
+    }
+  });
+
+  it('records the manifest hash from the verified manifest bytes', async () => {
+    const manifestPath = path.join(outputDir, SNAPSHOT_MANIFEST_FILENAME);
+    const expectedManifestHash = hashFileForTest(manifestPath);
+    const originalWithLockAsync = FileLock.prototype.withLockAsync;
+    let mutated = false;
+    FileLock.prototype.withLockAsync = async function patchedWithLockAsync<T>(fn: () => Promise<T>): Promise<T> {
+      return await originalWithLockAsync.call(this, async () => {
+        if (!mutated) {
+          mutated = true;
+          updateSnapshotManifestForTest(outputDir, (manifest) => {
+            manifest.omniweaveVersion = 'mutated-after-verification';
+          });
+        }
+        return await fn();
+      });
+    };
+
+    try {
+      await importSnapshot(outputDir, targetRoot);
+
+      const cg = OmniWeave.openSync(targetRoot);
+      try {
+        expect(cg.getSnapshotImportInfo()?.manifestHash).toBe(expectedManifestHash);
+      } finally {
+        cg.destroy();
+      }
+    } finally {
+      FileLock.prototype.withLockAsync = originalWithLockAsync;
     }
   });
 
@@ -335,6 +381,27 @@ describe('snapshot import and verify', () => {
     expect(cliStatus.stdout).toContain('changed=1');
   });
 
+  it('rechecks target staleness under the target lock before installing bytes', async () => {
+    const originalWithLockAsync = FileLock.prototype.withLockAsync;
+    let changed = false;
+    FileLock.prototype.withLockAsync = async function patchedWithLockAsync<T>(fn: () => Promise<T>): Promise<T> {
+      return await originalWithLockAsync.call(this, async () => {
+        if (!changed) {
+          changed = true;
+          writeProject(targetRoot, CHANGED_SOURCE);
+        }
+        return await fn();
+      });
+    };
+
+    try {
+      await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Snapshot is stale/);
+      expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+    } finally {
+      FileLock.prototype.withLockAsync = originalWithLockAsync;
+    }
+  });
+
   it('rejects snapshots whose indexed file paths escape the target root', async () => {
     const conn = DatabaseConnection.open(path.join(outputDir, SNAPSHOT_DATABASE_FILENAME));
     try {
@@ -387,6 +454,27 @@ describe('snapshot import and verify', () => {
     expect(verification.errors.join('\n')).toContain('.env');
     await expect(importSnapshot(outputDir, targetRoot, { allowStale: true })).rejects.toThrow(/Invalid snapshot/);
     expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+  });
+
+  it('rechecks target import policy under the target lock before installing bytes', async () => {
+    const originalWithLockAsync = FileLock.prototype.withLockAsync;
+    let ignored = false;
+    FileLock.prototype.withLockAsync = async function patchedWithLockAsync<T>(fn: () => Promise<T>): Promise<T> {
+      return await originalWithLockAsync.call(this, async () => {
+        if (!ignored) {
+          ignored = true;
+          fs.writeFileSync(path.join(targetRoot, '.gitignore'), 'src/index.ts\n', 'utf-8');
+        }
+        return await fn();
+      });
+    };
+
+    try {
+      await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/target indexer would not import/);
+      expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+    } finally {
+      FileLock.prototype.withLockAsync = originalWithLockAsync;
+    }
   });
 
   it('rejects snapshot file languages that do not match the target indexer', async () => {

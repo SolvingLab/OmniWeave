@@ -1,9 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { spawnSync } from 'child_process';
+import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import OmniWeave from '../src/index';
+import { getDatabasePath } from '../src/db';
+import { ToolHandler } from '../src/mcp/tools';
 import { importScipIndex, type ImportScipResult } from '../src/scip/importer';
 
 const BIN = path.resolve(__dirname, '../dist/bin/omniweave.js');
@@ -43,10 +46,43 @@ function writeProject(root: string): void {
   ].join('\n'));
 }
 
+function writeNoiseFiles(root: string, count: number): void {
+  const noiseDir = path.join(root, 'noise');
+  fs.mkdirSync(noiseDir, { recursive: true });
+  for (let i = 0; i < count; i++) {
+    fs.writeFileSync(path.join(noiseDir, `noise${i}.ts`), `export const noise${i} = ${i};\n`);
+  }
+}
+
 async function indexProject(root: string): Promise<void> {
   const cg = OmniWeave.initSync(root);
   await cg.indexAll();
   cg.destroy();
+}
+
+async function reindexProject(root: string): Promise<void> {
+  const cg = OmniWeave.openSync(root);
+  await cg.indexAll();
+  cg.destroy();
+}
+
+function hashFileForTest(filePath: string): string {
+  return createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
+async function withFakeHome<T>(home: string, fn: () => T | Promise<T>): Promise<T> {
+  const oldHome = process.env.HOME;
+  const oldUserProfile = process.env.USERPROFILE;
+  process.env.HOME = home;
+  process.env.USERPROFILE = home;
+  try {
+    return await fn();
+  } finally {
+    if (oldHome === undefined) delete process.env.HOME;
+    else process.env.HOME = oldHome;
+    if (oldUserProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = oldUserProfile;
+  }
 }
 
 function writeScipIndex(filePath: string, language = 'typescript', documentTexts: Record<string, string> = {}): void {
@@ -551,6 +587,135 @@ describe('SCIP importer', () => {
     expect(imported.documentsImported).toBe(2);
     expect(imported.referencesImported).toBe(1);
     expect(imported.relationshipsImported).toBe(1);
+  });
+
+  it('fails on the exact CLI SCIP --path target instead of importing into an initialized parent', async () => {
+    const parentRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'omniweave-scip-parent-'));
+    try {
+      const childRoot = path.join(parentRoot, 'child');
+      writeProject(parentRoot);
+      writeProject(childRoot);
+      await indexProject(parentRoot);
+      const parentIndexPath = path.join(parentRoot, 'index.scip');
+      writeScipIndex(parentIndexPath);
+      const parentDb = getDatabasePath(parentRoot);
+      const parentHashBefore = hashFileForTest(parentDb);
+
+      const result = spawnSync(process.execPath, [
+        BIN,
+        'scip',
+        'import',
+        parentIndexPath,
+        '--path',
+        childRoot,
+        '--json',
+      ], {
+        cwd: childRoot,
+        encoding: 'utf-8',
+        env: {
+          ...process.env,
+          OMNIWEAVE_NO_DAEMON: '1',
+          OMNIWEAVE_NO_WATCH: '1',
+        },
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('OmniWeave not initialized');
+      expect(result.stderr).toContain(childRoot);
+      expect(hashFileForTest(parentDb)).toBe(parentHashBefore);
+
+      const parentCg = OmniWeave.openSync(parentRoot);
+      try {
+        const caller = parentCg.searchNodes('caller', { limit: 5 }).find((match) => match.node.filePath === 'src/a.ts')?.node;
+        expect(caller).toBeDefined();
+        expect(parentCg.getOutgoingEdges(caller!.id).filter((edge) => edge.provenance === 'scip')).toHaveLength(0);
+      } finally {
+        parentCg.destroy();
+      }
+    } finally {
+      rmTree(parentRoot);
+    }
+  });
+
+  it('requires explicit allowUnsafeRoot for library SCIP imports', async () => {
+    await withFakeHome(projectRoot, async () => {
+      await expect(importScipIndex(projectRoot, indexPath)).rejects.toThrow(/Refusing to import SCIP facts/);
+
+      const result = await importScipIndex(projectRoot, indexPath, { allowUnsafeRoot: true });
+      expect(result.documentsImported).toBe(2);
+      expect(result.edgesImported).toBe(2);
+    });
+  });
+
+  it('requires an explicit CLI flag for unsafe SCIP import roots', async () => {
+    await withFakeHome(projectRoot, () => {
+      const refused = spawnSync(process.execPath, [
+        BIN,
+        'scip',
+        'import',
+        indexPath,
+        '--path',
+        projectRoot,
+        '--json',
+      ], {
+        cwd: projectRoot,
+        encoding: 'utf-8',
+        env: {
+          ...process.env,
+          OMNIWEAVE_NO_DAEMON: '1',
+          OMNIWEAVE_NO_WATCH: '1',
+        },
+      });
+
+      expect(refused.status).toBe(1);
+      expect(refused.stderr).toContain('Refusing to import SCIP facts');
+
+      const imported = spawnSync(process.execPath, [
+        BIN,
+        'scip',
+        'import',
+        indexPath,
+        '--path',
+        projectRoot,
+        '--allow-unsafe-root',
+        '--json',
+      ], {
+        cwd: projectRoot,
+        encoding: 'utf-8',
+        env: {
+          ...process.env,
+          OMNIWEAVE_NO_DAEMON: '1',
+          OMNIWEAVE_NO_WATCH: '1',
+        },
+      });
+
+      expect(imported.status).toBe(0);
+      const result = JSON.parse(imported.stdout) as ImportScipResult;
+      expect(result.documentsImported).toBe(2);
+      expect(result.edgesImported).toBe(2);
+    });
+  });
+
+  it('surfaces unverified SCIP source text labels in explore relationships', async () => {
+    writeNoiseFiles(projectRoot, 505);
+    await reindexProject(projectRoot);
+    await importScipIndex(projectRoot, indexPath);
+
+    const cg = OmniWeave.openSync(projectRoot);
+    try {
+      const result = await new ToolHandler(cg).execute('omniweave_explore', {
+        query: 'caller target Dog Animal',
+        maxFiles: 8,
+      });
+      const text = result.content[0]?.text ?? '';
+
+      expect(text).toContain('### Supporting relationships');
+      expect(text).toContain('scip');
+      expect(text).toContain('unverified source text');
+      expect(text).toContain('unverified target text');
+    } finally {
+      cg.destroy();
+    }
   });
 
   it.skipIf(process.env.OW_REALCORPUS !== '1')('imports a real TypeScript index.scip corpus fixture', () => {

@@ -1,7 +1,7 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { getOmniWeaveDir, isInitialized, validateDirectory } from '../directory';
+import { getOmniWeaveDir, isInitialized, unsafeIndexRootReason, validateDirectory } from '../directory';
 import { DatabaseConnection, getDatabasePath } from '../db';
 import { QueryBuilder } from '../db/queries';
 import { FileLock, validatePathWithinRoot } from '../utils';
@@ -19,6 +19,7 @@ import {
 
 export interface ImportScipOptions {
   replace?: boolean;
+  allowUnsafeRoot?: boolean;
 }
 
 export interface ImportScipResult {
@@ -86,6 +87,13 @@ export async function importScipIndex(
   options: ImportScipOptions = {},
 ): Promise<ImportScipResult> {
   const root = resolveExistingDirectory(projectRoot, 'project root');
+  const unsafe = unsafeIndexRootReason(root);
+  if (unsafe && options.allowUnsafeRoot !== true) {
+    throw new Error(
+      `Refusing to import SCIP facts into ${root} — it looks like ${unsafe}. ` +
+      'Run this inside a specific project directory, or pass --allow-unsafe-root if you really mean to modify that .omniweave index.'
+    );
+  }
   if (!isInitialized(root)) {
     throw new Error(`OmniWeave not initialized in ${root}`);
   }

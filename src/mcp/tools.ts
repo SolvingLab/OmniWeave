@@ -1572,10 +1572,13 @@ export class ToolHandler {
   private collectCallSurfaceRelationships(
     cg: OmniWeave,
     defNodes: Node[],
-    direction: 'incoming' | 'outgoing'
-  ): { nodes: Node[]; labels: Map<string, string>; omittedLowSignal: number; omittedWeak: number } {
+    direction: 'incoming' | 'outgoing',
+    options: { collectTestCallers?: boolean } = {},
+  ): { nodes: Node[]; testNodes: Node[]; labels: Map<string, string>; omittedLowSignal: number; omittedWeak: number } {
     const seen = new Set<string>();
+    const seenTests = new Set<string>();
     const nodes: Node[] = [];
+    const testNodes: Node[] = [];
     const labels = new Map<string, string>();
     const definitionIsLowSignal = defNodes.every((node) => isLowSignalSourceFile(node.filePath));
     let omittedLowSignal = 0;
@@ -1591,6 +1594,18 @@ export class ToolHandler {
           continue;
         }
         if (!definitionIsLowSignal && isLowSignalSourceFile(relationship.node.filePath)) {
+          if (
+            options.collectTestCallers === true
+            && direction === 'incoming'
+            && !isRepositorySnapshotFile(relationship.node.filePath)
+            && isTestFile(relationship.node.filePath)
+          ) {
+            if (!seenTests.has(relationship.node.id)) {
+              seenTests.add(relationship.node.id);
+              testNodes.push(relationship.node);
+            }
+            continue;
+          }
           omittedLowSignal++;
           continue;
         }
@@ -1602,7 +1617,7 @@ export class ToolHandler {
       }
     }
 
-    return { nodes, labels, omittedLowSignal, omittedWeak };
+    return { nodes, testNodes, labels, omittedLowSignal, omittedWeak };
   }
 
   private relationshipOmissionNote(omittedLowSignal: number, omittedWeak: number): string {
@@ -2239,11 +2254,13 @@ export class ToolHandler {
     const entries: string[] = [];
     for (const root of roots) {
       let callers: Node[] = [];
+      let testCallers: Node[] = [];
       let omittedLowSignal = 0;
       let omittedWeak = 0;
       try {
-        const collected = this.collectCallSurfaceRelationships(cg, [root], 'incoming');
+        const collected = this.collectCallSurfaceRelationships(cg, [root], 'incoming', { collectTestCallers: true });
         callers = collected.nodes;
+        testCallers = collected.testNodes;
         omittedLowSignal = collected.omittedLowSignal;
         omittedWeak = collected.omittedWeak;
       } catch { /* skip this root */ }
@@ -2253,11 +2270,16 @@ export class ToolHandler {
       for (const caller of callers) {
         if (!seen.has(caller.id)) { seen.add(caller.id); uniq.push(caller); }
       }
-      if (uniq.length === 0) continue; // no blast radius → nothing to flag
+      const testSeen = new Set<string>();
+      const uniqTests: Node[] = [];
+      for (const caller of testCallers) {
+        if (!testSeen.has(caller.id)) { testSeen.add(caller.id); uniqTests.push(caller); }
+      }
+      if (uniq.length === 0 && uniqTests.length === 0) continue; // no blast radius → nothing to flag
 
       const callerFiles = [...new Set(uniq.map((n) => rel(n.filePath)))];
-      const testFiles = callerFiles.filter((f) => isTestFile(f));
-      const nonTest = callerFiles.filter((f) => !isTestFile(f));
+      const testFiles = [...new Set(uniqTests.map((n) => rel(n.filePath)))];
+      const nonTest = callerFiles;
 
       const shown = nonTest.slice(0, FILE_CAP).map((f) => `\`${f}\``).join(', ');
       const more = nonTest.length > FILE_CAP ? ` +${nonTest.length - FILE_CAP} more` : '';
@@ -2272,7 +2294,7 @@ export class ToolHandler {
       const omittedNote = omitted ? `; omitted ${omitted} relationship${omittedLowSignal + omittedWeak === 1 ? '' : 's'} from call-surface count` : '';
 
       entries.push(
-        `- \`${root.name}\` (${rel(root.filePath)}:${root.startLine}) — ${uniq.length} caller${uniq.length === 1 ? '' : 's'}${where}${tests}${omittedNote}`,
+        `- \`${root.name}\` (${rel(root.filePath)}:${root.startLine}) — ${uniq.length} production caller${uniq.length === 1 ? '' : 's'}${where}${tests}${omittedNote}`,
       );
     }
     if (entries.length === 0) return '';
@@ -4395,13 +4417,25 @@ export class ToolHandler {
    * showing "via callback registration" tells the agent this is where the
    * callback is WIRED, not where it's invoked.
    */
+  private scipTrustLabels(edge: Edge): string[] {
+    if (edge.provenance !== 'scip') return [];
+    const labels: string[] = [];
+    if (edge.metadata?.scipSourceTextVerified === false) labels.push('unverified source text');
+    if (edge.metadata?.scipTargetTextVerified === false) labels.push('unverified target text');
+    return labels;
+  }
+
   private edgeLabel(edge: Edge): string | null {
-    if (edge.kind === 'calls') return null;
-    if (edge.metadata?.fnRef === true) return 'callback registration';
-    if (edge.kind === 'instantiates') return 'instantiation';
-    if (edge.kind === 'imports') return 'import';
-    if (edge.kind === 'references') return 'reference';
-    return edge.kind;
+    const labels: string[] = [];
+    if (edge.kind !== 'calls') {
+      if (edge.metadata?.fnRef === true) labels.push('callback registration');
+      else if (edge.kind === 'instantiates') labels.push('instantiation');
+      else if (edge.kind === 'imports') labels.push('import');
+      else if (edge.kind === 'references') labels.push('reference');
+      else labels.push(edge.kind);
+    }
+    if (edge.provenance === 'scip') labels.push('scip', ...this.scipTrustLabels(edge));
+    return labels.length > 0 ? labels.join('; ') : null;
   }
 
   private nodeContinuationKey(node: Node): string {
@@ -4433,7 +4467,7 @@ export class ToolHandler {
     } else if (edge.provenance === 'heuristic') {
       notes.push('heuristic');
     } else if (edge.provenance === 'scip') {
-      notes.push('scip');
+      notes.push('scip', ...this.scipTrustLabels(edge));
     }
 
     const confidence = edge.metadata?.confidence;

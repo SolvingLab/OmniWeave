@@ -104,7 +104,23 @@ export interface ImportSnapshotResult {
 }
 
 interface StagedVerifySnapshotResult extends VerifySnapshotResult {
+  manifestHash?: string;
   stagingDir?: string;
+}
+
+interface ParsedSnapshotManifest {
+  manifest: SnapshotManifest;
+  manifestHash: string;
+}
+
+interface SnapshotTargetValidation {
+  errors: string[];
+  warnings: string[];
+  staleness?: SnapshotStaleness;
+}
+
+interface VerifySnapshotWithStagingOptions extends VerifySnapshotOptions {
+  deferTargetCheck?: boolean;
 }
 
 export async function exportSnapshot(
@@ -231,7 +247,7 @@ export async function verifySnapshot(
 
 async function verifySnapshotWithStaging(
   snapshotDir: string,
-  options: VerifySnapshotOptions = {},
+  options: VerifySnapshotWithStagingOptions = {},
 ): Promise<StagedVerifySnapshotResult> {
   const directory = resolveExistingDirectory(snapshotDir, 'snapshot directory');
   const manifestPath = path.join(directory, SNAPSHOT_MANIFEST_FILENAME);
@@ -241,8 +257,11 @@ async function verifySnapshotWithStaging(
     ? resolveExistingDirectory(options.projectRoot, 'project root')
     : undefined;
   const targetChecked = targetRoot !== undefined;
+  const checkTargetNow = targetRoot !== undefined && options.deferTargetCheck !== true;
 
-  const manifest = parseSnapshotManifest(manifestPath, errors);
+  const parsedManifest = parseSnapshotManifest(manifestPath, errors);
+  const manifest = parsedManifest?.manifest;
+  const manifestHash = parsedManifest?.manifestHash;
   let stagingDir: string | undefined;
   if (manifest) {
     const canStage = validateSnapshotManifest(manifest, errors);
@@ -254,7 +273,12 @@ async function verifySnapshotWithStaging(
           await validateStagedSnapshotArtifacts(stagingDir, manifest, errors);
         }
         if (errors.length === 0) {
-          validateStagedSnapshotDatabase(path.join(stagingDir, SNAPSHOT_DATABASE_FILENAME), manifest, errors, targetRoot);
+          validateStagedSnapshotDatabase(
+            path.join(stagingDir, SNAPSHOT_DATABASE_FILENAME),
+            manifest,
+            errors,
+            checkTargetNow ? targetRoot : undefined,
+          );
         }
         if (errors.length === 0) {
           await validateStagedSnapshotArtifacts(stagingDir, manifest, errors);
@@ -266,16 +290,11 @@ async function verifySnapshotWithStaging(
   }
 
   let staleness: SnapshotStaleness | undefined;
-  if (manifest && stagingDir && errors.length === 0 && targetRoot) {
-    staleness = await computeSnapshotStaleness(targetRoot, path.join(stagingDir, SNAPSHOT_DATABASE_FILENAME));
-    if (staleness.unsafeFiles.length > 0) {
-      errors.push(
-        `Snapshot database contains indexed paths outside the target root: ${summarizePaths(staleness.unsafeFiles)}`
-      );
-    }
-    if (staleness.stale) {
-      warnings.push(describeStaleness(staleness));
-    }
+  if (manifest && stagingDir && errors.length === 0 && checkTargetNow) {
+    const targetValidation = await validateStagedSnapshotTarget(stagingDir, manifest, targetRoot);
+    errors.push(...targetValidation.errors);
+    warnings.push(...targetValidation.warnings);
+    staleness = targetValidation.staleness;
   }
   if (manifest && stagingDir && errors.length === 0) {
     await validateStagedSnapshotArtifacts(stagingDir, manifest, errors);
@@ -289,6 +308,7 @@ async function verifySnapshotWithStaging(
     errors,
     warnings,
     manifest,
+    manifestHash,
     staleness,
     stagingDir,
   };
@@ -307,17 +327,10 @@ export async function importSnapshot(
       'Run this inside a specific project directory, or pass --allow-unsafe-root if you really mean to replace that .omniweave index.'
     );
   }
-  const verification = await verifySnapshotWithStaging(snapshotDir, { projectRoot: root });
+  const verification = await verifySnapshotWithStaging(snapshotDir, { projectRoot: root, deferTargetCheck: true });
   try {
     if (!verification.ok || !verification.manifest || !verification.stagingDir) {
       throw new Error(`Invalid snapshot: ${summarizeMessages(verification.errors)}`);
-    }
-
-    const staleness = verification.staleness ?? null;
-    if (staleness?.stale && options.allowStale !== true) {
-      throw new Error(
-        `${describeStaleness(staleness)} Re-run \`omniweave init -i\` for a fresh local graph, or pass --allow-stale to import this snapshot for inspection.`
-      );
     }
 
     if (isInitialized(root) && options.force !== true) {
@@ -343,17 +356,32 @@ export async function importSnapshot(
       }
       assertSnapshotDirectoryIdentity(targetDir, targetIdentity);
 
+      const targetValidation = await validateStagedSnapshotTarget(
+        verification.stagingDir!,
+        verification.manifest!,
+        root,
+      );
+      if (targetValidation.errors.length > 0) {
+        throw new Error(`Invalid snapshot: ${summarizeMessages(targetValidation.errors)}`);
+      }
+      const staleness = targetValidation.staleness ?? null;
+      if (staleness?.stale && options.allowStale !== true) {
+        throw new Error(
+          `${describeStaleness(staleness)} Re-run \`omniweave init -i\` for a fresh local graph, or pass --allow-stale to import this snapshot for inspection.`
+        );
+      }
+
       installSnapshotArtifacts(verification.stagingDir!, targetDir, verification.manifest!);
 
       const databasePath = getDatabasePath(root);
-      await recordSnapshotImportMetadata(databasePath, verification.manifest!, verification.manifestPath, staleness, options);
+      await recordSnapshotImportMetadata(databasePath, verification.manifest!, verification.manifestHash!, staleness, options);
       return {
         directory: verification.directory,
         projectRoot: root,
         manifestPath: verification.manifestPath,
         databasePath,
         manifest: verification.manifest!,
-        warnings: verification.warnings,
+        warnings: [...verification.warnings, ...targetValidation.warnings],
         staleness,
       };
     });
@@ -428,10 +456,10 @@ function isSameOrChildPath(child: string, parent: string): boolean {
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
 }
 
-function parseSnapshotManifest(manifestPath: string, errors: string[]): SnapshotManifest | undefined {
-  let raw: string;
+function parseSnapshotManifest(manifestPath: string, errors: string[]): ParsedSnapshotManifest | undefined {
+  let raw: Buffer;
   try {
-    raw = fs.readFileSync(manifestPath, 'utf-8');
+    raw = fs.readFileSync(manifestPath);
   } catch {
     errors.push(`Snapshot manifest not found: ${manifestPath}`);
     return undefined;
@@ -439,7 +467,7 @@ function parseSnapshotManifest(manifestPath: string, errors: string[]): Snapshot
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(raw.toString('utf-8'));
   } catch (err) {
     errors.push(`Snapshot manifest is not valid JSON: ${err instanceof Error ? err.message : String(err)}`);
     return undefined;
@@ -449,7 +477,10 @@ function parseSnapshotManifest(manifestPath: string, errors: string[]): Snapshot
     errors.push('Snapshot manifest must be a JSON object');
     return undefined;
   }
-  return parsed as unknown as SnapshotManifest;
+  return {
+    manifest: parsed as unknown as SnapshotManifest,
+    manifestHash: crypto.createHash('sha256').update(raw).digest('hex'),
+  };
 }
 
 function validateSnapshotManifest(
@@ -462,6 +493,12 @@ function validateSnapshotManifest(
   }
   if (manifest.formatVersion !== SNAPSHOT_FORMAT_VERSION) {
     errors.push(`Unsupported snapshot format version: ${String(manifest.formatVersion)}`);
+  }
+  if (typeof manifest.omniweaveVersion !== 'string') {
+    errors.push('Snapshot manifest omniweaveVersion must be a string');
+  }
+  if (typeof manifest.createdAt !== 'string') {
+    errors.push('Snapshot manifest createdAt must be a string');
   }
   if (
     manifest.schemaVersion !== null &&
@@ -682,6 +719,56 @@ function validateSnapshotTargetImportPolicy(projectRoot: string, db: SqliteDatab
 
   validateSnapshotLanguageMembership(db, 'nodes', 'file_path', 'language', 'nodes.language', filesByPath, errors);
   validateSnapshotLanguageMembership(db, 'unresolved_refs', 'file_path', 'language', 'unresolved_refs.language', filesByPath, errors);
+}
+
+async function validateStagedSnapshotTarget(
+  stagingDir: string,
+  manifest: SnapshotManifest,
+  targetRoot: string,
+): Promise<SnapshotTargetValidation> {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const dbPath = path.join(stagingDir, SNAPSHOT_DATABASE_FILENAME);
+
+  await validateStagedSnapshotArtifacts(stagingDir, manifest, errors);
+  if (errors.length === 0) {
+    validateStagedSnapshotTargetImportPolicy(dbPath, targetRoot, errors);
+  }
+
+  let staleness: SnapshotStaleness | undefined;
+  if (errors.length === 0) {
+    staleness = await computeSnapshotStaleness(targetRoot, dbPath);
+    if (staleness.unsafeFiles.length > 0) {
+      errors.push(
+        `Snapshot database contains indexed paths outside the target root: ${summarizePaths(staleness.unsafeFiles)}`
+      );
+    }
+    if (staleness.stale) {
+      warnings.push(describeStaleness(staleness));
+    }
+  }
+
+  if (errors.length === 0) {
+    await validateStagedSnapshotArtifacts(stagingDir, manifest, errors);
+  }
+
+  return { errors, warnings, staleness };
+}
+
+function validateStagedSnapshotTargetImportPolicy(
+  databasePath: string,
+  targetRoot: string,
+  errors: string[],
+): void {
+  let conn: DatabaseConnection | undefined;
+  try {
+    conn = DatabaseConnection.open(databasePath, { migrate: false, readOnly: true });
+    validateSnapshotTargetImportPolicy(targetRoot, conn.getDb(), errors);
+  } catch (err) {
+    errors.push(`Snapshot target import policy failed: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    conn?.close();
+  }
 }
 
 function validateSnapshotLanguageMembership(
@@ -1110,11 +1197,10 @@ function sha256File(filePath: string): Promise<string> {
 async function recordSnapshotImportMetadata(
   databasePath: string,
   manifest: SnapshotManifest,
-  manifestPath: string,
+  manifestHash: string,
   staleness: SnapshotStaleness | null,
   options: ImportSnapshotOptions,
 ): Promise<void> {
-  const manifestHash = await sha256File(manifestPath);
   const conn = DatabaseConnection.open(databasePath);
   try {
     const queries = new QueryBuilder(conn.getDb());

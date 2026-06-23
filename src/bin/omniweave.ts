@@ -1975,9 +1975,10 @@ scipCommand
   .description('Import definitions, references, and relationships from an existing index.scip')
   .option('-p, --path <path>', 'Project path')
   .option('--keep-existing', 'Keep existing SCIP facts instead of replacing them first')
+  .option('--allow-unsafe-root', 'Import into a filesystem root, home directory, or home ancestor')
   .option('-j, --json', 'Output import metadata as JSON')
-  .action(async (indexFile: string, options: { path?: string; keepExisting?: boolean; json?: boolean }) => {
-    const projectPath = resolveProjectPath(options.path);
+  .action(async (indexFile: string, options: { path?: string; keepExisting?: boolean; allowUnsafeRoot?: boolean; json?: boolean }) => {
+    const projectPath = options.path ? path.resolve(options.path) : resolveProjectPath();
 
     try {
       if (!isInitialized(projectPath)) {
@@ -1988,6 +1989,7 @@ scipCommand
       const { importScipIndex } = await import('../scip/importer');
       const result = await importScipIndex(projectPath, indexFile, {
         replace: options.keepExisting !== true,
+        allowUnsafeRoot: options.allowUnsafeRoot === true,
       });
 
       if (options.json) {

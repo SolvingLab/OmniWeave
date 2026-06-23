@@ -82,8 +82,8 @@ describe('omniweave_explore — blast radius', () => {
     expect(text).toMatch(/caller/); // a caller count is reported
     // It names WHERE (the caller file) — not the caller's source body.
     expect(text).toContain('feature.ts');
-    // Test coverage is surfaced (either the covering test file, or the warning).
-    expect(text).toMatch(/tests:.*feature\.test\.ts|no covering tests/);
+    expect(text).toMatch(/tests:.*feature\.test\.ts/);
+    expect(text).not.toContain('no covering tests found');
   });
 
   it('omits symbols that have no dependents from the blast radius', async () => {
