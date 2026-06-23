@@ -101,8 +101,11 @@ const CONTAINER_NODE_KINDS = new Set<NodeKind>([
 const CALL_SURFACE_EDGE_KINDS = new Set<EdgeKind>(['calls', 'crossLang', 'invokes', 'instantiates']);
 
 function queryAllowsLowSignalSources(query: string): boolean {
-  return /\b(test|tests|testing|spec|verify|verifies)\b/i.test(query)
-    || /\b(research|snapshot|snapshots|external|upstream|vendor|vendored|third[-_ ]?party)\b/i.test(query);
+  return /\b(test|tests|testing|spec|specs)\b/i.test(query)
+    || /\b(research|external|upstream|vendor|vendored|third[-_ ]?party)\b/i.test(query)
+    || /\b(?:repo|repository|codebase|source)\s+snapshots?\b/i.test(query)
+    || /\bsnapshots?\s+(?:repo|repository|codebase|source)\b/i.test(query)
+    || /(?:^|\/)research\/[^/]+\/repos(?:\/|$)/i.test(query);
 }
 
 interface AmbiguousExploreToken {
@@ -139,6 +142,27 @@ function lastQualifierPart(symbol: string): string {
   return parts[parts.length - 1] ?? symbol;
 }
 
+function withAdjacentConceptCompounds(tokens: string[], sourceTokens: string[] = tokens): string[] {
+  const expanded = [...tokens];
+  const seen = new Set(expanded);
+  const isPlainConcept = (token: string) => /^[a-z][a-z0-9_$]*$/.test(token) && !isDistinctiveIdentifier(token);
+  const cap = (token: string) => token.charAt(0).toUpperCase() + token.slice(1);
+
+  for (let i = 0; i < sourceTokens.length - 1; i++) {
+    const left = sourceTokens[i]!;
+    const right = sourceTokens[i + 1]!;
+    if (!isPlainConcept(left) || !isPlainConcept(right)) continue;
+    for (const candidate of [`${left}${cap(right)}`, `${right}${cap(left)}`]) {
+      if (seen.has(candidate)) continue;
+      seen.add(candidate);
+      expanded.push(candidate);
+      if (expanded.length >= 24) return expanded;
+    }
+  }
+
+  return expanded;
+}
+
 function extractExploreNameTokens(query: string, options: { includePrecedingPlainTokens?: boolean } = {}): string[] {
   const fileExt = /\.(?:java|kt|kts|ts|tsx|js|jsx|mjs|cjs|cs|py|go|rb|php|swift|rs|cpp|cc|cxx|c|h|hpp|scala|lua|dart|vue|svelte|astro)$/i;
   const tokens = [...new Set(
@@ -146,7 +170,7 @@ function extractExploreNameTokens(query: string, options: { includePrecedingPlai
       .map((t) => t.replace(fileExt, '').trim())
       .filter((t) => t.length >= 3 && /^[A-Za-z_$][\w$]*(?:(?:::|\.)[\w$]+)*$/.test(t))
   )].slice(0, 16);
-  if (tokens.length <= 3) return tokens;
+  if (tokens.length <= 3) return withAdjacentConceptCompounds(tokens);
 
   const isSpecific = (token: string): boolean => /[.\/]|::/.test(token) || isDistinctiveIdentifier(token);
   const specificIndexes = tokens
@@ -167,7 +191,7 @@ function extractExploreNameTokens(query: string, options: { includePrecedingPlai
     }
   }
 
-  return tokens.filter((_, index) => keep.has(index));
+  return withAdjacentConceptCompounds(tokens.filter((_, index) => keep.has(index)), tokens);
 }
 
 /**

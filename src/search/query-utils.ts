@@ -267,7 +267,9 @@ export function scorePathRelevance(
   // Deprioritize test/support files unless the query is explicitly about tests.
   // Repository snapshots under research/*/repos are even weaker as default
   // production-code candidates: they are external evidence corpora, not the
-  // project being edited. Keep them searchable when the user asks for snapshots.
+  // project being edited. Keep them searchable only when the query asks for
+  // external/research/vendor/repo snapshots, not ordinary product features
+  // named "snapshot".
   const queryLower = query.toLowerCase();
   const isTestQuery = queryLower.includes('test') || queryLower.includes('spec');
   if (!isTestQuery && isTestFile(filePath)) {
@@ -339,11 +341,14 @@ export function isLowSignalSourceFile(filePath: string): boolean {
 }
 
 export function isRepositorySnapshotQuery(query: string): boolean {
-  return /\b(research|snapshot|snapshots|external|upstream|vendor|vendored|third[-_ ]?party)\b/i.test(query);
+  return /\b(research|external|upstream|vendor|vendored|third[-_ ]?party)\b/i.test(query)
+    || /\b(?:repo|repository|codebase|source)\s+snapshots?\b/i.test(query)
+    || /\bsnapshots?\s+(?:repo|repository|codebase|source)\b/i.test(query)
+    || /(?:^|\/)research\/[^/]+\/repos(?:\/|$)/i.test(query);
 }
 
 export function isLowSignalSourceQuery(query: string): boolean {
-  return /\b(test|tests|testing|spec|verify|verifies)\b/i.test(query)
+  return /\b(test|tests|testing|spec|specs)\b/i.test(query)
     || isRepositorySnapshotQuery(query);
 }
 

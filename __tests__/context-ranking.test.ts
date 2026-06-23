@@ -16,7 +16,13 @@ import * as path from 'path';
 import * as os from 'os';
 import OmniWeave from '../src/index';
 import { LOW_CONFIDENCE_MARKER } from '../src/context';
-import { isDistinctiveIdentifier, scorePathRelevance, deriveProjectNameTokens } from '../src/search/query-utils';
+import {
+  isDistinctiveIdentifier,
+  isLowSignalSourceQuery,
+  isRepositorySnapshotQuery,
+  scorePathRelevance,
+  deriveProjectNameTokens,
+} from '../src/search/query-utils';
 import { ToolHandler } from '../src/mcp/tools';
 
 describe('isDistinctiveIdentifier', () => {
@@ -118,10 +124,17 @@ describe('project-name down-weighting in path relevance (#720)', () => {
   it('keeps repository snapshots searchable when the query explicitly asks for them', () => {
     const snapshot = scorePathRelevance(
       'research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/tools.ts',
-      'codegraph snapshot mcp tools'
+      'external snapshot mcp tools'
     );
 
     expect(snapshot).toBeGreaterThan(0);
+  });
+
+  it('does not treat bare product snapshot/verify terms as low-signal source intent', () => {
+    expect(isRepositorySnapshotQuery('snapshot verify import targetChecked')).toBe(false);
+    expect(isLowSignalSourceQuery('snapshot verify import targetChecked')).toBe(false);
+    expect(isRepositorySnapshotQuery('external snapshot Symbol')).toBe(true);
+    expect(isRepositorySnapshotQuery('repo snapshot Symbol')).toBe(true);
   });
 
   it('does not treat the ordinary word repo as an external-snapshot request', () => {
@@ -286,6 +299,21 @@ function buildRankingBudget(input: string): string {
 
 export interface Context {
   callPath: string;
+}
+`
+    );
+    fs.writeFileSync(
+      path.join(firstPartySrc, 'snapshot.ts'),
+      `export interface VerifySnapshotResult {
+  targetChecked: boolean;
+}
+
+export function verifySnapshot(): VerifySnapshotResult {
+  return { targetChecked: true };
+}
+
+export function importSnapshot(): string {
+  return verifySnapshot().targetChecked ? 'imported' : 'unchecked';
 }
 `
     );
@@ -477,12 +505,25 @@ export function snapshotBuildExploreOutputCaller(): string {
   it('keeps external repository snapshots available when explicitly requested', async () => {
     const handler = new ToolHandler(cg);
     const result = await handler.execute('omniweave_explore', {
-      query: 'snapshot Symbol',
+      query: 'external snapshot Symbol',
       maxFiles: 5,
     });
     const text = result.content.map((part) => part.text).join('\n');
 
     expect(text).toContain('research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/symbol.ts');
+  });
+
+  it('treats snapshot product queries as first-party code, not external repository snapshots', async () => {
+    const handler = new ToolHandler(cg);
+    const result = await handler.execute('omniweave_explore', {
+      query: 'snapshot verify import targetChecked',
+      maxFiles: 5,
+    });
+    const text = result.content.map((part) => part.text).join('\n');
+
+    expect(text).toContain('#### src/snapshot.ts');
+    expect(text).toContain('verifySnapshot');
+    expect(text).not.toContain('research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/');
   });
 
   it('flags a bare overloaded symbol as ambiguous instead of implying completeness', async () => {
