@@ -321,6 +321,35 @@ describe('snapshot import and verify', () => {
     }
   });
 
+  it('warns on default graph-reading surfaces while a snapshot import is still trusted externally', async () => {
+    await importSnapshot(outputDir, targetRoot);
+
+    const cg = OmniWeave.openSync(targetRoot);
+    try {
+      const handler = new ToolHandler(cg);
+      const calls: Array<[string, Record<string, unknown>]> = [
+        ['omniweave_explore', { query: 'entry helper' }],
+        ['omniweave_node', { symbol: 'entry', includeCode: true }],
+        ['omniweave_search', { query: 'entry' }],
+        ['omniweave_callers', { symbol: 'helper' }],
+        ['omniweave_impact', { symbol: 'helper' }],
+      ];
+
+      for (const [tool, args] of calls) {
+        const result = await handler.execute(tool, args);
+        expect(result.content[0].text).toContain('imported from a snapshot');
+        expect(result.content[0].text).toContain('graph facts are from an external artifact');
+      }
+    } finally {
+      cg.destroy();
+    }
+
+    const cliExplore = runBuiltCli(targetRoot, ['explore', 'entry', 'helper']);
+    expect(cliExplore.status).toBe(0);
+    expect(cliExplore.stdout).toContain('imported from a snapshot');
+    expect(cliExplore.stdout).toContain('graph facts are from an external artifact');
+  });
+
   it('records the manifest hash from the verified manifest bytes', async () => {
     const manifestPath = path.join(outputDir, SNAPSHOT_MANIFEST_FILENAME);
     const expectedManifestHash = hashFileForTest(manifestPath);

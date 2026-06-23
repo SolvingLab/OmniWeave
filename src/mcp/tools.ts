@@ -1395,6 +1395,36 @@ export class ToolHandler {
     return { ...result, content: [{ type: 'text', text: composed }, ...rest] };
   }
 
+  private withSnapshotImportNotice(result: ToolResult, projectPath?: string): ToolResult {
+    if (result.isError) return result;
+
+    let cg: OmniWeave;
+    try {
+      cg = this.getOmniWeave(projectPath);
+    } catch {
+      return result;
+    }
+
+    if (this.cg && cg !== this.cg) {
+      try {
+        if (resolvePath(this.cg.getProjectRoot()) === resolvePath(cg.getProjectRoot())) {
+          cg = this.cg;
+        }
+      } catch {
+        /* closed instance — leave cg as is */
+      }
+    }
+
+    const snapshotImport = cg.getSnapshotImportInfo();
+    if (!snapshotImport) return result;
+
+    const [first, ...rest] = result.content;
+    if (!first || first.type !== 'text') return result;
+
+    const notice = `> ⚠ ${describeSnapshotImportWarning(snapshotImport)}`;
+    return { ...result, content: [{ type: 'text', text: `${notice}\n\n${first.text}` }, ...rest] };
+  }
+
   /**
    * Execute a tool by name
    */
@@ -1472,13 +1502,14 @@ export class ToolHandler {
       }
       const withWorktree = this.withWorktreeNotice(result, args.projectPath as string | undefined);
       const withStaleness = this.withStalenessNotice(withWorktree, args.projectPath as string | undefined, outputSurface);
+      const withSnapshotImport = this.withSnapshotImportNotice(withStaleness, args.projectPath as string | undefined);
       if (toolName === 'omniweave_explore') {
-        const [first, ...rest] = withStaleness.content;
+        const [first, ...rest] = withSnapshotImport.content;
         if (first && first.type === 'text') {
-          return { ...withStaleness, content: [{ type: 'text', text: capExploreFinalText(first.text, outputSurface) }, ...rest] };
+          return { ...withSnapshotImport, content: [{ type: 'text', text: capExploreFinalText(first.text, outputSurface) }, ...rest] };
         }
       }
-      return withStaleness;
+      return withSnapshotImport;
     } catch (err) {
       // Expected condition, not a malfunction: answer as a SUCCESS so the
       // agent keeps trusting the toolset for projects that ARE indexed.
