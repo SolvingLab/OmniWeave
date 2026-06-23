@@ -187,6 +187,7 @@ Boundary rules:
 - [x] Latest P0 explore-surface full validation: after proxy tool-list budget parity and expanded MCP/CLI explore parity, full `npx vitest run` -> `85 files | 1708 passed | 4 skipped`.
 - [x] Latest benchmark validation after P0 explore-surface parity: `npm run benchmark` -> commit `e3c0dd6`, `7 queries`, `OmniWeave-wins 5 / tied 1 / grep-wins 1`; no benchmark result file diff after regeneration.
 - [x] Latest P1 trust-boundary full validation: after snapshot reindex/read-surface/status/verify hardening and SCIP stale-base/range/text containment, full `npx vitest run` -> `85 files | 1714 passed | 4 skipped`; real `node dist/bin/omniweave.js status --json` reports `pendingChanges: { added: 0, modified: 0, removed: 0 }`, `snapshotImport: null`, and `journalMode: "wal"`.
+- [x] Latest P1 SCIP trust-boundary full validation: after MCP module-skew guard, source-backed SCIP fallback names, SCIP diagnostic escaping, and impact SCIP provenance labels, full `npx vitest run` -> `86 files | 1718 passed | 4 skipped`.
 - [ ] Site low advisory cleanup is blocked on an Astro 7 migration; do not force it until Starlight declares compatible peers and the docs build is revalidated.
 - [ ] Full release matrix must still be built before publishing: all six targets + `SHA256SUMS` + generated npm packages.
 
