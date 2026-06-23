@@ -147,6 +147,10 @@ function buildScipImportPlan(
     for (const info of context.document.symbols) {
       if (!info.symbol) continue;
       const occurrence = findDefinitionOccurrence(context.document, info.symbol);
+      if (occurrence && !hasSupportedOccurrenceRange(occurrence)) {
+        warnings.push(malformedRangeWarning(context.filePath, 'definition', occurrence));
+        continue;
+      }
       const record = createDefinitionRecord(context, info, occurrence, nodesById);
       const records = definitions.get(info.symbol) ?? [];
       records.push(record);
@@ -157,6 +161,11 @@ function buildScipImportPlan(
   for (const context of contexts) {
     for (const occurrence of context.document.occurrences) {
       if (!occurrence.symbol || isDefinitionOccurrence(occurrence)) continue;
+      if (!hasSupportedOccurrenceRange(occurrence)) {
+        skippedReferences++;
+        warnings.push(malformedRangeWarning(context.filePath, 'reference', occurrence));
+        continue;
+      }
       const target = resolveDefinition(occurrence.symbol, context.language, definitions);
       if (!target) {
         skippedReferences++;
@@ -410,6 +419,15 @@ function findDefinitionOccurrence(document: ScipDocument, symbol: string): ScipO
 function isDefinitionOccurrence(occurrence: ScipOccurrence): boolean {
   return (occurrence.symbolRoles & SCIP_SYMBOL_ROLE_DEFINITION) !== 0 ||
     (occurrence.symbolRoles & SCIP_SYMBOL_ROLE_FORWARD_DEFINITION) !== 0;
+}
+
+function hasSupportedOccurrenceRange(occurrence: ScipOccurrence | undefined): boolean {
+  if (!occurrence) return true;
+  return occurrence.range.length === 0 || occurrence.range.length === 3 || occurrence.range.length === 4;
+}
+
+function malformedRangeWarning(filePath: string, role: 'definition' | 'reference', occurrence: ScipOccurrence): string {
+  return `Skipping SCIP ${role} with malformed range (${occurrence.range.length} values): ${filePath} ${occurrence.symbol}`;
 }
 
 function createScipEdge(

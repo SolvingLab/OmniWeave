@@ -127,6 +127,24 @@ function writeRelationshipKindScipIndex(filePath: string): void {
   ));
 }
 
+function writeMalformedRangeScipIndex(filePath: string): void {
+  const badDef = 'scip-typescript npm demo 1.0 src/a.ts/badDefinition().';
+  const target = 'scip-typescript npm demo 1.0 src/a.ts/target().';
+  const caller = 'scip-typescript npm demo 1.0 src/a.ts/caller().';
+  fs.writeFileSync(filePath, msg(
+    fieldMsg(2, document('src/a.ts', 'typescript', [
+      occurrence([0, 16], badDef, ROLE_DEFINITION),
+      occurrence([0, 16, 22], target, ROLE_DEFINITION),
+      occurrence([3, 16, 22], caller, ROLE_DEFINITION),
+      occurrence([4, 9], target, ROLE_READ),
+    ], [
+      symbolInfo(badDef, KIND_FUNCTION, 'badDefinition'),
+      symbolInfo(target, KIND_FUNCTION, 'target'),
+      symbolInfo(caller, KIND_FUNCTION, 'caller'),
+    ])),
+  ));
+}
+
 describe('SCIP importer', () => {
   let projectRoot: string;
   let indexPath: string;
@@ -204,6 +222,20 @@ describe('SCIP importer', () => {
     } finally {
       cg.destroy();
     }
+  });
+
+  it('skips SCIP facts with malformed occurrence ranges', async () => {
+    writeMalformedRangeScipIndex(indexPath);
+
+    const result = await importScipIndex(projectRoot, indexPath);
+
+    expect(result.documentsImported).toBe(1);
+    expect(result.referencesImported).toBe(0);
+    expect(result.skippedReferences).toBe(1);
+    expect(result.warnings).toEqual([
+      'Skipping SCIP definition with malformed range (2 values): src/a.ts scip-typescript npm demo 1.0 src/a.ts/badDefinition().',
+      'Skipping SCIP reference with malformed range (2 values): src/a.ts scip-typescript npm demo 1.0 src/a.ts/target().',
+    ]);
   });
 
   it('re-imports idempotently by replacing previous SCIP facts', async () => {
