@@ -1222,6 +1222,25 @@ program
 
       const { default: OmniWeave } = await loadOmniWeave();
       const cg = await OmniWeave.open(projectPath);
+
+      if (!options.json) {
+        const { ToolHandler } = await import('../mcp/tools');
+        const handler = new ToolHandler(cg);
+        const args: Record<string, unknown> = {
+          format: options.format || 'tree',
+          includeMetadata: options.metadata !== false,
+        };
+        if (options.filter) args.path = options.filter;
+        if (options.pattern) args.pattern = options.pattern;
+        if (options.maxDepth) args.maxDepth = parseCliIntOption(options.maxDepth, 20, 1, 20);
+
+        const result = await handler.execute('omniweave_files', args, { outputSurface: 'cli' });
+        console.log(result.content[0]?.text ?? '');
+        cg.destroy();
+        if (result.isError) process.exit(1);
+        return;
+      }
+
       let files = cg.getFiles();
 
       if (files.length === 0) {
@@ -1232,8 +1251,8 @@ program
 
       // Filter by path prefix
       if (options.filter) {
-        const filter = options.filter;
-        files = files.filter(f => f.path.startsWith(filter) || f.path.startsWith('./' + filter));
+        const filter = normalizeCliFileFilter(options.filter);
+        if (filter) files = files.filter(f => f.path === filter || f.path.startsWith(filter + '/'));
       }
 
       // Filter by glob pattern
@@ -1261,59 +1280,20 @@ program
         return;
       }
 
-      const includeMetadata = options.metadata !== false;
-      const format = options.format || 'tree';
-      const maxDepth = options.maxDepth ? parseCliIntOption(options.maxDepth, 20, 1, 20) : undefined;
-
-      // Format output
-      switch (format) {
-        case 'flat':
-          console.log(chalk.bold(`\nFiles (${files.length}):\n`));
-          for (const file of files.sort((a, b) => a.path.localeCompare(b.path))) {
-            if (includeMetadata) {
-              console.log(`  ${file.path} ${chalk.dim(`(${file.language}, ${file.nodeCount} symbols)`)}`);
-            } else {
-              console.log(`  ${file.path}`);
-            }
-          }
-          break;
-
-        case 'grouped':
-          console.log(chalk.bold(`\nFiles by Language (${files.length} total):\n`));
-          const byLang = new Map<string, typeof files>();
-          for (const file of files) {
-            const existing = byLang.get(file.language) || [];
-            existing.push(file);
-            byLang.set(file.language, existing);
-          }
-          const sortedLangs = [...byLang.entries()].sort((a, b) => b[1].length - a[1].length);
-          for (const [lang, langFiles] of sortedLangs) {
-            console.log(chalk.cyan(`${lang} (${langFiles.length}):`));
-            for (const file of langFiles.sort((a, b) => a.path.localeCompare(b.path))) {
-              if (includeMetadata) {
-                console.log(`  ${file.path} ${chalk.dim(`(${file.nodeCount} symbols)`)}`);
-              } else {
-                console.log(`  ${file.path}`);
-              }
-            }
-            console.log();
-          }
-          break;
-
-        case 'tree':
-        default:
-          console.log(chalk.bold(`\nProject Structure (${files.length} files):\n`));
-          printFileTree(files, includeMetadata, maxDepth, chalk);
-          break;
-      }
-
-      console.log();
       cg.destroy();
     } catch (err) {
       error(`Failed to list files: ${err instanceof Error ? err.message : String(err)}`);
       process.exit(1);
     }
   });
+
+function normalizeCliFileFilter(filter: string): string {
+  return filter
+    .replace(/\\/g, '/')
+    .replace(/^(?:\.?\/+)+/, '')
+    .replace(/^\.$/, '')
+    .replace(/\/+$/, '');
+}
 
 /**
  * Convert glob pattern to regex
@@ -1326,75 +1306,6 @@ function globToRegex(pattern: string): RegExp {
     .replace(/\?/g, '[^/]')
     .replace(/\{\{GLOBSTAR\}\}/g, '.*');
   return new RegExp(escaped);
-}
-
-/**
- * Print files as a tree
- */
-function printFileTree(
-  files: { path: string; language: string; nodeCount: number }[],
-  includeMetadata: boolean,
-  maxDepth: number | undefined,
-  chalk: { dim: (s: string) => string; cyan: (s: string) => string }
-): void {
-  interface TreeNode {
-    name: string;
-    children: Map<string, TreeNode>;
-    file?: { language: string; nodeCount: number };
-  }
-
-  const root: TreeNode = { name: '', children: new Map() };
-
-  for (const file of files) {
-    const parts = file.path.split('/');
-    let current = root;
-
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      if (!part) continue;
-
-      if (!current.children.has(part)) {
-        current.children.set(part, { name: part, children: new Map() });
-      }
-      current = current.children.get(part)!;
-
-      if (i === parts.length - 1) {
-        current.file = { language: file.language, nodeCount: file.nodeCount };
-      }
-    }
-  }
-
-  const renderNode = (node: TreeNode, prefix: string, isLast: boolean, depth: number): void => {
-    if (maxDepth !== undefined && depth > maxDepth) return;
-
-    const glyphs = getGlyphs();
-    const connector = isLast ? glyphs.treeLast : glyphs.treeBranch;
-    const childPrefix = isLast ? '    ' : glyphs.treePipe;
-
-    if (node.name) {
-      let line = prefix + connector + node.name;
-      if (node.file && includeMetadata) {
-        line += chalk.dim(` (${node.file.language}, ${node.file.nodeCount} symbols)`);
-      }
-      console.log(line);
-    }
-
-    const children = [...node.children.values()];
-    children.sort((a, b) => {
-      const aIsDir = a.children.size > 0 && !a.file;
-      const bIsDir = b.children.size > 0 && !b.file;
-      if (aIsDir !== bIsDir) return aIsDir ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
-
-    for (let i = 0; i < children.length; i++) {
-      const child = children[i]!;
-      const nextPrefix = node.name ? prefix + childPrefix : prefix;
-      renderNode(child, nextPrefix, i === children.length - 1, depth + 1);
-    }
-  };
-
-  renderNode(root, '', true, 0);
 }
 
 /**

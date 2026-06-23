@@ -324,6 +324,33 @@ export function snapshotCaller(): string {
     expect(invalid.stdout.match(/^#### /gm)?.length ?? 0).toBeGreaterThan(2);
   });
 
+  it('routes CLI files text output through the MCP path-normalized surface', () => {
+    const tree = runCli(testDir, ['files', '--filter', './src', '--max-depth', '1']);
+    const flat = runCli(testDir, ['files', '--filter', './src/mcp', '--format', 'flat']);
+
+    expect(tree.status).toBe(0);
+    expect(tree.stdout).toContain('Project Structure');
+    expect(tree.stdout).toContain('src');
+    expect(tree.stdout).not.toContain('No files found matching the criteria');
+    expect(flat.status).toBe(0);
+    expect(flat.stdout).toContain('src/mcp/tools.ts');
+    expect(flat.stdout).not.toContain('omniweave_files');
+  });
+
+  it('normalizes CLI files JSON filters without changing the JSON contract', () => {
+    const result = runCli(testDir, ['files', '--filter', './src/mcp', '--json']);
+    const root = runCli(testDir, ['files', '--filter', '.', '--json']);
+
+    expect(result.status).toBe(0);
+    const files = JSON.parse(result.stdout) as Array<{ path: string }>;
+    expect(files.length).toBeGreaterThan(0);
+    expect(files.every((file) => file.path.startsWith('src/mcp/'))).toBe(true);
+
+    expect(root.status).toBe(0);
+    const allFiles = JSON.parse(root.stdout) as Array<{ path: string }>;
+    expect(allFiles.length).toBeGreaterThan(files.length);
+  });
+
   it('warns when shell explore hits a deleted indexed file', () => {
     fs.rmSync(path.join(testDir, 'src', 'mcp', 'tools.ts'));
 
