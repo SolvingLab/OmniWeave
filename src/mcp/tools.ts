@@ -3032,6 +3032,7 @@ export class ToolHandler {
           anyPartialSourceView = true;
           totalChars += skel.join('\n').length + 120;
           filesIncluded++;
+          shownSourceFiles.add(filePath);
           continue;
         }
       }

@@ -51,6 +51,10 @@ function sectionFor(text: string, basename: string): string {
   return lines.slice(start, end).join('\n');
 }
 
+function notShownSection(text: string): string {
+  return text.split('### Not shown above — explore these names for their source')[1] ?? '';
+}
+
 describe('adaptive omniweave_explore sizing — sibling skeletonization', () => {
   let testDir: string;
   let cg: OmniWeave;
@@ -242,6 +246,16 @@ export class YamlCodec extends Codec {
 }
 `
     );
+    for (let i = 0; i < 505; i++) {
+      write(
+        `noise-${i}.ts`,
+        `
+export function noise${i}(): number {
+  return ${i};
+}
+`
+      );
+    }
 
     cg = OmniWeave.initSync(testDir, { config: { include: ['**/*.ts'], exclude: [] } });
     await cg.indexAll();
@@ -376,6 +390,19 @@ export class YamlCodec extends Codec {
     expect(codec, 'a named family file collapses to a focused (not full) view').toContain('· focused');
     expect(codec, 'the named base method body is kept (no Read-back)').toContain('CODEC_BASE_MARKER');
     expect(codec, 'a non-named subclass body is elided to a signature').not.toContain('XML_BODY_MARKER');
+  });
+
+  it('does not list rendered skeleton or focused files again as not shown', async () => {
+    const result = await handler.execute('omniweave_explore', { query: SPARE_QUERY, maxFiles: 15 });
+    const text = result.content?.[0]?.text ?? '';
+    const notShown = notShownSection(text);
+
+    expect(sectionFor(text, 'bridge-interceptor.ts')).toContain(SKELETON_MARK);
+    expect(sectionFor(text, 'codec.ts')).toContain('· focused');
+    expect(notShown).not.toContain('bridge-interceptor.ts');
+    expect(notShown).not.toContain('cache-interceptor.ts');
+    expect(notShown).not.toContain('retry-interceptor.ts');
+    expect(notShown).not.toContain('codec.ts');
   });
 
   it('naming a SHARED/polymorphic method does not spare the siblings (uniqueness-aware)', async () => {
