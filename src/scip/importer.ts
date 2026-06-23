@@ -4,8 +4,6 @@ import * as path from 'path';
 import { getOmniWeaveDir, isInitialized, validateDirectory } from '../directory';
 import { DatabaseConnection, getDatabasePath } from '../db';
 import { QueryBuilder } from '../db/queries';
-import { detectLanguage } from '../extraction/grammars';
-import { loadExtensionOverrides } from '../project-config';
 import { FileLock, validatePathWithinRoot } from '../utils';
 import { LANGUAGES, type Edge, type EdgeKind, type Language, type Node as GraphNode, type NodeKind } from '../types';
 import {
@@ -221,7 +219,6 @@ function buildDocumentContexts(
   warnings: string[],
 ): ScipDocumentContext[] {
   const contexts: ScipDocumentContext[] = [];
-  const extensionOverrides = loadExtensionOverrides(projectRoot);
 
   for (const document of documents) {
     const filePath = normalizeScipRelativePath(document.relativePath);
@@ -239,8 +236,13 @@ function buildDocumentContexts(
     if (!stat.isFile()) {
       throw new Error(`SCIP document path is not a regular file: ${filePath}`);
     }
+    const indexedFile = queries.getFileByPath(filePath);
+    if (!indexedFile) {
+      warnings.push(`Skipping SCIP document outside OmniWeave index: ${filePath}`);
+      continue;
+    }
     const nodesInFile = queries.getNodesByFile(filePath).filter((node) => !node.id.startsWith('scip:'));
-    const language = resolveScipDocumentLanguage(document.language, filePath, nodesInFile, extensionOverrides);
+    const language = resolveScipDocumentLanguage(document.language, indexedFile.language);
     if (language.language === 'unknown') {
       warnings.push(`Skipping SCIP document with unsupported language "${document.language || 'unknown'}": ${filePath}`);
       continue;
@@ -560,11 +562,8 @@ function normalizeScipLanguage(language: string): Language {
 
 function resolveScipDocumentLanguage(
   rawLanguage: string,
-  filePath: string,
-  nodesInFile: GraphNode[],
-  extensionOverrides: Record<string, Language>,
+  indexedLanguage: Language,
 ): ScipLanguageResolution {
-  const indexedLanguage = nodesInFile.find((node) => node.language !== 'unknown')?.language;
   if (rawLanguage.trim()) {
     const explicitLanguage = normalizeScipLanguage(rawLanguage);
     return {
@@ -574,9 +573,7 @@ function resolveScipDocumentLanguage(
     };
   }
 
-  if (indexedLanguage) return { language: indexedLanguage, indexedLanguage };
-
-  return { language: detectLanguage(filePath, undefined, extensionOverrides) };
+  return { language: indexedLanguage, indexedLanguage };
 }
 
 function compatibleDocumentLanguage(scipLanguage: Language, indexedLanguage: Language): boolean {

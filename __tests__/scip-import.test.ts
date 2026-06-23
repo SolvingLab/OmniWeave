@@ -88,12 +88,23 @@ function writeInvalidPathScipIndex(filePath: string): void {
 }
 
 function writeUnsupportedLanguageScipIndex(filePath: string): void {
-  const symbol = 'scip-weird pkg demo 1.0 src/odd.foo/value().';
+  const symbol = 'scip-weird pkg demo 1.0 src/a.ts/value().';
   fs.writeFileSync(filePath, msg(
-    fieldMsg(2, document('src/odd.foo', 'brainfuck', [
+    fieldMsg(2, document('src/a.ts', 'brainfuck', [
       occurrence([0, 0, 5], symbol, ROLE_DEFINITION),
     ], [
       symbolInfo(symbol, KIND_FUNCTION, 'value'),
+    ])),
+  ));
+}
+
+function writeUnindexedFileScipIndex(filePath: string): void {
+  const symbol = 'scip-typescript npm demo 1.0 src/generated.ts/generated().';
+  fs.writeFileSync(filePath, msg(
+    fieldMsg(2, document('src/generated.ts', 'typescript', [
+      occurrence([0, 16, 25], symbol, ROLE_DEFINITION),
+    ], [
+      symbolInfo(symbol, KIND_FUNCTION, 'generated'),
     ])),
   ));
 }
@@ -268,7 +279,6 @@ describe('SCIP importer', () => {
   });
 
   it('skips unsupported SCIP document languages without importing unknown facts', async () => {
-    fs.writeFileSync(path.join(projectRoot, 'src', 'odd.foo'), 'value\n');
     writeUnsupportedLanguageScipIndex(indexPath);
 
     const result = await importScipIndex(projectRoot, indexPath);
@@ -278,7 +288,27 @@ describe('SCIP importer', () => {
     expect(result.nodesImported).toBe(0);
     expect(result.edgesImported).toBe(0);
     expect(result.warnings).toEqual([
-      'Skipping SCIP document with unsupported language "brainfuck": src/odd.foo',
+      'Skipping SCIP document with unsupported language "brainfuck": src/a.ts',
+    ]);
+  });
+
+  it('skips real source files that are not part of the OmniWeave index', async () => {
+    fs.writeFileSync(path.join(projectRoot, 'src', 'generated.ts'), [
+      'export function generated(): string {',
+      "  return 'generated';",
+      '}',
+      '',
+    ].join('\n'));
+    writeUnindexedFileScipIndex(indexPath);
+
+    const result = await importScipIndex(projectRoot, indexPath);
+
+    expect(result.documentsRead).toBe(1);
+    expect(result.documentsImported).toBe(0);
+    expect(result.nodesImported).toBe(0);
+    expect(result.edgesImported).toBe(0);
+    expect(result.warnings).toEqual([
+      'Skipping SCIP document outside OmniWeave index: src/generated.ts',
     ]);
   });
 
