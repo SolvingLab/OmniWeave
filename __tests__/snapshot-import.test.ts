@@ -691,6 +691,11 @@ describe('snapshot import and verify', () => {
       expect(payload.projectRoot).toBe(fs.realpathSync(childRoot));
       expect(fs.existsSync(getDatabasePath(childRoot))).toBe(true);
       expect(hashFileForTest(parentDb)).toBe(parentHashBefore);
+
+      const parentStatus = runBuiltCli(parentRoot, ['status', parentRoot, '--json']);
+      expect(parentStatus.status).toBe(0);
+      const parentStatusJson = JSON.parse(parentStatus.stdout) as { snapshotImport?: unknown };
+      expect(parentStatusJson.snapshotImport).toBeNull();
     } finally {
       rmTree(parentRoot);
     }
