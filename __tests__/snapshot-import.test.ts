@@ -348,6 +348,11 @@ describe('snapshot import and verify', () => {
     expect(cliExplore.status).toBe(0);
     expect(cliExplore.stdout).toContain('imported from a snapshot');
     expect(cliExplore.stdout).toContain('graph facts are from an external artifact');
+
+    const cliStatus = runBuiltCli(targetRoot, ['status']);
+    expect(cliStatus.status).toBe(0);
+    expect(cliStatus.stdout).toContain('Source files match imported snapshot hashes');
+    expect(cliStatus.stdout).not.toContain('Index is up to date');
   });
 
   it('records the manifest hash from the verified manifest bytes', async () => {

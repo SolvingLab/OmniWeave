@@ -995,7 +995,11 @@ program
         }
         info('Run "omniweave sync" to update the index');
       } else {
-        success('Index is up to date');
+        if (snapshotImport) {
+          info('Source files match imported snapshot hashes; graph facts remain external until a local full index is run.');
+        } else {
+          success('Index is up to date');
+        }
       }
       console.log();
 
