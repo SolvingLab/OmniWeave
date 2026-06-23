@@ -3,6 +3,7 @@ import * as fs from 'fs';
 const MAX_SCIP_INDEX_BYTES = 256 * 1024 * 1024;
 const MAX_SCIP_LENGTH_DELIMITED_BYTES = 64 * 1024 * 1024;
 const MAX_REPEATED_ITEMS = 500_000;
+const MAX_OCCURRENCE_RANGE_ITEMS = 4;
 
 export const SCIP_SYMBOL_ROLE_DEFINITION = 0x1;
 export const SCIP_SYMBOL_ROLE_READ_ACCESS = 0x8;
@@ -298,7 +299,13 @@ function decodeOccurrence(bytes: Uint8Array): ScipOccurrence {
     const field = reader.readField();
     switch (field.number) {
       case 1:
-        occurrence.range.push(...reader.readInt32List(field.wireType));
+        {
+          const values = reader.readInt32List(field.wireType, MAX_OCCURRENCE_RANGE_ITEMS, 'occurrence.range');
+          if (occurrence.range.length + values.length > MAX_OCCURRENCE_RANGE_ITEMS) {
+            throw new Error(`SCIP protobuf occurrence.range exceeds maximum item count (${MAX_OCCURRENCE_RANGE_ITEMS})`);
+          }
+          occurrence.range.push(...values);
+        }
         break;
       case 2:
         occurrence.symbol = reader.readString(field.wireType);
@@ -425,14 +432,19 @@ class ProtoReader {
     return this.readVarint();
   }
 
-  readInt32List(wireType: number): number[] {
+  readInt32List(wireType: number, maxItems: number, label: string): number[] {
     if (wireType === 0) {
       return [this.readVarint()];
     }
     this.expectWireType(wireType, 2);
     const reader = new ProtoReader(this.readLengthDelimited());
     const values: number[] = [];
-    while (!reader.eof()) values.push(reader.readVarint());
+    while (!reader.eof()) {
+      if (values.length >= maxItems) {
+        throw new Error(`SCIP protobuf ${label} exceeds maximum item count (${maxItems})`);
+      }
+      values.push(reader.readVarint());
+    }
     return values;
   }
 

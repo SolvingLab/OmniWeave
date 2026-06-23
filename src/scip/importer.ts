@@ -46,6 +46,7 @@ interface ScipDocumentContext {
   fullPath: string;
   hasVerifiedSourceText: boolean;
   language: Language;
+  lineLengths: number[];
   nodesInFile: GraphNode[];
 }
 
@@ -158,8 +159,7 @@ function buildScipImportPlan(
     for (const info of context.document.symbols) {
       if (!info.symbol) continue;
       const occurrence = findDefinitionOccurrence(context.document, info.symbol);
-      if (occurrence && !hasSupportedOccurrenceRange(occurrence)) {
-        warnings.push(malformedRangeWarning(context.filePath, 'definition', occurrence));
+      if (!validateOccurrenceRange(context, 'definition', occurrence, warnings)) {
         continue;
       }
       const record = createDefinitionRecord(context, info, occurrence, nodesById, warnings);
@@ -173,9 +173,8 @@ function buildScipImportPlan(
   for (const context of contexts) {
     for (const occurrence of context.document.occurrences) {
       if (!occurrence.symbol || isDefinitionOccurrence(occurrence)) continue;
-      if (!hasSupportedOccurrenceRange(occurrence)) {
+      if (!validateOccurrenceRange(context, 'reference', occurrence, warnings)) {
         skippedReferences++;
-        warnings.push(malformedRangeWarning(context.filePath, 'reference', occurrence));
         continue;
       }
       const target = resolveDefinition(occurrence.symbol, context.language, definitions);
@@ -304,6 +303,7 @@ function buildDocumentContexts(
       fullPath,
       hasVerifiedSourceText,
       language: language.indexedLanguage ?? language.language,
+      lineLengths: lineLengths(currentContent),
       nodesInFile,
     });
   }
@@ -472,6 +472,24 @@ function hasConcreteOccurrenceRange(occurrence: ScipOccurrence | undefined): boo
   return occurrence !== undefined && (occurrence.range.length === 3 || occurrence.range.length === 4);
 }
 
+function validateOccurrenceRange(
+  context: ScipDocumentContext,
+  role: 'definition' | 'reference',
+  occurrence: ScipOccurrence | undefined,
+  warnings: string[],
+): boolean {
+  if (!occurrence) return true;
+  if (!hasSupportedOccurrenceRange(occurrence)) {
+    warnings.push(malformedRangeWarning(context.filePath, role, occurrence));
+    return false;
+  }
+  if (!occurrenceRangeWithinDocument(occurrence, context.lineLengths)) {
+    warnings.push(`Skipping SCIP ${role} with out-of-bounds range: ${context.filePath} ${occurrence.symbol}`);
+    return false;
+  }
+  return true;
+}
+
 function malformedRangeWarning(filePath: string, role: 'definition' | 'reference', occurrence: ScipOccurrence): string {
   return `Skipping SCIP ${role} with malformed range (${occurrence.range.length} values): ${filePath} ${occurrence.symbol}`;
 }
@@ -551,6 +569,34 @@ function occurrenceRange(occurrence: ScipOccurrence | undefined): {
     startColumn: occurrence.range[1]!,
     endColumn: occurrence.range[3]!,
   };
+}
+
+function occurrenceRangeWithinDocument(occurrence: ScipOccurrence, lengths: readonly number[]): boolean {
+  const range = occurrence.range;
+  if (range.length === 0) return true;
+  if (!range.every((value) => Number.isSafeInteger(value) && value >= 0)) return false;
+
+  if (range.length === 3) {
+    const [line, startColumn, endColumn] = range as [number, number, number];
+    const lineLength = lengths[line];
+    return lineLength !== undefined && startColumn <= endColumn && endColumn <= lineLength;
+  }
+
+  if (range.length === 4) {
+    const [startLine, startColumn, endLine, endColumn] = range as [number, number, number, number];
+    const startLength = lengths[startLine];
+    const endLength = lengths[endLine];
+    if (startLength === undefined || endLength === undefined) return false;
+    if (endLine < startLine) return false;
+    if (startColumn > startLength || endColumn > endLength) return false;
+    return endLine > startLine || endColumn >= startColumn;
+  }
+
+  return false;
+}
+
+function lineLengths(content: string): number[] {
+  return content.split(/\r?\n/).map((line) => line.length);
 }
 
 function scipKindToNodeKind(kind: number): NodeKind {

@@ -181,6 +181,28 @@ function writeMalformedRangeScipIndex(filePath: string): void {
   ));
 }
 
+function writeOversizedPackedRangeScipIndex(filePath: string): void {
+  const target = 'scip-typescript npm demo 1.0 src/a.ts/target().';
+  fs.writeFileSync(filePath, msg(
+    fieldMsg(2, document('src/a.ts', 'typescript', [
+      occurrence(Array.from({ length: 10_000 }, () => 0), target, ROLE_DEFINITION),
+    ], [
+      symbolInfo(target, KIND_FUNCTION, 'target'),
+    ])),
+  ));
+}
+
+function writeOutOfBoundsRangeScipIndex(filePath: string, text: string): void {
+  const ghost = 'scip-typescript npm demo 1.0 src/a.ts/ghost().';
+  fs.writeFileSync(filePath, msg(
+    fieldMsg(2, document('src/a.ts', 'typescript', [
+      occurrence([50, 0, 5], ghost, ROLE_DEFINITION),
+    ], [
+      symbolInfo(ghost, KIND_FUNCTION, 'ghost'),
+    ], text)),
+  ));
+}
+
 function writeUnmatchedNoTextScipIndex(filePath: string): void {
   const ghost = 'scip-typescript npm demo 1.0 src/a.ts/ghost().';
   fs.writeFileSync(filePath, msg(
@@ -241,7 +263,7 @@ function writeReferenceOutsideNodeNoTextScipIndex(filePath: string): void {
   fs.writeFileSync(filePath, msg(
     fieldMsg(2, document('src/a.ts', 'typescript', [
       occurrence([0, 16, 22], target, ROLE_DEFINITION),
-      occurrence([6, 0, 1], target, ROLE_READ),
+      occurrence([6, 0, 0], target, ROLE_READ),
     ], [
       symbolInfo(target, KIND_FUNCTION, 'target'),
     ])),
@@ -338,6 +360,26 @@ describe('SCIP importer', () => {
     expect(result.warnings).toEqual([
       'Skipping SCIP definition with malformed range (2 values): src/a.ts scip-typescript npm demo 1.0 src/a.ts/badDefinition().',
       'Skipping SCIP reference with malformed range (2 values): src/a.ts scip-typescript npm demo 1.0 src/a.ts/target().',
+    ]);
+  });
+
+  it('rejects packed occurrence ranges before expanding unbounded arrays', async () => {
+    writeOversizedPackedRangeScipIndex(indexPath);
+
+    await expect(importScipIndex(projectRoot, indexPath)).rejects.toThrow(/occurrence\.range exceeds maximum item count/);
+  });
+
+  it('skips SCIP facts whose occurrence ranges are outside the current source text', async () => {
+    const text = fs.readFileSync(path.join(projectRoot, 'src', 'a.ts'), 'utf8');
+    writeOutOfBoundsRangeScipIndex(indexPath, text);
+
+    const result = await importScipIndex(projectRoot, indexPath);
+
+    expect(result.documentsImported).toBe(1);
+    expect(result.nodesImported).toBe(0);
+    expect(result.edgesImported).toBe(0);
+    expect(result.warnings).toEqual([
+      'Skipping SCIP definition with out-of-bounds range: src/a.ts scip-typescript npm demo 1.0 src/a.ts/ghost().',
     ]);
   });
 
