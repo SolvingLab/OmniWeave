@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import OmniWeave from '../src/index';
-import { DatabaseConnection, getDatabasePath } from '../src/db';
+import { DatabaseConnection, getDatabasePath, type OpenDatabaseOptions } from '../src/db';
 import { CURRENT_SCHEMA_VERSION } from '../src/db/migrations';
 import { FileLock } from '../src/utils';
 import {
@@ -246,6 +246,28 @@ describe('snapshot import and verify', () => {
     } finally {
       cg.destroy();
     }
+  });
+
+  it('verifies staged snapshot databases through read-only connections', async () => {
+    const originalOpen = DatabaseConnection.open;
+    const calls: Array<{ dbPath: string; options: OpenDatabaseOptions }> = [];
+    DatabaseConnection.open = ((dbPath: string, options: OpenDatabaseOptions = {}) => {
+      calls.push({ dbPath, options });
+      return originalOpen.call(DatabaseConnection, dbPath, options);
+    }) as typeof DatabaseConnection.open;
+
+    let verification: VerifySnapshotResult;
+    try {
+      verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+    } finally {
+      DatabaseConnection.open = originalOpen;
+    }
+
+    expect(verification.ok).toBe(true);
+    const snapshotDbCalls = calls.filter((call) => path.basename(call.dbPath) === SNAPSHOT_DATABASE_FILENAME);
+    expect(snapshotDbCalls.length).toBeGreaterThan(0);
+    expect(snapshotDbCalls.some((call) => call.dbPath === path.join(outputDir, SNAPSHOT_DATABASE_FILENAME))).toBe(false);
+    expect(snapshotDbCalls.every((call) => call.options.migrate === false && call.options.readOnly === true)).toBe(true);
   });
 
   it('refuses stale target sources by default and leaves the target uninitialized', async () => {

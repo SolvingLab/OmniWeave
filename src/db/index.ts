@@ -15,6 +15,7 @@ export { SqliteDatabase, SqliteBackend } from './sqlite-adapter';
 
 export interface OpenDatabaseOptions {
   migrate?: boolean;
+  readOnly?: boolean;
 }
 
 /**
@@ -96,10 +97,13 @@ export class DatabaseConnection {
       throw new Error(`Database not found: ${dbPath}`);
     }
 
-    const { db, backend } = createDatabase(dbPath);
+    const readOnly = options.readOnly === true;
+    const { db, backend } = createDatabase(dbPath, { readOnly });
 
     try {
-      configureConnection(db);
+      if (!readOnly) {
+        configureConnection(db);
+      }
 
       // Check and run migrations if needed
       const conn = new DatabaseConnection(db, dbPath, backend);
@@ -111,6 +115,11 @@ export class DatabaseConnection {
       }
 
       if (options.migrate !== false && currentVersion < CURRENT_SCHEMA_VERSION) {
+        if (readOnly) {
+          throw new Error(
+            `Cannot migrate read-only database from schema version ${currentVersion} to ${CURRENT_SCHEMA_VERSION}`
+          );
+        }
         runMigrations(db, currentVersion);
       }
 

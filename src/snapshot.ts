@@ -601,7 +601,7 @@ function validateStagedSnapshotDatabase(
 ): void {
   let conn: DatabaseConnection | undefined;
   try {
-    conn = DatabaseConnection.open(databasePath, { migrate: false });
+    conn = DatabaseConnection.open(databasePath, { migrate: false, readOnly: true });
     const actualSchemaVersion = conn.getSchemaVersion()?.version ?? null;
     if (actualSchemaVersion !== manifest.schemaVersion) {
       errors.push(
@@ -799,7 +799,7 @@ function warnUnlistedArtifact(
 }
 
 async function computeSnapshotStaleness(projectRoot: string, dbPath: string): Promise<SnapshotStaleness> {
-  const conn = DatabaseConnection.open(dbPath, { migrate: false });
+  const conn = DatabaseConnection.open(dbPath, { migrate: false, readOnly: true });
   let files: FileRecord[];
   try {
     files = new QueryBuilder(conn.getDb()).getAllFiles();
