@@ -1,0 +1,323 @@
+[1m
+Impact of changing "ToolHandler" — 208 affected symbols:
+[0m
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/tools.ts[0m
+  [2mclass       [0mToolHandler[2m:691[0m
+  [2mproperty    [0mprojectCache[2m:693[0m
+  [2mproperty    [0mdefaultProjectHint[2m:696[0m
+  [2mproperty    [0mworktreeMismatchCache[2m:702[0m
+  [2mproperty    [0mcatchUpGate[2m:712[0m
+  [2mmethod      [0mconstructor[2m:714[0m
+  [2mmethod      [0msetDefaultCodeGraph[2m:719[0m
+  [2mmethod      [0msetCatchUpGate[2m:730[0m
+  [2mmethod      [0mawaitCatchUpGate[2m:743[0m
+  [2mmethod      [0mexecute[2m:1204[0m
+  [2mmethod      [0msetDefaultProjectHint[2m:775[0m
+  [2mmethod      [0mhasDefaultCodeGraph[2m:782[0m
+  [2mmethod      [0mtoolAllowlist[2m:794[0m
+  [2mmethod      [0misToolAllowed[2m:803[0m
+  [2mmethod      [0mgetTools[2m:814[0m
+  [2mmethod      [0mgetCodeGraph[2m:884[0m
+  [2mmethod      [0mworktreeMismatchFor[2m:1047[0m
+  [2mmethod      [0mwithWorktreeNotice[2m:1084[0m
+  [2mmethod      [0mhandleStatus[2m:3663[0m
+  [2mmethod      [0mwithStalenessNotice[2m:1110[0m
+  [2mmethod      [0mhandleSearch[2m:1297[0m
+  [2mmethod      [0mhandleCallers[2m:1376[0m
+  [2mmethod      [0mhandleCallees[2m:1449[0m
+  [2mmethod      [0mhandleImpact[2m:1519[0m
+  [2mmethod      [0mhandleExplore[2m:2299[0m
+  [2mmethod      [0mhandleNode[2m:3343[0m
+  [2mmethod      [0mhandleFiles[2m:3766[0m
+  [2mmethod      [0mfreshen[2m:967[0m
+  [2mmethod      [0mcloseAll[2m:985[0m
+  [2mmethod      [0mvalidateString[2m:1001[0m
+  [2mmethod      [0mvalidateOptionalPath[2m:1021[0m
+  [2mmethod      [0mgroupDefinitions[2m:1339[0m
+  [2mmethod      [0mdefinitionHeading[2m:1367[0m
+  [2mmethod      [0msynthEdgeNote[2m:1586[0m
+  [2mmethod      [0mbuildFlowFromNamedSymbols[2m:1686[0m
+  [2mmethod      [0mformatTrail[2m:3630[0m
+  [2mmethod      [0mrenderNodeSection[2m:3603[0m
+  [2mmethod      [0mbuildDynamicBoundaries[2m:1958[0m
+  [2mmethod      [0mbuildPolymorphicBoundaries[2m:2022[0m
+  [2mmethod      [0mboundaryCandidates[2m:2098[0m
+  [2mmethod      [0mbuildBlastRadiusSection[2m:2165[0m
+  [2mmethod      [0mcomputeGraphRelevance[2m:2233[0m
+  [2mmethod      [0mhandleFileView[2m:3472[0m
+  [2mmethod      [0mglobToRegex[2m:3828[0m
+  [2mmethod      [0mformatFilesFlat[2m:3841[0m
+  [2mmethod      [0mformatFilesGrouped[2m:3858[0m
+  [2mmethod      [0mformatFilesTree[2m:3890[0m
+  [2mmethod      [0mmatchesSymbol[2m:3988[0m
+  [2mmethod      [0mfindSymbolMatches[2m:4033[0m
+  [2mmethod      [0mfindAllSymbols[2m:4084[0m
+  [2mmethod      [0mtruncateOutput[2m:4125[0m
+  [2mmethod      [0mformatSearchResults[2m:4137[0m
+  [2mmethod      [0mformatNodeList[2m:4153[0m
+  [2mmethod      [0medgeLabel[2m:4175[0m
+  [2mmethod      [0mformatImpact[2m:4184[0m
+  [2mmethod      [0mbuildContainerOutline[2m:4219[0m
+  [2mmethod      [0mformatNodeDetails[2m:4234[0m
+  [2mmethod      [0mtextResult[2m:4264[0m
+  [2mmethod      [0merrorResult[2m:4270[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/worktree-detection.test.ts[0m
+  [2mfile        [0mworktree-detection.test.ts[2m:1[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/engine.ts[0m
+  [2mmethod      [0mretryInitializeSync[2m:119[0m
+  [2mmethod      [0mdoInitialize[2m:155[0m
+  [2mmethod      [0mensureInitialized[2m:95[0m
+  [2mmethod      [0mcatchUpSync[2m:249[0m
+  [2mmethod      [0msetProjectPathHint[2m:66[0m
+  [2mmethod      [0mstop[2m:145[0m
+  [2mfile        [0mengine.ts[2m:1[0m
+  [2mmethod      [0mconstructor[2m:55[0m
+  [2mproperty    [0mtoolHandler[2m:44[0m
+  [2mmethod      [0mgetToolHandler[2m:77[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/session.ts[0m
+  [2mmethod      [0mretryInitIfNeeded[2m:275[0m
+  [2mmethod      [0mhandleToolsCall[2m:234[0m
+  [2mmethod      [0mhandleToolsList[2m:220[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/mcp-tool-allowlist.test.ts[0m
+  [2mfile        [0mmcp-tool-allowlist.test.ts[2m:1[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/mcp-unindexed.test.ts[0m
+  [2mfile        [0mmcp-unindexed.test.ts[2m:1[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/proxy.ts[0m
+  [2mfunction    [0mrunLocalHandshakeProxy[2m:204[0m
+
+[36m__tests__/symbol-lookup.test.ts[0m
+  [2mfile        [0msymbol-lookup.test.ts[2m:1[0m
+
+[36m__tests__/mcp-unindexed.test.ts[0m
+  [2mfile        [0mmcp-unindexed.test.ts[2m:1[0m
+
+[36m__tests__/explore-output-budget.test.ts[0m
+  [2mfile        [0mexplore-output-budget.test.ts[2m:1[0m
+
+[36m__tests__/dynamic-boundaries.test.ts[0m
+  [2mfile        [0mdynamic-boundaries.test.ts[2m:1[0m
+
+[36m__tests__/node-file-view.test.ts[0m
+  [2mfile        [0mnode-file-view.test.ts[2m:1[0m
+
+[36m__tests__/mcp-staleness-banner.test.ts[0m
+  [2mfile        [0mmcp-staleness-banner.test.ts[2m:1[0m
+
+[36m__tests__/security.test.ts[0m
+  [2mfile        [0msecurity.test.ts[2m:1[0m
+
+[36m__tests__/worktree-detection.test.ts[0m
+  [2mfile        [0mworktree-detection.test.ts[2m:1[0m
+
+[36m__tests__/context-ranking.test.ts[0m
+  [2mfile        [0mcontext-ranking.test.ts[2m:1[0m
+
+[36m__tests__/adaptive-explore-sizing.test.ts[0m
+  [2mfile        [0madaptive-explore-sizing.test.ts[2m:1[0m
+
+[36m__tests__/explore-blast-radius.test.ts[0m
+  [2mfile        [0mexplore-blast-radius.test.ts[2m:1[0m
+
+[36m__tests__/explore-relationships.test.ts[0m
+  [2mfile        [0mexplore-relationships.test.ts[2m:1[0m
+
+[36m__tests__/mcp-tool-allowlist.test.ts[0m
+  [2mfile        [0mmcp-tool-allowlist.test.ts[2m:1[0m
+
+[36msrc/bin/omniweave.ts[0m
+  [2mfunction    [0mmain[2m:230[0m
+
+[36m__tests__/scip-import.test.ts[0m
+  [2mfile        [0mscip-import.test.ts[2m:1[0m
+
+[36m__tests__/snapshot-import.test.ts[0m
+  [2mfile        [0msnapshot-import.test.ts[2m:1[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/daemon.ts[0m
+  [2mmethod      [0mconstructor[2m:143[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/concurrent-locking.test.ts[0m
+  [2mfile        [0mconcurrent-locking.test.ts[2m:1[0m
+
+[36msrc/mcp/tools.ts[0m
+  [2mmethod      [0mhandleSearch[2m:1540[0m
+  [2mmethod      [0mexecute[2m:1436[0m
+  [2mmethod      [0mhandleCallers[2m:1681[0m
+  [2mmethod      [0mhandleCallees[2m:1743[0m
+  [2mmethod      [0mhandleImpact[2m:1802[0m
+  [2mmethod      [0mhandleExplore[2m:2436[0m
+  [2mmethod      [0mhandleNode[2m:3502[0m
+  [2mclass       [0mToolHandler[2m:957[0m
+  [2mproperty    [0mprojectCache[2m:959[0m
+  [2mproperty    [0mdefaultProjectHint[2m:962[0m
+  [2mproperty    [0mworktreeMismatchCache[2m:968[0m
+  [2mproperty    [0mcatchUpGate[2m:976[0m
+  [2mmethod      [0mconstructor[2m:978[0m
+  [2mmethod      [0msetDefaultOmniWeave[2m:983[0m
+  [2mmethod      [0msetCatchUpGate[2m:994[0m
+  [2mmethod      [0msetDefaultProjectHint[2m:1002[0m
+  [2mmethod      [0mhasDefaultOmniWeave[2m:1009[0m
+  [2mmethod      [0mtoolAllowlist[2m:1021[0m
+  [2mmethod      [0misToolAllowed[2m:1026[0m
+  [2mmethod      [0mgetTools[2m:1037[0m
+  [2mmethod      [0mgetOmniWeave[2m:1086[0m
+  [2mmethod      [0mworktreeMismatchFor[2m:1227[0m
+  [2mmethod      [0mwithWorktreeNotice[2m:1254[0m
+  [2mmethod      [0mhandleStatus[2m:3899[0m
+  [2mmethod      [0mwithStalenessNotice[2m:1280[0m
+  [2mmethod      [0mwithSnapshotImportNotice[2m:1398[0m
+  [2mmethod      [0mhandleFiles[2m:4005[0m
+  [2mmethod      [0mfreshen[2m:1149[0m
+  [2mmethod      [0mcloseAll[2m:1165[0m
+  [2mmethod      [0mvalidateString[2m:1181[0m
+  [2mmethod      [0mvalidateOptionalPath[2m:1201[0m
+  [2mmethod      [0mgroupDefinitions[2m:1582[0m
+  [2mmethod      [0mdefinitionHeading[2m:1610[0m
+  [2mmethod      [0mcollectCallSurfaceRelationships[2m:1616[0m
+  [2mmethod      [0mbuildBlastRadiusSection[2m:2283[0m
+  [2mmethod      [0mrelationshipOmissionNote[2m:1667[0m
+  [2mmethod      [0msynthEdgeNote[2m:1873[0m
+  [2mmethod      [0mbuildFlowFromNamedSymbols[2m:1966[0m
+  [2mmethod      [0mformatTrail[2m:3846[0m
+  [2mmethod      [0mrenderNodeSection[2m:3814[0m
+  [2mmethod      [0mformatExploreRelationshipEdge[2m:4504[0m
+  [2mmethod      [0mbuildDynamicBoundaries[2m:2161[0m
+  [2mmethod      [0mboundaryCandidates[2m:2216[0m
+  [2mmethod      [0mcomputeGraphRelevance[2m:2370[0m
+  [2mmethod      [0mhandleFileView[2m:3677[0m
+  [2mmethod      [0mglobToRegex[2m:4067[0m
+  [2mmethod      [0mformatFilesFlat[2m:4080[0m
+  [2mmethod      [0mformatFilesGrouped[2m:4097[0m
+  [2mmethod      [0mformatFilesTree[2m:4129[0m
+  [2mmethod      [0mmatchesSymbol[2m:4227[0m
+  [2mmethod      [0mfindSymbolMatches[2m:4272[0m
+  [2mmethod      [0mfindAllSymbols[2m:4323[0m
+  [2mmethod      [0mtruncateOutput[2m:4364[0m
+  [2mmethod      [0mformatSearchResults[2m:4376[0m
+  [2mmethod      [0mcallerDisplayName[2m:4404[0m
+  [2mmethod      [0mformatNodeList[2m:4410[0m
+  [2mmethod      [0mmoreResultsNote[2m:4450[0m
+  [2mmethod      [0mscipTrustLabels[2m:4464[0m
+  [2mmethod      [0medgeLabel[2m:4472[0m
+  [2mmethod      [0mformatImpact[2m:4526[0m
+  [2mmethod      [0mnodeContinuationKey[2m:4485[0m
+  [2mmethod      [0mnodeContinuation[2m:4500[0m
+  [2mmethod      [0mformatNodeDetails[2m:4605[0m
+  [2mmethod      [0mbuildAmbiguousExploreSection[2m:4700[0m
+  [2mmethod      [0mcliArg[2m:4491[0m
+  [2mmethod      [0mcliNodeCommand[2m:4495[0m
+  [2mmethod      [0mbuildContainerOutline[2m:4590[0m
+  [2mmethod      [0mtextResult[2m:4646[0m
+  [2mmethod      [0mbuildNoExploreResultsMessage[2m:4652[0m
+  [2mmethod      [0merrorResult[2m:4735[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/pr19-improvements.test.ts[0m
+  [2mfile        [0mpr19-improvements.test.ts[2m:1[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/symbol-lookup.test.ts[0m
+  [2mfile        [0msymbol-lookup.test.ts[2m:1[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/adaptive-explore-sizing.test.ts[0m
+  [2mfile        [0madaptive-explore-sizing.test.ts[2m:1[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/config-secret-redaction.test.ts[0m
+  [2mfile        [0mconfig-secret-redaction.test.ts[2m:1[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/dynamic-boundaries.test.ts[0m
+  [2mfile        [0mdynamic-boundaries.test.ts[2m:1[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/explore-blast-radius.test.ts[0m
+  [2mfile        [0mexplore-blast-radius.test.ts[2m:1[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/explore-corroboration-ranking.test.ts[0m
+  [2mfile        [0mexplore-corroboration-ranking.test.ts[2m:1[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/explore-output-budget.test.ts[0m
+  [2mfile        [0mexplore-output-budget.test.ts[2m:1[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/explore-synth-constant-endpoints.test.ts[0m
+  [2mfile        [0mexplore-synth-constant-endpoints.test.ts[2m:1[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/integration/mcp-input-limits.test.ts[0m
+  [2mfile        [0mmcp-input-limits.test.ts[2m:1[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/mcp-catchup-gate.test.ts[0m
+  [2mfile        [0mmcp-catchup-gate.test.ts[2m:1[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/mcp-files-path-normalization.test.ts[0m
+  [2mfile        [0mmcp-files-path-normalization.test.ts[2m:1[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/mcp-staleness-banner.test.ts[0m
+  [2mfile        [0mmcp-staleness-banner.test.ts[2m:1[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/node-file-view.test.ts[0m
+  [2mfile        [0mnode-file-view.test.ts[2m:1[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/same-name-disambiguation.test.ts[0m
+  [2mfile        [0msame-name-disambiguation.test.ts[2m:1[0m
+  [2mvariable    [0mhandler[2m:24[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/security.test.ts[0m
+  [2mfile        [0msecurity.test.ts[2m:1[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/index.ts[0m
+  [2mfile        [0mindex.ts[2m:1[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/src/bin/codegraph.ts[0m
+  [2mfunction    [0mmain[2m:114[0m
+  [2mfile        [0mcodegraph.ts[2m:1[0m
+
+[36mscripts/agent-eval/probe-context.mjs[0m
+  [2mconstant    [0mToolHandler[2m:15[0m
+  [2mfile        [0mprobe-context.mjs[2m:1[0m
+
+[36mscripts/agent-eval/probe-explore.mjs[0m
+  [2mconstant    [0mToolHandler[2m:20[0m
+  [2mfile        [0mprobe-explore.mjs[2m:1[0m
+
+[36mscripts/agent-eval/probe-node.mjs[0m
+  [2mconstant    [0mToolHandler[2m:14[0m
+  [2mfile        [0mprobe-node.mjs[2m:1[0m
+
+[36mscripts/agent-eval/probe-sweep.mjs[0m
+  [2mconstant    [0mToolHandler[2m:26[0m
+  [2mfile        [0mprobe-sweep.mjs[2m:1[0m
+
+[36mscripts/agent-eval/probe-trace.mjs[0m
+  [2mconstant    [0mToolHandler[2m:14[0m
+  [2mfile        [0mprobe-trace.mjs[2m:1[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/scripts/agent-eval/offload-eval-effort.mjs[0m
+  [2mconstant    [0mToolHandler[2m:30[0m
+  [2mfile        [0moffload-eval-effort.mjs[2m:1[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/scripts/agent-eval/offload-eval-hook.mjs[0m
+  [2mconstant    [0mToolHandler[2m:53[0m
+  [2mfile        [0moffload-eval-hook.mjs[2m:1[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/scripts/agent-eval/probe-context.mjs[0m
+  [2mconstant    [0mToolHandler[2m:15[0m
+  [2mfile        [0mprobe-context.mjs[2m:1[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/scripts/agent-eval/probe-explore.mjs[0m
+  [2mconstant    [0mToolHandler[2m:20[0m
+  [2mfile        [0mprobe-explore.mjs[2m:1[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/scripts/agent-eval/probe-node.mjs[0m
+  [2mconstant    [0mToolHandler[2m:14[0m
+  [2mfile        [0mprobe-node.mjs[2m:1[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/scripts/agent-eval/probe-sweep.mjs[0m
+  [2mconstant    [0mToolHandler[2m:26[0m
+  [2mfile        [0mprobe-sweep.mjs[2m:1[0m
+
+[36mresearch/2026-06-23-codegraph-ecosystem/repos/codegraph/scripts/agent-eval/probe-trace.mjs[0m
+  [2mconstant    [0mToolHandler[2m:14[0m
+  [2mfile        [0mprobe-trace.mjs[2m:1[0m
+

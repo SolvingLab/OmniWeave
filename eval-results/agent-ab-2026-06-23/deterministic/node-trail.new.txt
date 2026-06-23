@@ -1,0 +1,275 @@
+## handleExplore (method)
+
+**Location:** src/mcp/tools.ts:2436
+**Command:** `omniweave node "handleExplore" --file "src/mcp/tools.ts" --line 2436`
+**Signature:** `(
+    args: Record<string, unknown>,
+    outputSurface: OutputSurface = 'mcp',
+  ): Promise<ToolResult>`
+
+```typescript
+2436	  private async handleExplore(
+2437	    args: Record<string, unknown>,
+2438	    outputSurface: OutputSurface = 'mcp',
+2439	  ): Promise<ToolResult> {
+2440	    const query = this.validateString(args.query, 'query');
+2441	    if (typeof query !== 'string') return query;
+2442	
+2443	    const cg = this.getOmniWeave(args.projectPath as string | undefined);
+2444	    const projectRoot = cg.getProjectRoot();
+2445	
+2446	    // Resolve adaptive output budget from project size. Falls back to the
+2447	    // largest-tier defaults if stats aren't available, which preserves
+2448	    // pre-#185 behavior for callers that hit the rare stats failure.
+2449	    let budget: ExploreOutputBudget;
+2450	    let fileCount: number | null = null;
+2451	    try {
+2452	      fileCount = cg.getStats().fileCount;
+2453	      budget = getExploreOutputBudget(fileCount);
+2454	    } catch {
+2455	      budget = getExploreOutputBudget(Infinity);
+2456	    }
+2457	    const maxFiles = parseExploreMaxFiles(args.maxFiles, budget.defaultMaxFiles);
+2458	
+2459	    // Step 1: Find relevant context with generous parameters.
+2460	    // Use a large maxNodes budget — explore has its own 35k char output limit
+2461	    // that prevents context bloat, so more nodes just means better coverage
+2462	    // across entry points (especially for large files like Svelte components).
+2463	    const subgraph = await cg.findRelevantContext(query, {
+2464	      searchLimit: 8,
+2465	      traversalDepth: 3,
+2466	      maxNodes: 200,
+2467	      minScore: 0.2,
+2468	    });
+2469	
+2470	    if (subgraph.nodes.size === 0) {
+2471	      return this.textResult(this.buildNoExploreResultsMessage(query, fileCount, outputSurface));
+2472	    }
+2473	
+2474	    // Graph-aware glue: findRelevantContext builds the subgraph from name/text
+2475	    // search, so a method that BRIDGES named symbols — e.g. App.tsx's
+2476	    // triggerRender, which calls the named triggerUpdate — is never a search hit
+2477	    // and gets missed, forcing the agent to Read the file to trace it. Pull in
+2478	    // the callers/callees of the entry (root) nodes, but ONLY those that live in
+2479	    // files the subgraph already surfaces (where the agent reads to fill gaps),
+2480	    // so we add wiring without dragging in unrelated files. These get an
+2481	    // importance boost below so they survive the per-file cluster budget.
+2482	    const glueNodeIds = new Set<string>();
+2483	    const subgraphFiles = new Set<string>();
+2484	    for (const n of subgraph.nodes.values()) subgraphFiles.add(n.filePath);
+2485	    const GLUE_NODE_CAP = 60;
+2486	    for (const rootId of subgraph.roots) {
+2487	      if (glueNodeIds.size >= GLUE_NODE_CAP) break;
+2488	      let neighbors: Node[] = [];
+2489	      try {
+2490	        neighbors = [
+2491	          ...cg.getCallers(rootId).map(c => c.node),
+2492	          ...cg.getCallees(rootId).map(c => c.node),
+2493	        ];
+2494	      } catch {
+2495	        continue;
+2496	      }
+2497	      for (const nb of neighbors) {
+2498	        if (glueNodeIds.size >= GLUE_NODE_CAP) break;
+2499	        if (subgraph.nodes.has(nb.id)) continue;
+2500	        if (!subgraphFiles.has(nb.filePath)) continue;
+2501	        subgraph.nodes.set(nb.id, nb);
+2502	        glueNodeIds.add(nb.id);
+2503	      }
+2504	    }
+2505	
+2506	    // Named-symbol seeding: findRelevantContext is an FTS/text rank, so a query
+2507	    // that's a BAG of symbol names skewed toward one phase (Alamofire: 5 build
+2508	    // terms, each a high-frequency name, vs 3 validate terms) lets the
+2509	    // lower-frequency names fall below the search cut — their definitions, and
+2510	    // whole files (Validation.swift), never get gathered, so they can never
+2511	    // render and the agent Reads them. Resolve EACH named token to its
+2512	    // substantive definition (skip empty stubs + test files, same relevance the
+2513	    // trace endpoint picker uses) and inject it as an entry, so every symbol the
+2514	    // agent explicitly named is in the subgraph and its file is scored.
+2515	    const namedSeedIds = new Set<string>();
+2516	    const ambiguousExploreTokens: AmbiguousExploreToken[] = [];
+2517	    {
+2518	      const CALLABLE = new Set(['method', 'function', 'component', 'constructor']);
+2519	      const isTestPath = (p: string) => /(^|\/)(tests?|specs?|__tests__|testdata|mocks?|fixtures?)\//i.test(p) || /\.(test|spec)\.[a-z]+$/i.test(p);
+2520	      const bodyLines = (n: Node) => Math.max(0, (n.endLine ?? n.startLine) - n.startLine);
+2521	      const tokens = extractExploreNameTokens(query, { includePrecedingPlainTokens: true });
+2522	      const allowLowSignalSeeds = queryAllowsLowSignalSources(query);
+2523	      // PascalCase tokens in the query are type/file disambiguators — when the
+2524	      // agent writes "DataRequest task validate", the `task`/`validate` it wants
+2525	      // are DataRequest's, NOT the same-named overloads in Validation.swift /
+2526	      // Concurrency.swift / the abstract base. Used below to bias overloaded
+2527	      // names toward the file/class the query also names. EXCLUDE the project
+2528	      // name (a PascalCase token a user naturally includes) — it names the whole
+2529	      // repo, so biasing toward it just pulls overloads to whichever stack
+2530	      // embeds it, re-burying the rest (#720).
+2531	      const projectNameTokens = cg.getProjectNameTokens();
+2532	      const typeTokens = tokens.filter(
+2533	        (o) => /^[A-Z][A-Za-z0-9]{3,}/.test(o) && !projectNameTokens.has(normalizeNameToken(o)),
+2534	      );
+2535	      const inNamedContext = (n: Node) =>
+2536	        typeTokens.some((ct) => {
+2537	          const lc = ct.toLowerCase();
+2538	          return n.filePath.toLowerCase().includes(lc) || n.qualifiedName.toLowerCase().includes(lc);
+2539	        });
+2540	      for (const t of tokens) {
+2541	        // Enumerate ALL defs of a bare token via the direct index, not FTS — a
+2542	        // 50+-overload name (tokio `poll`) ranks the wanted def (`Harness::poll`)
+2543	        // below the FTS cut, so findAllSymbols would never see it and the
+2544	        // type-token bias below couldn't pick the harness.rs one. (Same fix as
+2545	        // omniweave_node's findSymbolMatches.) Qualified tokens keep findAllSymbols.
+2546	        const isQual = /[.\/]|::/.test(t);
+2547	        const raw = isQual ? this.findAllSymbols(cg, t).nodes : cg.getNodesByName(t);
+2548	        const cands = raw
+2549	          .filter((n) => CALLABLE.has(n.kind) && !isTestPath(n.filePath) && (allowLowSignalSeeds || !isRepositorySnapshotFile(n.filePath)))
+2550	          .sort((a, b) => (bodyLines(b) > 1 ? 1 : 0) - (bodyLines(a) > 1 ? 1 : 0) || bodyLines(b) - bodyLines(a));
+2551	        // A specific name (<=3 defs) injects all its defs. An overloaded name
+2552	        // (`validate` = 10, `request` = 44) would flood the subgraph, so inject
+2553	        // only: the overloads whose file/class the query ALSO names (the agent
+2554	        // told us which one it wants — DataRequest's, not Validation.swift's),
+2555	        // capped; else fall back to the single most-substantive def. This is the
+2556	        // explore-side mirror of omniweave_node's overload disambiguation.
+2557	        let picks: Node[];
+2558	        if (cands.length <= 3) {
+2559	          picks = cands;
+2560	        } else {
+2561	          const ctx = cands.filter(inNamedContext);
+2562	          picks = ctx.length > 0 ? ctx.slice(0, 4) : cands.slice(0, 1);
+2563	          if (ctx.length === 0) {
+2564	            const picked = new Set(picks.map((n) => n.id));
+2565	            ambiguousExploreTokens.push({
+2566	              token: t,
+2567	              total: cands.length,
+2568	              selected: picks,
+2569	              alternatives: cands.filter((n) => !picked.has(n.id)).slice(0, 4),
+2570	            });
+2571	          }
+2572	        }
+2573	        for (const n of picks) {
+2574	          if (!subgraph.nodes.has(n.id)) subgraph.nodes.set(n.id, n);
+2575	          // Mark as a named seed EVEN IF the FTS gather already had it — being
+2576	          // "named by the agent" is independent of whether search happened to
+2577	          // surface it, and it drives the +50 score, the gate, and the
+2578	          // named-file sort below. (Previously only NEW injections were marked,
+2579	          // so a named symbol FTS already gathered never sorted to the top.)
+2580	          namedSeedIds.add(n.id);
+2581	        }
+2582	      }
+2583	    }
+2584	
+2585	    // Step 2: Group nodes by file, score by relevance
+2586	    const fileGroups = new Map<string, { nodes: Node[]; score: number }>();
+2587	    const entryNodeIds = new Set([...subgraph.roots, ...namedSeedIds]);
+2588	
+2589	    // Build a set of nodes directly connected to entry points (depth 1)
+2590	    const connectedToEntry = new Set<string>();
+2591	    for (const edge of subgraph.edges) {
+2592	      if (entryNodeIds.has(edge.source)) connectedToEntry.add(edge.target);
+2593	      if (entryNodeIds.has(edge.target)) connectedToEntry.add(edge.source);
+2594	    }
+2595	
+2596	    for (const node of subgraph.nodes.values()) {
+2597	      // Skip import/export nodes — they add noise without information
+2598	      if (node.kind === 'import' || node.kind === 'export') continue;
+2599	      // SECURITY (#383): never render the on-disk source of a config-leaf
+2600	      // (Spring application.{yml,properties} key) — its line is `key = <secret>`,
+2601	      // so whole-file/cluster rendering here would push secrets into context
+2602	      // unbidden. The key still appears in the flow/symbol listing above.
+2603	      if (isConfigLeafNode(node)) continue;
+2604	
+2605	      const group = fileGroups.get(node.filePath) || { nodes: [], score: 0 };
+2606	      group.nodes.push(node);
+2607	      // Score: a NAMED-SEED node (a symbol the agent named that FTS missed, now
+2608	      // injected) is worth far more than a mere reference — its file is where the
+2609	      // answer lives. Without this, an incidental file that name-drops the flow
+2610	      // (Combine.swift references request/task → score 23 from connected nodes)
+2611	      // outranks the file that DEFINES a named symbol (Validation.swift's
+2612	      // `validate` → 10) and steals its render slot. Definition ≫ reference.
+2613	      if (namedSeedIds.has(node.id)) {
+2614	        group.score += 50;
+2615	      } else if (entryNodeIds.has(node.id)) {
+2616	        group.score += 10;
+2617	      } else if (connectedToEntry.has(node.id)) {
+2618	        group.score += 3;
+2619	      } else {
+2620	        group.score += 1;
+2621	      }
+2622	      fileGroups.set(node.filePath, group);
+2623	    }
+2624	
+2625	    // Only include files that have entry points or nodes directly connected to entry points
+2626	    let relevantFiles = [...fileGroups.entries()].filter(([, group]) => group.score >= 3);
+2627	
+2628	    // Extract query terms for relevance checking
+2629	    const queryTerms = query.toLowerCase().split(/\s+/).filter(t => t.length >= 3);
+2630	
+2631	    // Test/spec/snapshot/icon/i18n file detector — used both for the pre-sort hard
+2632	    // filter (tiny tier) and the comparator deprioritization (all tiers).
+2633	    const isLowValue = (p: string) => {
+2634	      const lp = p.toLowerCase();
+2635	      return (
+2636	        isLowSignalSourceFile(p) ||
+2637	        /\bicons?\b/.test(lp) ||
+2638	        /\bi18n\b/.test(lp)
+2639	      );
+2640	    };
+2641	
+2642	    // Hard-exclude test/spec/research-snapshot files (ALL tiers, not just tiny). One slipped test
+2643	    // file dominates the per-file budget on small repos (cobra's `command_test.go`
+2644	    // displaced `args.go`) AND wastes budget on large ones (Django's
+2645	    // `custom_lookups/tests.py` ate ~2.3 KB of the 28 KB cap, crowding out the
+2646	    // SQLCompiler mechanism the agent then Read). A test file almost never answers
+2647	    // an architecture question. Skip when the query itself is about tests — the
+2648	    // legitimate "explore the tests" case — and only cut if ≥2 non-test candidates
+2649	    // remain (else tests are the only signal for this area).
+2650	    {
+2651	      const queryMentionsLowSignalPath = queryAllowsLowSignalSources(query);
+2652	      if (!isRepositorySnapshotQuery(query)) {
+2653	        relevantFiles = relevantFiles.filter(([p]) => !isRepositorySnapshotFile(p));
+2654	      }
+2655	      if (!queryMentionsLowSignalPath) {
+2656	        const nonLow = relevantFiles.filter(([p]) => !isLowValue(p));
+2657	        if (nonLow.length >= 2) {
+2658	          relevantFiles = nonLow;
+2659	        }
+2660	      }
+2661	    }
+2662	    if (relevantFiles.length === 0) {
+2663	      return this.textResult(this.buildNoExploreResultsMessage(query, fileCount, outputSurface));
+2664	    }
+2665	
+2666	    // Secondary signal: how many DISTINCT query terms each file matches (path +
+2667	    // symbol names). Kept only as a tiebreak — the PRIMARY relevance is graph
+2668	    // connectivity below. (Term counting alone tied the real central file with
+2669	    // incidental same-word matches; it's a weak text signal, not the ranker.)
+2670	    const uniqueQueryTerms = [...new Set(queryTerms)].filter(t => t.length >= 3);
+2671	    const fileTermHits = new Map<string, number>();
+2672	    for (const [fp, group] of relevantFiles) {
+2673	      const hay = fp.toLowerCase() + ' ' + group.nodes.map(n => n.name.toLowerCase()).join(' ');
+2674	      let hits = 0;
+2675	      for (const t of uniqueQueryTerms) if (hay.includes(t)) hits++;
+2676	      fileTermHits.set(fp, hits);
+2677	    }
+2678	
+2679	    // PRIMARY relevance: graph connectivity (Random-Walk-with-Restart from the
+2680	    // matched seeds — see computeGraphRelevance). Aggregate each file's nodes'
+2681	    // walk mass. This is the signal text search lacks: the real cluster
+2682	    // (org-user.storage.ts, call-connected to the matches) accrues mass; a lone
+2683	    // text match (LensSwitcher.swift, matched "switch" but calls nothing in the
+2684	    // flow) gets only its restart probability → ~0, and is dropped by the gate.
+2685	    const nodeRwr = this.computeGraphRelevance(
+2686	      [...subgraph.nodes.keys()], subgraph.edges, entryNodeIds,
+2687	    );
+2688	    const fileGraphScore = new Map<string, number>();
+2689	    for (const node of subgraph.nodes.values()) {
+2690	      fileGraphScore.set(
+2691	        node.filePath,
+2692	        (fileGraphScore.get(node.filePath) ?? 0) + (nodeRwr.get(node.id) ?? 0),
+2693	      );
+2694	    }
+2695	    const maxGraph = Math.max(0, ...fileGraphScore.values());
+2696	
+2697	    // Central file(s): the 1-2 most graph-central files that also match the
+2698	    // query textually (so a connected hub-utility with no term match isn't
+
+... (output truncated)

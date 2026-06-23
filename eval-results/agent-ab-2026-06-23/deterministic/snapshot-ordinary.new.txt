@@ -1,0 +1,435 @@
+## Exploration: ToolHandler
+
+Candidate graph: 51 symbols across 6 source-candidate files. Source shown below covers 6 files; all candidate files are shown in this call.
+
+### Blast radius — what depends on these (update/verify before editing)
+
+- `ToolHandler` (src/mcp/tools.ts:957) — 0 production callers; tests: `__tests__/scip-import.test.ts`, `__tests__/snapshot-import.test.ts`; omitted 2 non-execution relationships from call-surface count
+- `ToolHandler` (scripts/agent-eval/probe-context.mjs:15) — 1 production caller in `scripts/agent-eval/probe-context.mjs`; ⚠️ no covering tests found
+- `ToolHandler` (scripts/agent-eval/probe-explore.mjs:20) — 1 production caller in `scripts/agent-eval/probe-explore.mjs`; ⚠️ no covering tests found
+- `ToolHandler` (scripts/agent-eval/probe-node.mjs:14) — 1 production caller in `scripts/agent-eval/probe-node.mjs`; ⚠️ no covering tests found
+- `ToolHandler` (scripts/agent-eval/probe-sweep.mjs:26) — 1 production caller in `scripts/agent-eval/probe-sweep.mjs`; ⚠️ no covering tests found
+
+### Source Code
+
+> The code blocks below are **verbatim, current on-disk source ranges** — re-read from disk on this call and line-numbered, byte-for-byte identical to what the Read tool returns for those ranges. They are NOT summaries, outlines, or stale cache. Treat each complete block shown here as a Read you have already performed.
+
+#### scripts/agent-eval/probe-sweep.mjs — ToolHandler(constant), TOOL(constant), probe-sweep.mjs(file)
+
+```javascript
+1	#!/usr/bin/env node
+2	// probe-sweep — direct MCP test across N repos × N tools, no claude needed.
+3	//
+4	// Measures response characteristics (size, sections present, signals fired)
+5	// for each (repo, query) pair against the built dist/. Sub-second per probe;
+6	// the full sweep below runs in ~10-30s vs hours for a real claude audit.
+7	//
+8	// Use this to iterate on backend changes rapidly: change tools.ts /
+9	// context-builder, npm run build, re-run probe-sweep, compare. Once a
+10	// change looks good on probe metrics, run a focused claude audit for the
+11	// few repos that matter to confirm end-to-end cost behavior.
+12	//
+13	// Usage: node scripts/agent-eval/probe-sweep.mjs [--tool=context|explore|trace] [--repos=a,b,c]
+14	import { pathToFileURL } from 'node:url';
+15	import { resolve } from 'node:path';
+16	
+17	const args = Object.fromEntries(
+18	  process.argv.slice(2).map(a => a.startsWith('--') ? a.slice(2).split('=') : [a, true])
+19	);
+20	const TOOL = args.tool ?? 'context';
+21	
+22	const load = (rel) => import(pathToFileURL(resolve(rel)).href);
+23	const idx = await load('dist/index.js');
+24	const tools = await load('dist/mcp/tools.js');
+25	const OmniWeave = idx.default?.default ?? idx.default ?? idx.OmniWeave;
+26	const ToolHandler = tools.ToolHandler ?? tools.default?.ToolHandler;
+27	
+28	// Each entry: repo, query, optional 2nd arg for trace (from, to).
+29	// The query is the same prompt used in the real claude audits, so probe
+30	// output is directly comparable to the agent's would-be input.
+31	const SWEEP = [
+32	  // Small realworld template repos (the loss cases from the cross-language sweep)
+33	  { id: 'gin-rw',        repo: '/tmp/omniweave-corpus/gin-realworld',         q: 'How does this Gin app route a request through its middleware chain to a handler?' },
+34	  { id: 'go-mux',        repo: '/tmp/omniweave-corpus/go-mux',                q: 'How does this gorilla/mux app route a request to its handler?' },
+35	  { id: 'fastapi-rw',    repo: '/tmp/omniweave-corpus/fastapi-realworld',     q: 'How does FastAPI route a request through its dependencies to a handler?' },
+36	  { id: 'spring-pc',     repo: '/tmp/omniweave-corpus/spring-petclinic',      q: 'How does Spring route an HTTP request to a controller method?' },
+37	  { id: 'axum-rw',       repo: '/tmp/omniweave-corpus/rust-axum-realworld',   q: 'How does Axum route a request to its handler in this app?' },
+38	  { id: 'express-rw',    repo: '/tmp/omniweave-corpus/express-realworld',     q: 'How does this Express app route a request through middleware to a handler?' },
+39	  { id: 'kotlin-pc',     repo: '/tmp/omniweave-corpus/kotlin-petclinic',      q: 'How does the Kotlin Spring app route an HTTP request to its handler?' },
+40	  { id: 'flask-mb',      repo: '/tmp/omniweave-corpus/flask-microblog',       q: 'How does this Flask app route a request to a view function?' },
+41	  { id: 'vapor-tpl',     repo: '/tmp/omniweave-corpus/vapor-template',        q: 'How does Vapor route an HTTP request to its handler?' },
+42	  { id: 'cpp-leveldb',   repo: '/tmp/omniweave-corpus/cpp-leveldb',           q: 'How does LevelDB handle a Put operation through to disk?' },
+43	  { id: 'lualine',       repo: '/tmp/omniweave-corpus/lualine.nvim',          q: 'How does lualine assemble and render the statusline?' },
+44	  { id: 'drupal-admin',  repo: '/tmp/omniweave-corpus/drupal-admintoolbar',   q: 'How does the Drupal admin toolbar module render its toolbar?' },
+45	  { id: 'svelte-rw',     repo: '/tmp/omniweave-corpus/svelte-realworld',      q: 'How does this SvelteKit app route a request to a handler?' },
+46	  { id: 'react-rw',      repo: '/tmp/omniweave-corpus/react-realworld',       q: 'How does this React app fetch and display articles?' },
+47	  { id: 'rails-rw',      repo: '/tmp/omniweave-corpus/rails-realworld',       q: 'How does Rails route a request to a controller action?' },
+48	  { id: 'flask-rest',    repo: '/tmp/omniweave-corpus/flask-restful-realworld', q: 'How does Flask-RESTful route a request to a resource method?' },
+49	  { id: 'laravel-rw',    repo: '/tmp/omniweave-corpus/laravel-realworld',     q: 'How does Laravel route a request to the controller method?' },
+50	  { id: 'aspnet-rw',     repo: '/tmp/omniweave-corpus/aspnet-realworld',      q: 'How does ASP.NET route a request to the controller action?' },
+51	  // The iter7 wins/ties (to make sure we don't regress)
+52	  { id: 'cobra',         repo: '/tmp/omniweave-corpus/cobra',                 q: 'How does cobra parse commands and flags?' },
+53	  { id: 'sinatra',       repo: '/tmp/omniweave-corpus/sinatra',               q: 'How does sinatra route a request to its handler?' },
+54	  { id: 'slim',          repo: '/tmp/omniweave-corpus/slim',                  q: 'How does slim route a request and apply middleware?' },
+55	];
+56	
+57	// Detect signals in response text — these are the levers we've added that
+58	// otherwise only show up via "agent ran X more tool calls" downstream.
+59	const detect = (text) => ({
+60	  hasEntryPoints: /^### Entry Points/m.test(text),
+61	  hasRelatedSymbols: /^### Related Symbols/m.test(text),
+62	  hasFlowTrace: /^## Inline flow trace/m.test(text),
+63	  hasRouteManifest: /^## Routing manifest/m.test(text),
+64	  hasTopHandler: /^### Top handler file/m.test(text),
+65	  hasSmallRepoTail: /This project is small/.test(text),
+66	});
+67	
+68	const filterRepos = args.repos ? new Set(String(args.repos).split(',')) : null;
+69	const subjects = SWEEP.filter(s => !filterRepos || filterRepos.has(s.id));
+70	
+71	const t0 = Date.now();
+72	const rows = [];
+73	for (const s of subjects) {
+74	  try {
+75	    const cg = OmniWeave.openSync(s.repo);
+76	    const handler = new ToolHandler(cg);
+77	    const t1 = Date.now();
+78	    const res = await handler.execute('omniweave_' + TOOL,
+79	      TOOL === 'context' ? { task: s.q } :
+80	      TOOL === 'explore' ? { query: s.q } : { from: 'main', to: 'main' });
+81	    const text = res.content?.[0]?.text ?? '';
+82	    const signals = detect(text);
+83	    rows.push({
+84	      id: s.id,
+85	      ms: Date.now() - t1,
+86	      chars: text.length,
+87	      lines: text.split('\n').length,
+88	      ...signals,
+89	    });
+90	    try { cg.close?.(); } catch {}
+91	  } catch (e) {
+92	    rows.push({ id: s.id, error: String(e).slice(0, 80) });
+93	  }
+94	}
+95	
+96	// Pretty-print as a compact table.
+97	const fmt = (r) =>
+98	  r.error
+99	    ? `  ${r.id.padEnd(13)} ERROR: ${r.error}`
+100	    : `  ${r.id.padEnd(13)} ${String(r.chars).padStart(6)}c ${String(r.lines).padStart(4)}L ${String(r.ms).padStart(4)}ms` +
+101	      ` ${r.hasEntryPoints ? 'EP ' : '   '}` +
+102	      `${r.hasFlowTrace ? 'TRC ' : '    '}` +
+103	      `${r.hasRouteManifest ? 'MAN ' : '    '}` +
+104	      `${r.hasTopHandler ? 'HND ' : '    '}` +
+105	      `${r.hasSmallRepoTail ? 'TAIL' : '    '}`;
+106	console.log(`=== probe-sweep tool=${TOOL} n=${subjects.length} (${Date.now() - t0}ms total) ===`);
+107	console.log('  id            chars  lines    ms signals');
+108	console.log('  ' + '-'.repeat(56));
+109	for (const r of rows) console.log(fmt(r));
+110	
+111	// Sum + medians for the size pillar
+112	const sizes = rows.filter(r => !r.error).map(r => r.chars);
+113	sizes.sort((a, b) => a - b);
+114	const median = sizes[Math.floor(sizes.length / 2)];
+115	const sum = sizes.reduce((a, b) => a + b, 0);
+116	console.log(`  ${'-'.repeat(64)}`);
+117	console.log(`  median=${median}c  total=${sum}c  ` +
+118	  `manifest=${rows.filter(r => r.hasRouteManifest).length}/${rows.filter(r => !r.error).length}  ` +
+119	  `top-handler=${rows.filter(r => r.hasTopHandler).length}/${rows.filter(r => !r.error).length}`);
+```
+
+#### src/mcp/tools.ts — calls(calls), references(references), getOmniWeave(calls), relationshipOmissionNote(calls), instantiates(instantiates), freshen(calls), groupDefinitions(calls), toolAllowlist(calls), collectCallSurfaceRelationships(calls), definitionHeading(calls), constructor(method), setDefaultOmniWeave(method), setCatchUpGate(method), setDefaultProjectHint(method), hasDefaultOmniWeave(method), +35 more
+
+```typescript
+975	  // subsequent calls don't pay any cost.
+976	  private catchUpGate: Promise<void> | null = null;
+977	
+978	  constructor(private cg: OmniWeave | null) {}
+979	
+980	  /**
+981	   * Update the default OmniWeave instance (e.g. after lazy initialization)
+982	   */
+983	  setDefaultOmniWeave(cg: OmniWeave): void {
+984	    this.cg = cg;
+985	  }
+986	
+987	  /**
+988	   * Engine-only: register the catch-up sync promise so the next `execute()`
+989	   * call awaits it before serving. The handler swallows rejections (the
+990	   * engine logs them) so a sync failure never propagates as a tool error;
+991	   * we still want to serve a best-effort result over the same potentially-
+992	   * stale data, which is what would have happened without the gate.
+993	   */
+994	  setCatchUpGate(p: Promise<void> | null): void {
+995	    this.catchUpGate = p;
+996	  }
+997	
+998	  /**
+999	   * Record the directory the server tried to resolve the default project from.
+1000	   * Used only to make the "no default project" error actionable.
+1001	   */
+1002	  setDefaultProjectHint(searchedPath: string): void {
+1003	    this.defaultProjectHint = searchedPath;
+1004	  }
+1005	
+1006	  /**
+1007	   * Whether a default OmniWeave instance is available
+1008	   */
+1009	  hasDefaultOmniWeave(): boolean {
+1010	    return this.cg !== null;
+1011	  }
+1012	
+1013	  /**
+1014	   * Optional allowlist of exposed tools, parsed from the OMNIWEAVE_MCP_TOOLS
+1015	   * env var (comma-separated short names, e.g. "trace,search,node,context").
+1016	   * Unset/empty → every tool is exposed. Lets an operator (or an A/B harness)
+1017	   * trim the tool surface without rebuilding the client config; the ablated
+1018	   * tool is then truly absent from ListTools rather than merely denied on call.
+1019	   * Matching is on the short form, so "node" and "omniweave_node" both work.
+1020	   */
+1021	  private toolAllowlist(): Set<string> | null {
+1022	    return parseToolAllowlist();
+1023	  }
+1024	
+1025	  /** Whether a tool name passes the OMNIWEAVE_MCP_TOOLS allowlist (if any). */
+1026	  private isToolAllowed(name: string): boolean {
+1027	    const allow = this.toolAllowlist();
+1028	    return !allow || allow.has(shortToolName(name));
+1029	  }
+1030	
+1031	  /**
+1032	   * Get tool definitions with dynamic descriptions based on project size.
+1033	   * The omniweave_explore tool description includes a budget recommendation
+1034	   * scaled to the number of indexed files. Honors the OMNIWEAVE_MCP_TOOLS
+1035	   * allowlist so a trimmed surface is reflected in ListTools.
+1036	   */
+1037	  getTools(): ToolDefinition[] {
+1038	    const allow = this.toolAllowlist();
+1039	    // No explicit allowlist → the default 5-tool surface (see
+1040	    // DEFAULT_MCP_TOOLS for the evidence). An allowlist replaces the
+1041	    // default entirely, so any defined tool can be re-enabled.
+1042	    let visible = visibleToolsForAllowlist(allow);
+1043	    if (!this.cg) return visible;
+1044	
+1045	    try {
+1046	      const stats = this.cg.getStats();
+1047	
+1048	      // Tiny-repo tool gating: on projects under TINY_REPO_FILE_THRESHOLD
+1049	      // files, only expose the core trio (search, node, explore) — one
+1050	      // below even the 4-tool default: at this scale callers, too, reduces
+1051	      // to one grep. (Historical note: the audit below ran when context and
+1052	      // trace still existed; its "5 core tools" are today's trio.)
+1053	      //
+1054	      // n=2 audits ruled out cutting below 5 tools:
+1055	      // - 3-tool gate (search + context + trace): cost regressed on
+1056	      //   cobra/ky/sinatra. The agent fell back to raw Reads to cover
+1057	      //   what omniweave_node + omniweave_explore would have answered.
+1058	      // - 1-tool gate (search only): catastrophic regression — express
+1059	      //   went from -43% WIN to +107% LOSS. With only search, the agent
+1060	      //   can't navigate the call graph structurally and reads everything.
+1061	      //
+1062	      // 5 is the empirical lower bound. Tools beyond search/context/
+1063	      // node/explore/trace pay overhead that the agent doesn't recoup
+1064	      // on tiny-repo flow questions.
+1065	      // ITER4: raise threshold 150 → 500 so single-file frameworks
+1066	      // (sinatra at 159, slim_framework around 200) also get the
+1067	      // 5-tool surface. The empirical 5-tool floor was set on <150
+1068	      // probes; iter3 measurement showed sinatra is structurally the
+1069	      // SAME problem as cobra (single-file WITHOUT-arm Read wins),
+1070	      // so it deserves the same gating.
+1071	      return toolsForSurface(allow, stats.fileCount);
+1072	    } catch {
+1073	      return visible;
+1074	    }
+1075	  }
+1076	
+1077	  /**
+1078	   * Get OmniWeave instance for a project
+1079	   *
+1080	   * If projectPath is provided, opens that project's OmniWeave (cached).
+1081	   * Otherwise returns the default OmniWeave instance.
+1082	   *
+1083	   * Walks up parent directories to find the nearest .omniweave/ folder,
+1084	   * similar to how git finds .git/ directories.
+1085	   */
+1086	  private getOmniWeave(projectPath?: string): OmniWeave {
+1087	    if (!projectPath) {
+1088	      if (!this.cg) {
+1089	        const searched = this.defaultProjectHint ?? process.cwd();
+1090	        throw new NotIndexedError(
+1091	          'No OmniWeave project is loaded for this session.\n' +
+1092	          `Searched for a .omniweave/ directory starting from: ${searched}\n` +
+1093	          'If this project IS indexed, this is a working-directory detection issue: ' +
+1094	          "the MCP client launched the server outside your project and didn't report the " +
+1095	          'workspace root. Fix it either way:\n' +
+1096	          '  • Pass projectPath to the tool call, e.g. projectPath: "/absolute/path/to/your/project"\n' +
+1097	          '  • Or add --path to the server\'s MCP config args: ["serve", "--mcp", "--path", "/absolute/path/to/your/project"]\n' +
+1098	          'If the project simply has no index, continue with your built-in tools (Read/Grep/Glob) ' +
+1099	          "and don't call omniweave again this session — the user can run 'omniweave init' to enable it."
+1100	        );
+1101	      }
+1102	      return this.freshen(this.cg);
+1103	    }
+1104	
+1105	    // Reject sensitive system directories before opening. Only validate a
+1106	    // path that actually exists — a nested or not-yet-created sub-path of a
+1107	    // real project must still be allowed to resolve UP to its .omniweave/
+1108	    // root below (issue #238), so we don't run the existence-checking
+1109	    // validator on paths that are meant to walk up.
+1110	    if (existsSync(projectPath)) {
+1111	      const pathError = validateProjectPath(projectPath);
+1112	      if (pathError) {
+1113	        throw new PathRefusalError(pathError);
+1114	      }
+1115	    }
+1116
+
+... (oversized source range omitted; rerun `omniweave explore "<symbol-or-file>"` with a narrower symbol/file query for the next window) ...
+```
+
+#### scripts/agent-eval/probe-context.mjs — ToolHandler(constant), probe-context.mjs(file)
+
+```javascript
+1	#!/usr/bin/env node
+2	// Probe omniweave_context (with call-paths) against an index using the built dist.
+3	// Usage: node probe-context.mjs <repo-with-.omniweave> <task words...>
+4	import { pathToFileURL } from 'node:url';
+5	import { resolve } from 'node:path';
+6	
+7	const [, , repo, ...taskParts] = process.argv;
+8	const task = taskParts.join(' ');
+9	if (!repo || !task) { console.error('usage: probe-context.mjs <repo> <task...>'); process.exit(1); }
+10	
+11	const load = async (rel) => import(pathToFileURL(resolve(rel)).href);
+12	const idx = await load('dist/index.js');
+13	const tools = await load('dist/mcp/tools.js');
+14	const OmniWeave = idx.default?.default ?? idx.default ?? idx.OmniWeave;
+15	const ToolHandler = tools.ToolHandler ?? tools.default?.ToolHandler;
+16	
+17	const cg = OmniWeave.openSync(repo);
+18	const h = new ToolHandler(cg);
+19	const res = await h.execute('omniweave_context', { task });
+20	console.log(res.content?.[0]?.text ?? '(no text)');
+21	try { cg.close?.(); } catch {}
+```
+
+#### scripts/agent-eval/probe-explore.mjs — ToolHandler(constant), probe-explore.mjs(file)
+
+```javascript
+1	#!/usr/bin/env node
+2	// One-shot probe: run handleExplore against an existing index using the built
+3	// dist, print the output + a few stats. Lets us verify explore's coverage fix
+4	// without a full agent run. Usage: node probe-explore.mjs <repo-with-.omniweave> "<query>"
+5	import { pathToFileURL } from 'node:url';
+6	import { resolve } from 'node:path';
+7	
+8	const [, , repo, query] = process.argv;
+9	if (!repo || !query) {
+10	  console.error('usage: probe-explore.mjs <repo> "<query>"');
+11	  process.exit(1);
+12	}
+13	
+14	const load = async (rel) => import(pathToFileURL(resolve(rel)).href);
+15	const idx = await load('dist/index.js');
+16	const tools = await load('dist/mcp/tools.js');
+17	
+18	// esModuleInterop: dynamic import of CJS yields { default: module.exports, ...named }
+19	const OmniWeave = idx.default?.default ?? idx.default ?? idx.OmniWeave;
+20	const ToolHandler = tools.ToolHandler ?? tools.default?.ToolHandler;
+21	
+22	if (typeof OmniWeave?.openSync !== 'function') {
+23	  console.error('could not resolve OmniWeave.openSync; index keys:', Object.keys(idx), 'default keys:', idx.default && Object.keys(idx.default));
+24	  process.exit(2);
+25	}
+26	if (typeof ToolHandler !== 'function') {
+27	  console.error('could not resolve ToolHandler; tools keys:', Object.keys(tools));
+28	  process.exit(2);
+29	}
+30	
+31	const cg = OmniWeave.openSync(repo);
+32	const h = new ToolHandler(cg);
+33	const res = await h.execute('omniweave_explore', { query });
+34	const text = res.content?.[0]?.text ?? '(no text)';
+35	console.log(text);
+36	console.error('\n--- PROBE STATS ---');
+37	console.error('output chars:', text.length);
+38	console.error('triggerRender body present (-> setState({})):', /triggerRender[\s\S]{0,400}setState\(\{\}\)/.test(text));
+39	console.error('App.tsx in source section:', /#### .*App\.tsx —/.test(text));
+40	try { cg.close?.(); } catch {}
+```
+
+#### scripts/agent-eval/probe-node.mjs — ToolHandler(constant), probe-node.mjs(file)
+
+```javascript
+1	#!/usr/bin/env node
+2	// Probe omniweave_node (with trail) against an index using the built dist.
+3	// Usage: node probe-node.mjs <repo-with-.omniweave> <symbol> [code]
+4	import { pathToFileURL } from 'node:url';
+5	import { resolve } from 'node:path';
+6	
+7	const [, , repo, symbol, code] = process.argv;
+8	if (!repo || !symbol) { console.error('usage: probe-node.mjs <repo> <symbol> [code]'); process.exit(1); }
+9	
+10	const load = async (rel) => import(pathToFileURL(resolve(rel)).href);
+11	const idx = await load('dist/index.js');
+12	const tools = await load('dist/mcp/tools.js');
+13	const OmniWeave = idx.default?.default ?? idx.default ?? idx.OmniWeave;
+14	const ToolHandler = tools.ToolHandler ?? tools.default?.ToolHandler;
+15	
+16	const cg = OmniWeave.openSync(repo);
+17	const h = new ToolHandler(cg);
+18	const res = await h.execute('omniweave_node', { symbol, includeCode: code === 'code' });
+19	console.log(res.content?.[0]?.text ?? '(no text)');
+20	try { cg.close?.(); } catch {}
+```
+
+#### scripts/agent-eval/probe-trace.mjs — ToolHandler(constant), probe-trace.mjs(file)
+
+```javascript
+1	#!/usr/bin/env node
+2	// Probe omniweave_trace against an index using the built dist.
+3	// Usage: node probe-trace.mjs <repo-with-.omniweave> <from> <to>
+4	import { pathToFileURL } from 'node:url';
+5	import { resolve } from 'node:path';
+6	
+7	const [, , repo, from, to] = process.argv;
+8	if (!repo || !from || !to) { console.error('usage: probe-trace.mjs <repo> <from> <to>'); process.exit(1); }
+9	
+10	const load = async (rel) => import(pathToFileURL(resolve(rel)).href);
+11	const idx = await load('dist/index.js');
+12	const tools = await load('dist/mcp/tools.js');
+13	const OmniWeave = idx.default?.default ?? idx.default ?? idx.OmniWeave;
+14	const ToolHandler = tools.ToolHandler ?? tools.default?.ToolHandler;
+15	
+16	const cg = OmniWeave.openSync(repo);
+17	const h = new ToolHandler(cg);
+18	const res = await h.execute('omniweave_trace', { from, to });
+19	console.log(res.content?.[0]?.text ?? '(no text)');
+20	try { cg.close?.(); } catch {}
+```
+
+
+### Supporting relationships (not necessarily the call path)
+
+**calls:**
+- isToolAllowed → toolAllowlist   [src/mcp/tools.ts:1027; confidence 0.70]
+- getTools → toolAllowlist   [src/mcp/tools.ts:1038; confidence 0.70]
+- getOmniWeave → freshen   [src/mcp/tools.ts:1102; confidence 0.70]
+- worktreeMismatchFor → getOmniWeave   [src/mcp/tools.ts:1231; confidence 0.90]
+- withWorktreeNotice → worktreeMismatchFor   [src/mcp/tools.ts:1256; confidence 0.70]
+- withStalenessNotice → getOmniWeave   [src/mcp/tools.ts:1289; confidence 0.90]
+- withSnapshotImportNotice → getOmniWeave   [src/mcp/tools.ts:1403; confidence 0.90]
+- execute → isToolAllowed   [src/mcp/tools.ts:1456; confidence 0.70]
+- execute → handleSearch   [src/mcp/tools.ts:1487; confidence 0.70]
+- execute → handleCallers   [src/mcp/tools.ts:1489; confidence 0.70]
+- execute → handleCallees   [src/mcp/tools.ts:1491; confidence 0.70]
+- execute → handleImpact   [src/mcp/tools.ts:1493; confidence 0.70]
+- execute → handleExplore   [src/mcp/tools.ts:1495; confidence 0.70]
+- execute → handleNode   [src/mcp/tools.ts:1497; confidence 0.70]
+- execute → handleStatus   [src/mcp/tools.ts:1502; confidence 0.70]
+- ... and 33 more
+
+
+> Source shown above is complete only for the displayed blocks/ranges; some file ranges or candidate files may be omitted for size. For a specific symbol you still need, run `omniweave explore "<symbol>"` or `omniweave node "<symbol>"` with its exact name — line-numbered source, cheaper and more complete than Read.
+
+> **Explore budget: 3 calls for this project (5,473 files indexed).** Each call covers ~6 files; if your question spans more, spend your remaining calls on the uncovered area BEFORE falling back to Read — another explore is cheaper and more complete than reading those files. Synthesize once you've used 3.

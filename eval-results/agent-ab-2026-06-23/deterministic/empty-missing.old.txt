@@ -1,0 +1,617 @@
+## Exploration: zzqxqNoSuchSymbolHere12345
+
+Found 196 symbols across 36 files.
+
+### Blast radius — what depends on these (update/verify before editing)
+
+- `Symbol` (research/2026-06-23-codegraph-ecosystem/repos/serena/src/serena/symbol.py:85) — 6 callers in `research/2026-06-23-codegraph-ecosystem/repos/serena/src/serena/code_editor.py`, `research/2026-06-23-codegraph-ecosystem/repos/cgc/website/public/wasm/web-tree-sitter.js`, `research/2026-06-23-codegraph-ecosystem/repos/aider/aider/website/assets/asciinema/asciinema-player.min.js`; tests: `research/2026-06-23-codegraph-ecosystem/repos/cgc/tests/fixtures/sample_projects/sample_project_typescript/src/types-interfaces.ts`, `research/2026-06-23-codegraph-ecosystem/repos/serena/test/resources/repos/vue/test_repo/src/composables/useTheme.ts`, `research/2026-06-23-codegraph-ecosystem/repos/graphify/tests/fixtures/typescript_advanced.ts`
+- `Symbol` (research/2026-06-23-codegraph-ecosystem/repos/scip/bindings/java/src/main/java/org/scip_code/scip/Symbol.java:56) — 25 callers in `research/2026-06-23-codegraph-ecosystem/repos/scip/bindings/java/src/main/java/org/scip_code/scip/Symbol.java`; ⚠️ no covering tests found
+
+### Relationships
+
+**implements:**
+- Symbol → SymbolOrBuilder
+
+**calls:**
+- symbol → _build
+- symbol → _create
+- symbol → newBuilder
+- TestParseSymbol → ParseSymbol
+- parseSymbolV2 → tryParseLocalSymbolV2
+- ParseSymbol → ParseSymbolUTF8
+- Descriptor → file_scip_proto_rawDescGZIP
+- iter_name_path_components_reversed → iter_ancestors
+- iter_ancestors → iter_ancestors
+- insert_after_symbol → is_neighbouring_definition_separated_by_empty_line
+- insert_before_symbol → is_neighbouring_definition_separated_by_empty_line
+- equals → hasPackage
+- hashCode → hasPackage
+- org.scip_code.scip → hasPackage
+- test_markdown_headings_not_low_level → is_low_level
+- ... and 63 more
+
+**extends:**
+- LanguageServerSymbol → Symbol
+- JetBrainsSymbol → Symbol
+
+**instantiates:**
+- file_scip_proto_goTypes → Symbol
+
+**references:**
+- getDescriptor → Descriptor
+- getDescriptorForType → Descriptor
+- getDescriptorsList → Descriptor
+- getDescriptors → Descriptor
+- Symbol → Builder
+- newBuilderForType → Builder
+- newBuilder → Builder
+- newBuilder → Builder
+- toBuilder → Builder
+- newBuilderForType → Builder
+- parseFrom → Symbol
+- parseFrom → Symbol
+- parseFrom → Symbol
+- parseFrom → Symbol
+- parseFrom → Symbol
+- ... and 35 more
+
+### Source Code
+
+> The code below is the **verbatim, current on-disk source** of these files — re-read from disk on this call and line-numbered, byte-for-byte identical to what the Read tool returns. It is NOT a summary, outline, or stale cache. Treat each block as a Read you have already performed: do not Read a file shown here.
+
+#### research/2026-06-23-codegraph-ecosystem/repos/scip/bindings/java/src/main/java/org/scip_code/scip/Symbol.java — Symbol(references), parseFrom(method), Builder(references), references(references), Descriptor(references), getPackage(calls), calls(calls), hasPackage(calls), Symbol(method), getScheme(calls), getDescriptorsList(calls), parseDelimitedFrom(method), newBuilderForType(method), newBuilder(method), toBuilder(calls), +25 more
+
+```java
+53	 *
+54	 * Protobuf type {@code scip.Symbol}
+55	 */
+56	@com.google.protobuf.Generated
+57	public final class Symbol extends
+58	    com.google.protobuf.GeneratedMessage implements
+59	    // @@protoc_insertion_point(message_implements:scip.Symbol)
+60	    SymbolOrBuilder {
+61	private static final long serialVersionUID = 0L;
+62	  static {
+63	    com.google.protobuf.RuntimeVersion.validateProtobufGencodeVersion(
+64	      com.google.protobuf.RuntimeVersion.RuntimeDomain.PUBLIC,
+65	      /* major= */ 4,
+66	      /* minor= */ 34,
+67	      /* patch= */ 1,
+68	      /* suffix= */ "",
+69	      "Symbol");
+70	  }
+71	  // Use Symbol.newBuilder() to construct.
+72	  private Symbol(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
+73	    super(builder);
+74	  }
+75	  private Symbol() {
+76	    scheme_ = "";
+77	    descriptors_ = java.util.Collections.emptyList();
+78	  }
+79	
+80	  public static final com.google.protobuf.Descriptors.Descriptor
+81	      getDescriptor() {
+82	    return org.scip_code.scip.ScipProto.internal_static_scip_Symbol_descriptor;
+83	  }
+84	
+85	  @java.lang.Override
+86	  public com.google.protobuf.Descriptors.Descriptor getDescriptorForType() {
+87	    return org.scip_code.scip.ScipProto.internal_static_scip_Symbol_descriptor;
+88	  }
+89	
+90	  @java.lang.Override
+91	  protected com.google.protobuf.GeneratedMessage.FieldAccessorTable
+92	      internalGetFieldAccessorTable() {
+93	    return org.scip_code.scip.ScipProto.internal_static_scip_Symbol_fieldAccessorTable
+94	        .ensureFieldAccessorsInitialized(
+95	            org.scip_code.scip.Symbol.class, org.scip_code.scip.Symbol.Builder.class);
+96	  }
+97	
+98	  private int bitField0_;
+99	  public static final int SCHEME_FIELD_NUMBER = 1;
+100	  @SuppressWarnings("serial")
+101	  private volatile java.lang.Object scheme_ = "";
+102	  /**
+103	   * <code>string scheme = 1 [json_name = "scheme"];</code>
+104	   * @return The scheme.
+105	   */
+106	  @java.lang.Override
+107	  public java.lang.String getScheme() {
+108	    java.lang.Object ref = scheme_;
+109	    if (ref instanceof java.lang.String) {
+110	      return (java.lang.String) ref;
+111	    } else {
+112	      com.google.protobuf.ByteString bs = 
+113	          (com.google.protobuf.ByteString) ref;
+114	      java.lang.String s = bs.toStringUtf8();
+115	      scheme_ = s;
+116	      return s;
+117	    }
+118	  }
+119	  /**
+120	   * <code>string scheme = 1 [json_name = "scheme"];</code>
+121	   * @return The bytes for scheme.
+122	   */
+123	  @java.lang.Override
+124	  public com.google.protobuf.ByteString
+125	      getSchemeBytes() {
+126	    java.lang.Object ref = scheme_;
+127	    if (ref instanceof java.lang.String) {
+128	      com.google.protobuf.ByteString b = 
+129	          com.google.protobuf.ByteString.copyFromUtf8(
+130	              (java.lang.String) ref);
+131	      scheme_ = b;
+132	      return b;
+133	    } else {
+134	      return (com.google.protobuf.ByteString) ref;
+135	    }
+136	  }
+137	
+138	  public static final int PACKAGE_FIELD_NUMBER = 2;
+139	  private org.scip_code.scip.Package package_;
+140	  /**
+141	   * <code>.scip.Package package = 2 [json_name = "package"];</code>
+142	   * @return Whether the package field is set.
+143	   */
+144	  @java.lang.Override
+145	  public boolean hasPackage() {
+146	    return ((bitField0_ & 0x00000001) != 0);
+147	  }
+148	  /**
+149	   * <code>.scip.Package package = 2 [json_name = "package"];</code>
+150	   * @return The package.
+151	   */
+152	  @java.lang.Override
+153	  public org.scip_code.scip.Package getPackage() {
+154	    return package_ == null ? org.scip_code.scip.Package.getDefaultInstance() : package_;
+155	  }
+156	  /**
+157	   * <code>.scip.Package package = 2 [json_name = "package"];</code>
+158	   */
+159	  @java.lang.Override
+160	  public org.scip_code.scip.PackageOrBuilder getPackageOrBuilder() {
+161	    return package_ == null ? org.scip_code.scip.Package.getDefaultInstance() : package_;
+162	  }
+163	
+164	  public static final int DESCRIPTORS_FIELD_NUMBER = 3;
+165	  @SuppressWarnings("serial")
+166	  private java.util.List<org.scip_code.scip.Descriptor> descriptors_;
+167	  /**
+168	   * <code>repeated .scip.Descriptor descriptors = 3 [json_name = "descriptors"];</code>
+169	   */
+170	  @java.lang.Override
+171	  public java.util.List<org.scip_code.scip.Descriptor> getDescriptorsList() {
+172	    return descriptors_;
+173	  }
+174	  /**
+175	   * <code>repeated .scip.Descriptor descriptors = 3 [json_name = "descriptors"];</code>
+176	   */
+177	  @java.lang.Override
+178	  public java.util.List<? extends org.scip_code.scip.DescriptorOrBuilder> 
+179	      getDescriptorsOrBuilderList() {
+180	    return descriptors_;
+181	  }
+182	  /**
+183	   * <code>repeated .scip.Descriptor descriptors = 3 [json_name = "descriptors"];</code>
+184	   */
+185	  @java.lang.Override
+186	  public int getDescriptorsCount() {
+187	    return descriptors_.size();
+188	  }
+189	  /**
+190	   * <code>repeated .scip.Descriptor descriptors = 3 [json_name = "descriptors"];</code>
+191	   */
+192	  @java.lang.Override
+193	  public org.scip_code.scip.Descriptor getDescriptors(int index) {
+194	    return descriptors_.get(index);
+195	  }
+196	  /**
+197	   * <code>repeated .scip.Descriptor descriptors = 3 [json_name = "descriptors"];</code>
+198	   */
+199	  @java.lang.Override
+200	  public org.scip_code.scip.DescriptorOrBuilder getDescriptorsOrBuilder(
+201	      int index) {
+202	    return descriptors_.get(index);
+203	  }
+204	
+205	  private byte memoizedIsInitialized = -1;
+206	  @java.lang.Override
+207	  public final boolean isInitialized() {
+208	    byte isInitialized = memoizedIsInitialized;
+209	    if (isInitialized == 1) return true;
+210	    if (isInitialized == 0) return false;
+211	
+212	    memoizedIsInitialized = 1;
+213	    return true;
+214	  }
+215	
+216	  @java.lang.Override
+217	  public void writeTo(com.google.protobuf.CodedOutputStream output)
+218	                      throws java.io.IOException {
+219	    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(scheme_)) {
+220	      com.google.protobuf.GeneratedMessage.writeString(output, 1, scheme_);
+221	    }
+222	    if (((bitField0_ & 0x00000001) != 0)) {
+223	      output.writeMessage(2, getPackage());
+224	    }
+225	    for (int i = 0; i < descriptors_.size(); i++) {
+226	      output.writeMessage(3, descriptors_.get(i));
+227	    }
+228	    getUnknownFields().writeTo(output);
+229	  }
+230	
+231	  @java.lang.Override
+232	  public int getSerializedSize() {
+233	    int size = memoizedSize;
+234	    if (size != -1) return size;
+235	
+236	    size = 0;
+237	    if (!com.google.protobuf.GeneratedMessage.isStringEmpty(scheme_)) {
+238	      size += com.google.protobuf.GeneratedMessage.computeStringSize(1, scheme_);
+239	    }
+240	    if (((bitField0_ & 0x00000001) != 0)) {
+241	      size += com.google.protobuf.CodedOutputStream
+242	        .computeMessageSize(2, getPackage());
+243	    }
+244	
+245	        {
+246	          final int count = descriptors_.size();
+247	          for (int i = 0; i < count; i++) {
+248	            size += com.google.protobuf.CodedOutputStream
+249	              .computeMessageSizeNoTag(descriptors_.get(i));
+250	          }
+251	          size += 1 * count;
+252	        }
+253	    size += getUnknownFields().getSerializedSize();
+254	    memoizedSize = size;
+255	    return size;
+256	  }
+257	
+258	  @java.lang.Override
+259	  public boolean equals(final java.lang.Object obj) {
+260	    if (obj == this) {
+261	     return true;
+262	    }
+263	    if (!(obj instanceof org.scip_code.scip.Symbol)) {
+264	      return super.equals(obj);
+265	    }
+266	    org.scip_code.scip.Symbol other = (org.scip_code.scip.Symbol) obj;
+267	
+268	    if (!getScheme()
+269	        .equals(other.getScheme())) return false;
+270	    if (hasPackage() != other.hasPackage()) return false;
+271	    if (hasPackage()) {
+272	      if (!getPackage()
+273	          .equals(other.getPackage())) return false;
+274	    }
+275	    if (!getDescriptorsList()
+276	        .equals(other.getDescriptorsList())) return false;
+277	    if (!getUnknownFields().equals(other.getUnknownFields())) return false;
+278	    return true;
+279	  }
+280	
+281	  @java.lang.Override
+282	  public int hashCode() {
+283	    if (memoizedHashCode != 0) {
+284	      return memoizedHashCode;
+285	    }
+286	    int hash = 41;
+287	    hash = (19 * hash) + getDescriptor().hashCode();
+288	    hash = (37 * hash) + SCHEME_FIELD_NUMBER;
+289	    hash = (53 * hash) + getScheme().hashCode();
+290	    if (hasPackage()) {
+291	      hash = (37 * hash) + PACKAGE_FIELD_NUMBER;
+292	      hash = (53 * hash) + getPackage().hashCode();
+293	    }
+294	    if (getDescriptorsCount() > 0) {
+295	      hash = (37 * hash) + DESCRIPTORS_FIELD_NUMBER;
+296	      hash = (53 * hash) + getDescriptorsList().hashCode();
+297	    }
+298	    hash = (29 * hash) + getUnknownFields().hashCode();
+299	    memoizedHashCode = hash;
+300	    return hash;
+301	  }
+302	
+303	  public static org.scip_code.scip.Symbol parseFrom(
+304	      java.nio.ByteBuffer data)
+305	      throws com.google.protobuf.InvalidProtocolBufferException {
+306	    return PARSER.parseFrom(data);
+307	  }
+308	  public static org.scip_code.scip.Symbol parseFrom(
+309	      java.nio.ByteBuffer data,
+310	      com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+311	      throws com.google.protobuf.InvalidProtocolBufferException {
+312	    return PARSER.parseFrom(data, extensionRegistry);
+313	  }
+314	  public static org.scip_code.scip.Symbol parseFrom(
+315	      com.google.protobuf.ByteString data)
+316	      throws com.google.protobuf.InvalidProtocolBufferException {
+317	    return PARSER.parseFrom(data);
+318	  }
+319	  public static org.scip_code.scip.Symbol parseFrom(
+320	      com.google.protobuf.ByteString data,
+321	      com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+322	      throws com.google.protobuf.InvalidProtocolBufferException {
+323	    return PARSER.parseFrom(data, extensionRegistry);
+324	  }
+325	  public static org.scip_code.scip.Symbol parseFrom(byte[] data)
+326	      throws com.google.protobuf.InvalidProtocolBufferException {
+327	    return PARSER.parseFrom(data);
+328	  }
+329	  public static org.scip_code.scip.Symbol parseFrom(
+330	      byte[] data,
+331	      com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+332	      throws com.google.protobuf.InvalidProtocolBufferException {
+333	    return PARSER.parseFrom(data, extensionRegistry);
+334	  }
+335	  public static org.scip_code.scip.Symbol parseFrom(java.io.InputStream input)
+336	      throws java.io.IOException {
+337	    return com.google.protobuf.GeneratedMessage
+338	        .parseWithIOException(PARSER, input);
+339	  }
+340	  public static org.scip_code.scip.Symbol parseFrom(
+341	      java.io.InputStream input,
+342	      com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+343	      throws java.io.IOException {
+344	    return com.google.protobuf.GeneratedMessage
+345	        .parseWithIOException(PARSER, input, extensionRegistry);
+346	  }
+347	
+348	  public static org.scip_code.scip.Symbol parseDelimitedFrom(java.io.InputStream input)
+349	      throws java.io.IOException {
+350	    return com.google.protobuf.GeneratedMessage
+351	        .parseDelimitedWithIOException(PARSER, input);
+352	  }
+353	
+354	  public static org.scip_code.scip.Symbol parseDelimitedFrom(
+355	      java.io.InputStream input,
+356	      com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+357	      throws java.io.IOException {
+358	    return com.google.protobuf.GeneratedMessage
+359	        .parseDelimitedWithIOException(PARSER, input, extensionRegistry);
+360	  }
+361	  public static org.scip_code.scip.Symbol parseFrom(
+362	      com.google.protobuf.CodedInputStream input)
+363	      throws java.io.IOException {
+364	    return com.google.protobuf.GeneratedMessage
+365	        .parseWithIOException(PARSER, input);
+366	  }
+367	  public static org.scip_code.scip.Symbol parseFrom(
+368	      com.google.protobuf.CodedInputStream input,
+369	      com.google.protobuf.ExtensionRegistryLite extensionRegistry)
+370	      throws java.io.IOException {
+371	    return com.google.protobuf.GeneratedMessage
+372	        .parseWithIOException(PARSER, input, extensionRegistry);
+373	  }
+374	
+375	  @java.lang.Override
+376	  public Builder newBuilderForType() { return newBuilder(); }
+377	  public static Builder newBuilder() {
+378	    return DEFAULT_INSTANCE.toBuilder();
+379	  }
+380	  public static Builder newBuilder(org.scip_code.scip.Symbol prototype) {
+381	    return DEFAULT_INSTANCE.toBuilder().mergeFrom(prototype);
+382	  }
+383	  @java.lang.Override
+384	  public Builder toBuilder() {
+385	    return this == DEFAULT_INSTANCE
+386	        ? new Builder() : new Builder().mergeFrom(this);
+387	  }
+388	
+389	  @java.lang.Override
+390	  protected Builder newBuilderForType(
+391	      com.google.protobuf.GeneratedMessage.BuilderParent parent) {
+392	    Builder builder = new Builder(parent);
+393	    return builder;
+394	  }
+395	  /**
+396	   * <pre>
+397	   * Symbol is similar to a URI, it identifies a class, method, or a local
+```
+
+#### research/2026-06-23-codegraph-ecosystem/repos/serena/src/serena/symbol.py — Symbol(class), get_body_start_position(method), get_body_end_position(method), body(method), name(method), get_body_start_position_or_raise(method), get_body_start_position(calls), get_body_end_position_or_raise(method), get_body_end_position(calls), is_neighbouring_definition_separated_by_empty_line(method), from_lsp_reference(method), LanguageServerSymbol(instantiates), JetBrainsSymbol(class), Symbol(extends)
+
+```python
+82	        return Position(line=self.line, character=self.col)
+83	
+84	
+85	class Symbol(ToStringMixin, ABC):
+86	    @abstractmethod
+87	    def get_body_start_position(self) -> PositionInFile | None:
+88	        pass
+89	
+90	    @abstractmethod
+91	    def get_body_end_position(self) -> PositionInFile | None:
+92	        pass
+93	
+94	    @property
+95	    @abstractmethod
+96	    def body(self) -> str | None:
+97	        pass
+98	
+99	    @property
+100	    @abstractmethod
+101	    def name(self) -> str:
+102	        pass
+103	
+104	    def get_body_start_position_or_raise(self) -> PositionInFile:
+105	        """
+106	        Get the start position of the symbol body, raising an error if it is not defined.
+107	        """
+108	        pos = self.get_body_start_position()
+109	        if pos is None:
+110	            raise ValueError(f"Body start position is not defined for {self}")
+111	        return pos
+112	
+113	    def get_body_end_position_or_raise(self) -> PositionInFile:
+114	        """
+115	        Get the end position of the symbol body, raising an error if it is not defined.
+116	        """
+117	        pos = self.get_body_end_position()
+118	        if pos is None:
+119	            raise ValueError(f"Body end position is not defined for {self}")
+120	        return pos
+121	
+122	    @abstractmethod
+123	    def is_neighbouring_definition_separated_by_empty_line(self) -> bool:
+124	        """
+125	        :return: whether a symbol definition of this symbol's kind is usually separated from the
+126	            previous/next definition by at least one empty line.
+127	        """
+128	
+129	
+130	class NamePathComponent:
+
+... (gap) ...
+
+568	    """
+569	
+570	    @classmethod
+571	    def from_lsp_reference(cls, reference: LSPReferenceInSymbol) -> Self:
+572	        return cls(symbol=LanguageServerSymbol(reference.symbol), line=reference.line, character=reference.character)
+573	
+574	    def get_relative_path(self) -> str | None:
+575	        return self.symbol.location.relative_path
+
+... (gap) ...
+
+1145	        return {k: [LanguageServerSymbol(us) for us in v] for k, v in path_to_unified_symbols.items()}
+1146	
+1147	
+1148	class JetBrainsSymbol(Symbol):
+1149	    def __init__(self, symbol_dict: jb.SymbolDTO, project: Project) -> None:
+1150	        """
+1151	        :param symbol_dict: dictionary as returned by the JetBrains plugin client.
+1152	        """
+1153	        self._project = project
+1154	        self._dict = symbol_dict
+1155	        self._cached_file_content: str | None = None
+1156	        self._cached_body_start_position: PositionInFile | None = None
+1157	        self._cached_body_end_position: PositionInFile | None = None
+1158	        self._cached_body = symbol_dict.get("body")
+1159	
+1160	    def _tostring_includes(self) -> list[str]:
+1161	        return []
+1162	
+1163	    def _tostring_additional_entries(self) -> dict[str, Any]:
+1164	        return dict(name_path=self.get_name_path(), relative_path=self.get_relative_path(), type=self._dict["type"])
+1165	
+1166	    def get_name_path(self) -> str:
+1167	        return self._dict["name_path"]
+1168	
+1169	    def get_relative_path(self) -> str:
+1170	        return self._dict["relative_path"]
+1171	
+1172	    def get_file_content(self) -> str:
+1173	        if self._cached_file_content is None:
+1174	            path = os.path.join(self._project.project_root, self.get_relative_path())
+1175	            with open(path, encoding=self._project.project_config.encoding) as f:
+1176	                self._cached_file_content = f.read()
+1177	        return self._cached_file_content
+1178	
+1179	    def is_position_in_file_available(self) -> bool:
+1180	        return "text_range" in self._dict
+1181	
+1182	    def get_body_start_position(self) -> PositionInFile | None:
+1183	        if not self.is_position_in_file_available():
+1184	            return None
+1185	        if self._cached_body_start_position is None:
+1186	            pos = self._dict["text_range"]["start_pos"]
+1187	            line, col = pos["line"], pos["col"]
+1188	            self._cached_body_start_position = PositionInFile(line=line, col=col)
+1189	        return self._cached_body_start_position
+1190	
+1191	    def get_body_end_position(self) -> PositionInFile | None:
+1192	        if not self.is_position_in_file_available():
+1193	            return None
+1194	        if self._cached_body_end_position is None:
+1195	            pos = self._dict["text_range"]["end_pos"]
+1196	            line, col = pos["line"], pos["col"]
+1197	            self._cached_body_end_position = PositionInFile(line=line, col=col)
+1198	        return self._cached_body_end_position
+1199	
+1200	    @property
+1201	    def body(self) -> str | None:
+1202	        if self._cached_body is not None:
+1203	            return self._cached_body
+1204	        start_position = self.get_body_start_position()
+1205	        if start_position is None:
+1206	            return None
+1207	        end_position = self.get_body_end_position()
+1208	        assert end_position is not None, "If start position is available, end position should also be available. Symbol: {self}"
+1209	        file_content = self.get_file_content()
+1210	        self._cached_body = TextUtils.get_text_in_range(
+1211	            file_content, start_position.line, start_position.col, end_position.line, end_position.col
+1212	        )
+1213	        return self._cached_body
+1214	
+1215	    @property
+1216	    def name(self) -> str:
+1217	        return self._dict["name_path"].split("/")[-1]
+1218	
+1219	    def is_neighbouring_definition_separated_by_empty_line(self) -> bool:
+1220	        # NOTE: Symbol types cannot really be differentiated, because types are not handled in a language-agnostic way.
+1221	        return False
+1222	
+1223	
+1224	TSymbolDict = TypeVar("TSymbolDict")
+```
+
+#### research/2026-06-23-codegraph-ecosystem/repos/blarify/blarify/code_references/scip_helper.py — MockScip(class), Index(class), Document(class), Occurrence(class), __init__(method), symbol(method), symbol_roles(method), range(method), SymbolRole(class)
+
+```python
+61	
+62	if not scip_available:
+63	    # Create a mock scip module for type hints and graceful degradation
+64	    class MockScip:
+65	        class Index:
+66	            def __init__(self):
+67	                pass
+68	
+69	            def ParseFromString(self, data: bytes) -> None:
+70	                pass
+71	
+72	            @property
+73	            def documents(self):
+74	                return []
+75	
+76	        class Document:
+77	            def __init__(self):
+78	                pass
+79	
+80	            @property
+81	            def relative_path(self):
+82	                return ""
+83	
+84	            @property
+85	            def occurrences(self):
+86	                return []
+87	
+88	        class Occurrence:
+89	            def __init__(self):
+90	                pass
+91	
+92	            @property
+93	            def symbol(self):
+94	                return ""
+95	
+96	            @property
+97	            def symbol_roles(self):
+98	                return 0
+99	
+100	            @property
+101	            def range(self):
+102	                return []
+103	
+104	        class SymbolRole:
+105	            Definition = 1
+106	            ReadAccess = 8
+107	            WriteAccess = 4
+108	            Import = 2
+109	
+110	    scip = MockScip()
+111	    logger.warning(
+```
+
+
+... (output truncated to budget; the source above is complete and verbatim — treat it as already Read. For any area not covered, run another omniweave_explore with the specific names — do NOT Read these files.)

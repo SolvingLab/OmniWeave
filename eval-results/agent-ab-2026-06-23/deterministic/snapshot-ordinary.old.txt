@@ -1,0 +1,555 @@
+## Exploration: ToolHandler
+
+Found 173 symbols across 25 files.
+
+### Blast radius — what depends on these (update/verify before editing)
+
+- `ToolHandler` (research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/tools.ts:691) — 29 callers in `research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/engine.ts`, `research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/index.ts`, `research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/bin/codegraph.ts`, `src/bin/omniweave.ts`; tests: `research/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/adaptive-explore-sizing.test.ts`, `research/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/concurrent-locking.test.ts`, `research/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/config-secret-redaction.test.ts`, `research/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/dynamic-boundaries.test.ts` +17
+- `ToolHandler` (src/mcp/tools.ts:957) — 2 callers; tests: `__tests__/scip-import.test.ts`, `__tests__/snapshot-import.test.ts`
+- `ToolHandler` (scripts/agent-eval/probe-context.mjs:15) — 1 caller in `scripts/agent-eval/probe-context.mjs`; ⚠️ no covering tests found
+- `ToolHandler` (scripts/agent-eval/probe-explore.mjs:20) — 1 caller in `scripts/agent-eval/probe-explore.mjs`; ⚠️ no covering tests found
+- `ToolHandler` (scripts/agent-eval/probe-node.mjs:14) — 1 caller in `scripts/agent-eval/probe-node.mjs`; ⚠️ no covering tests found
+
+### Relationships
+
+**extends:**
+- Tool → Component
+- ExecuteShellCommandTool → Tool
+- OpenDashboardTool → Tool
+- ActivateProjectTool → Tool
+- RemoveProjectTool → Tool
+- GetCurrentConfigTool → Tool
+- ReadFileTool → Tool
+- ListDirTool → Tool
+- FindFileTool → Tool
+- SearchForPatternTool → Tool
+- JetBrainsFindSymbolTool → Tool
+- JetBrainsMoveTool → Tool
+- JetBrainsSafeDeleteTool → Tool
+- JetBrainsInlineSymbol → Tool
+- JetBrainsFindReferencingSymbolsTool → Tool
+- ... and 23 more
+
+**calls:**
+- handler → getProgress
+- handle → handler
+- localApiServer → handler
+- dispatch → handler
+- calculate → handler
+- handle → get
+- handler → push
+- handleCallers → groupDefinitions
+- handleCallees → groupDefinitions
+- handleImpact → groupDefinitions
+- worktreeMismatchFor → getCodeGraph
+- withStalenessNotice → getCodeGraph
+- handleSearch → getCodeGraph
+- handleCallers → getCodeGraph
+- handleCallees → getCodeGraph
+- ... and 128 more
+
+**references:**
+- handler → ToolHandler
+- getToolHandler → ToolHandler
+
+### Source Code
+
+> The code below is the **verbatim, current on-disk source** of these files — re-read from disk on this call and line-numbered, byte-for-byte identical to what the Read tool returns. It is NOT a summary, outline, or stale cache. Treat each block as a Read you have already performed: do not Read a file shown here.
+
+#### src/mcp/tools.ts — calls(calls), references(references), push(calls), getOmniWeave(calls), validateString(calls), relationshipOmissionNote(calls), instantiates(instantiates), freshen(calls), validateOptionalPath(calls), groupDefinitions(calls), toolAllowlist(calls), collectCallSurfaceRelationships(calls), definitionHeading(calls), constructor(method), setDefaultOmniWeave(method), +38 more
+
+```typescript
+975	  // subsequent calls don't pay any cost.
+976	  private catchUpGate: Promise<void> | null = null;
+977	
+978	  constructor(private cg: OmniWeave | null) {}
+979	
+980	  /**
+981	   * Update the default OmniWeave instance (e.g. after lazy initialization)
+982	   */
+983	  setDefaultOmniWeave(cg: OmniWeave): void {
+984	    this.cg = cg;
+985	  }
+986	
+987	  /**
+988	   * Engine-only: register the catch-up sync promise so the next `execute()`
+989	   * call awaits it before serving. The handler swallows rejections (the
+990	   * engine logs them) so a sync failure never propagates as a tool error;
+991	   * we still want to serve a best-effort result over the same potentially-
+992	   * stale data, which is what would have happened without the gate.
+993	   */
+994	  setCatchUpGate(p: Promise<void> | null): void {
+995	    this.catchUpGate = p;
+996	  }
+997	
+998	  /**
+999	   * Record the directory the server tried to resolve the default project from.
+1000	   * Used only to make the "no default project" error actionable.
+1001	   */
+1002	  setDefaultProjectHint(searchedPath: string): void {
+1003	    this.defaultProjectHint = searchedPath;
+1004	  }
+1005	
+1006	  /**
+1007	   * Whether a default OmniWeave instance is available
+1008	   */
+1009	  hasDefaultOmniWeave(): boolean {
+1010	    return this.cg !== null;
+1011	  }
+1012	
+1013	  /**
+1014	   * Optional allowlist of exposed tools, parsed from the OMNIWEAVE_MCP_TOOLS
+1015	   * env var (comma-separated short names, e.g. "trace,search,node,context").
+1016	   * Unset/empty → every tool is exposed. Lets an operator (or an A/B harness)
+1017	   * trim the tool surface without rebuilding the client config; the ablated
+1018	   * tool is then truly absent from ListTools rather than merely denied on call.
+1019	   * Matching is on the short form, so "node" and "omniweave_node" both work.
+1020	   */
+1021	  private toolAllowlist(): Set<string> | null {
+1022	    return parseToolAllowlist();
+1023	  }
+1024	
+1025	  /** Whether a tool name passes the OMNIWEAVE_MCP_TOOLS allowlist (if any). */
+1026	  private isToolAllowed(name: string): boolean {
+1027	    const allow = this.toolAllowlist();
+1028	    return !allow || allow.has(shortToolName(name));
+1029	  }
+1030	
+1031	  /**
+1032	   * Get tool definitions with dynamic descriptions based on project size.
+1033	   * The omniweave_explore tool description includes a budget recommendation
+1034	   * scaled to the number of indexed files. Honors the OMNIWEAVE_MCP_TOOLS
+1035	   * allowlist so a trimmed surface is reflected in ListTools.
+1036	   */
+1037	  getTools(): ToolDefinition[] {
+1038	    const allow = this.toolAllowlist();
+1039	    // No explicit allowlist → the default 5-tool surface (see
+1040	    // DEFAULT_MCP_TOOLS for the evidence). An allowlist replaces the
+1041	    // default entirely, so any defined tool can be re-enabled.
+1042	    let visible = visibleToolsForAllowlist(allow);
+1043	    if (!this.cg) return visible;
+1044	
+1045	    try {
+1046	      const stats = this.cg.getStats();
+1047	
+1048	      // Tiny-repo tool gating: on projects under TINY_REPO_FILE_THRESHOLD
+1049	      // files, only expose the core trio (search, node, explore) — one
+1050	      // below even the 4-tool default: at this scale callers, too, reduces
+1051	      // to one grep. (Historical note: the audit below ran when context and
+1052	      // trace still existed; its "5 core tools" are today's trio.)
+1053	      //
+1054	      // n=2 audits ruled out cutting below 5 tools:
+1055	      // - 3-tool gate (search + context + trace): cost regressed on
+1056	      //   cobra/ky/sinatra. The agent fell back to raw Reads to cover
+1057	      //   what omniweave_node + omniweave_explore would have answered.
+1058	      // - 1-tool gate (search only): catastrophic regression — express
+1059	      //   went from -43% WIN to +107% LOSS. With only search, the agent
+1060	      //   can't navigate the call graph structurally and reads everything.
+1061	      //
+1062	      // 5 is the empirical lower bound. Tools beyond search/context/
+1063	      // node/explore/trace pay overhead that the agent doesn't recoup
+1064	      // on tiny-repo flow questions.
+1065	      // ITER4: raise threshold 150 → 500 so single-file frameworks
+1066	      // (sinatra at 159, slim_framework around 200) also get the
+1067	      // 5-tool surface. The empirical 5-tool floor was set on <150
+1068	      // probes; iter3 measurement showed sinatra is structurally the
+1069	      // SAME problem as cobra (single-file WITHOUT-arm Read wins),
+1070	      // so it deserves the same gating.
+1071	      return toolsForSurface(allow, stats.fileCount);
+1072	    } catch {
+1073	      return visible;
+1074	    }
+1075	  }
+1076	
+1077	  /**
+1078	   * Get OmniWeave instance for a project
+1079	   *
+1080	   * If projectPath is provided, opens that project's OmniWeave (cached).
+1081	   * Otherwise returns the default OmniWeave instance.
+1082	   *
+1083	   * Walks up parent directories to find the nearest .omniweave/ folder,
+1084	   * similar to how git finds .git/ directories.
+1085	   */
+1086	  private getOmniWeave(projectPath?: string): OmniWeave {
+1087	    if (!projectPath) {
+1088	      if (!this.cg) {
+1089	        const searched = this.defaultProjectHint ?? process.cwd();
+1090	        throw new NotIndexedError(
+1091	          'No OmniWeave project is loaded for this session.\n' +
+1092	          `Searched for a .omniweave/ directory starting from: ${searched}\n` +
+1093	          'If this project IS indexed, this is a working-directory detection issue: ' +
+1094	          "the MCP client launched the server outside your project and didn't report the " +
+1095	          'workspace root. Fix it either way:\n' +
+1096	          '  • Pass projectPath to the tool call, e.g. projectPath: "/absolute/path/to/your/project"\n' +
+1097	          '  • Or add --path to the server\'s MCP config args: ["serve", "--mcp", "--path", "/absolute/path/to/your/project"]\n' +
+1098	          'If the project simply has no index, continue with your built-in tools (Read/Grep/Glob) ' +
+1099	          "and don't call omniweave again this session — the user can run 'omniweave init' to enable it."
+1100	        );
+1101	      }
+1102	      return this.freshen(this.cg);
+1103	    }
+1104	
+1105	    // Reject sensitive system directories before opening. Only validate a
+1106	    // path that actually exists — a nested or not-yet-created sub-path of a
+1107	    // real project must still be allowed to resolve UP to its .omniweave/
+1108	    // root below (issue #238), so we don't run the existence-checking
+1109	    // validator on paths that are meant to walk up.
+1110	    if (existsSync(projectPath)) {
+1111	      const pathError = validateProjectPath(projectPath);
+1112	      if (pathError) {
+1113	        throw new PathRefusalError(pathError);
+1114	      }
+1115	    }
+1116	
+1117	    // Always re-resolve the nearest .omniweave/. A long-lived daemon can first
+1118	    // see a nested worktree before it has its own index, then keep serving the
+1119	    // parent checkout forever if we cache by the original input path.
+1120	    const resolvedRoot = findNearestOmniWeaveRoot(projectPath);
+1121	
+1122	    if (!resolvedRoot) {
+1123	      throw new NotIndexedError(
+1124	        `The project at ${projectPath} isn't indexed with omniweave (no .omniweave/ directory found ` +
+1125	        'walking up from it), so omniweave cannot query it. Use your built-in tools (Read/Grep/Glob) ' +
+1126	        "for that codebase instead, and don't call omniweave for it again this session. " +
+1127	        "Indexing is the user's decision — they can run 'omniweave init' in that project to enable it."
+1128	      );
+1129	    }
+1130	
+1131	    // If the path resolves to the default project, reuse the already-open
+1132	    // default instance rather than opening a SECOND connection to the same DB.
+1133	    // A duplicate connection serializes reads against the watcher's auto-sync
+1134	    // writes; on the wasm backend (no WAL) that surfaces as intermittent
+1135	    // "database is locked" on concurrent tool calls. See issue #238. The
+1136	    // default instance is owned/closed by the server, so it's never cached.
+1137	    if (this.cg && this.cg.getProjectRoot() === resolvedRoot) {
+1138	      return this.freshen(this.cg);
+1139	    }
+1140	
+1141	    const cached = this.projectCache.get(resolvedRoot);
+1142	    if (cached) return this.freshen(cached);
+1143	
+1144	    const cg = loadOmniWeave().openSync(resolvedRoot);
+1145	    this.projectCache.set(resolvedRoot, cg);
+1146	    return cg;
+1147	  }
+1148	
+1149	  private freshen(cg: OmniWeave): OmniWeave {
+1150	    try {
+1151	      if (cg.reopenIfReplaced()) {
+1152	        process.stderr.write(
+1153	          '[OmniWeave MCP] The index was replaced on disk; reopened the live database in place.\n'
+1154	        );
+1155	      }
+1156	    } catch {
+1157	      // Best-effort self-heal. A failed reopen must not break the tool call.
+1158	    }
+1159	    return cg;
+1160	  }
+1161	
+1162	  /**
+1163	   * Close all cached project connections
+1164	   */
+1165	  closeAll(): void {
+1166	    for (const cg of this.projectCache.values()) {
+1167	      cg.close();
+1168	    }
+1169	    this.projectCache.clear();
+1170	    this.worktreeMismatchCache.clear();
+1171	  }
+1172	
+1173	  /**
+1174	   * Validate that a value is a non-empty string within length bounds.
+1175	   *
+1176	   * The `maxLength` cap protects against MCP clients that ship huge
+1177	   * payloads (10MB+ query strings either by accident or maliciously).
+1178	   * Without this, a single oversized input can pin the FTS5 index or
+1179	   * exhaust memory before any real work runs.
+1180	   */
+1181	  private validateString(
+1182	    value: unknown,
+1183	    name: string,
+1184	    maxLength: number = MAX_INPUT_LENGTH
+1185	  ): string | ToolResult {
+1186	    if (typeof value !== 'string' || value.length === 0) {
+1187	      return this.errorResult(`${name} must be a non-empty string`);
+1188	    }
+1189	    if (value.length > maxLength) {
+1190	      return this.errorResult(
+1191	        `${name} exceeds maximum length of ${maxLength} characters (got ${value.length})`
+1192	      );
+1193	    }
+1194	    return value;
+1195	  }
+1196	
+1197	  /**
+1198	   * Validate an optional path-like string input. Returns the value if
+1199	   * valid (or undefined), or a ToolResult with the error.
+1200	   */
+1201	  private validateOptionalPath(
+1202	    value: unknown,
+1203	    name: string
+1204	  ): string | undefined | ToolResult {
+1205	    if (value === undefined || value === null) return undefined;
+1206	    if (typeof value !== 'string') {
+1207	      return this.errorResult(`${name} must be a string`);
+1208	    }
+1209	    if (value.length > MAX_PATH_LENGTH) {
+1210	      return this.errorResult(
+1211	        `${name} exceeds maximum length of ${MAX_PATH_LENGTH} characters (got ${value.length})`
+1212	      );
+1213	    }
+1214	    return value;
+1215	  }
+1216	
+1217	  /**
+1218	   * Cached git worktree/index mismatch for a tool call's effective project.
+1219	   *
+1220	   * The "effective project" is what the request targets: an explicit
+1221	   * `projectPath` arg, else the directory the server resolved its default
+1222	   * project from (`defaultProjectHint`), else cwd. Memoized per start path —
+1223	   * see `worktreeMismatchCache`. Best-effort: if the project can't be resolved
+1224	   * (e.g. nothing initialized yet), it reports "no mismatch" so a tool is never
+1225	   * broken by this check.
+1226	   */
+1227	  private worktreeMismatchFor(projectPath?: string): WorktreeIndexMismatch | null {
+1228	    const startPath = projectPath ?? this.defaultProjectHint ?? process.cwd();
+1229	    let indexRoot: string;
+1230	    try {
+1231	      indexRoot = this.getOmniWeave(projectPath).getProjectRoot();
+1232	    } catch {
+1233	      // No resolvable project (or any other resolution error) → nothing to warn.
+1234	      return null;
+1235	    }
+1236	
+1237	    const cacheKey = `${startPath}\0${indexRoot}`;
+1238	    const cached = this.worktreeMismatchCache.get(cacheKey);
+1239	    if (cached !== undefined) return cached;
+1240	
+1241	    const mismatch = detectWorktreeIndexMismatch(startPath, indexRoot);
+1242	    this.worktreeMismatchCache.set(cacheKey, mismatch);
+1243	    return mismatch;
+1244	  }
+1245	
+1246	  /**
+1247	   * Prefix a successful read-tool result with a compact worktree-mismatch
+1248	   * notice when the resolved index belongs to a different git working tree than
+1249	   * the caller's (issue #155). Without this, an agent in a nested worktree
+1250	   * silently trusts main-branch results. No-op on error results and when there
+1251	   * is no mismatch. `omniweave_status` is excluded — it embeds its own verbose
+1252	   * warning — so it stays out of this path.
+1253	   */
+1254	  private withWorktreeNotice(result: ToolResult, projectPath?: string): ToolResult {
+1255	    if (result.isError) return result;
+1256	    const mismatch = this.worktreeMismatchFor(projectPath);
+1257	    if (!mismatch) return result;
+1258	
+1259	    const notice = worktreeMismatchNotice(mismatch);
+1260	    const [first, ...rest] = result.content;
+1261	    if (first && first.type === 'text') {
+1262	      return { ...result, content: [{ type: 'text', text: `${notice}\n\n${first.text}` }, ...rest] };
+1263	    }
+1264	    return result;
+1265	  }
+1266	
+1267	  /**
+1268	   * Annotate a successful read-tool result with per-file staleness — the
+1269	   * non-blocking answer to issue #403. The file watcher tracks every event
+1270	   * it sees per path; here we intersect "files referenced in this response"
+1271	   * against that pending set and prepend a compact banner so the agent can
+1272	   * fall back to Read for those *specific* files without waiting for the
+1273	   * debounced sync to fire. Other pending files in the project (not
+1274	   * referenced by this response) get a small footer so the agent has a
+1275	   * complete picture without bloating the banner.
+1276	   *
+1277	   * Cost when nothing is pending — the common case — is one boolean check.
+1278	   * No I/O, no parsing of markdown beyond a per-pending-file substring scan.
+1279	   */
+1280	  private withStalenessNotice(
+1281	    result: ToolResult,
+1282	    projectPath?: string,
+1283	    outputSurface: OutputSurface = 'mcp'
+1284	  ): ToolResult {
+1285	    if (result.isError) return result;
+1286	
+1287	    let cg: OmniWeave;
+1288	    try {
+1289	      cg = this.getOmniWeave(projectPath);
+1290	    } catch {
+1291	      return result; // no default project — leave as is
+1292	    }
+1293	
+1294	    // Cross-project `projectPath` calls open a cached OmniWeave WITHOUT a
+1295	    // watcher (watchers are only attached to the default session project).
+1296	    // When the cross-project path happens to be the same project as the
+1297	    // default cg, the cached instance is the wrong one — its pendingFiles is
+1298	    // permanently empty. Detect the equal-path case and prefer the default
+1299	    // cg so the staleness signal still fires when an agent passes the
+1300	    // explicit projectPath form of its own project.
+1301	    if (this.cg && cg !== this.cg) {
+1302	      try {
+1303	        const sameProject =
+1304	          resolvePath(this.cg.getProjectRoot()) === resolvePath(cg.getProjectRoot());
+1305	        if (sameProject) cg = this.cg;
+1306	      } catch {
+1307	        /* getProjectRoot may throw on a closed instance — leave cg as is */
+1308	      }
+1309	    }
+1310	
+1311	    const [first, ...rest] = result.content;
+1312	    if (!first || first.type !== 'text') return result;
+1313	    const text = first.text;
+1314	
+1315	    // Defensive: some test fakes inject a partial OmniWeave stub without the
+1316	    // newer pending-files API. Treat missing/throwing as "no pending files."
+1317	    let pending: PendingFile[] = [];
+1318	    try {
+1319	      pending = cg.getPendingFiles?.() ?? [];
+1320	    } catch {
+1321	      return result;
+1322	    }
+1323	
+1324	    if (pending.length > 0) {
+1325	      if (isExploreNoResultText(text)) {
+1326	        const composed = [formatStaleNoResultNotice(pending, outputSurface), text].join('\n\n');
+1327	        return { ...result, content: [{ type: 'text', text: composed }, ...rest] };
+1328	      }
+1329	
+1330	      const inResponse: PendingFile[] = [];
+1331	      const elsewhere: PendingFile[] = [];
+1332	      for (const p of pending) {
+1333	        // Substring match against the project-relative POSIX path — that's
+1334	        // exactly the format both the watcher and every omniweave response
+1335	        // emit, so a plain includes() is sufficient and avoids regex pitfalls.
+1336	        if (responseMentionsPath(text, p.path)) inResponse.push(p);
+1337	        else elsewhere.push(p);
+1338	      }
+1339	
+1340	      let banner = '';
+1341	      if (inResponse.length > 0) {
+1342	        banner = formatStaleBanner(inResponse, outputSurface);
+1343	      }
+1344	      let footer = '';
+1345	      if (elsewhere.length > 0) {
+1346	        footer = formatStaleFooter(elsewhere);
+1347	      }
+1348	      if (!banner && !footer) return result;
+1349	
+1350	      const composed = [banner, text, footer].filter(Boolean).join('\n\n');
+1351	      return { ...result, content: [{ type: 'text', text: composed }, ...rest] };
+1352	    }
+1353	
+1354	    let watching = false;
+1355	    try {
+1356	      watching = cg.isWatching?.() ?? false;
+1357	    } catch {
+1358	      watching = false;
+1359	    }
+1360	    if (watching) return result;
+1361	
+1362	    let changedEntries: ChangedFileEntry[] = [];
+1363	    try {
+1364	      const changes = cg.getChangedFiles?.();
+1365	      if (changes) changedEntries = changedFileEntries(changes);
+1366	    } catch {
+1367	      return result;
+1368	    }
+1369	    if (changedEntries.length === 0) return result;
+1370	
+1371	    if (isExploreNoResultText(text)) {
+1372	      const composed = [formatChangedIndexNoResultNotice(changedEntries, outputSurface), text].join('\n\n');
+1373	      return { ...result, content: [{ type: 'text', text: composed }, ...rest] };
+1374	    }
+1375	
+1376	    const inResponse: ChangedFileEntry[] = [];
+1377	    const elsewhere: ChangedFileEntry[] = [];
+1378	    for (const p of changedEntries) {
+1379	      if (responseMentionsPath(text, p.path)) inResponse.push(p);
+1380	      else elsewhere.push(p);
+1381	    }
+1382	
+1383	    let banner = '';
+1384	    if (inResponse.length > 0) {
+1385	      banner = formatChangedIndexBanner(inResponse, outputSurface);
+1386	    }
+1387	    let footer = '';
+1388	    if (elsewhere.length > 0) {
+1389	      footer = formatChangedIndexFooter(elsewhere);
+1390	    }
+1391	
+1392	    if (!banner && !footer) return result;
+1393	
+1394	    const composed = [banner, text, footer].filter(Boolean).join('\n\n');
+1395	    return { ...result, content: [{ type: 'text', text: composed }, ...rest] };
+1396	  }
+1397	
+1398	  private withSnapshotImportNotice(result: ToolResult, projectPath?: string): ToolResult {
+1399	    if (result.isError) return result;
+1400	
+1401	    let cg: OmniWeave;
+1402	    try {
+1403	      cg = this.getOmniWeave(projectPath);
+1404	    } catch {
+1405	      return result;
+1406	    }
+1407	
+1408	    if (this.cg && cg !== this.cg) {
+1409	      try {
+1410	        if (resolvePath(this.cg.getProjectRoot()) === resolvePath(cg.getProjectRoot())) {
+1411	          cg = this.cg;
+1412	        }
+1413	      } catch {
+1414	        /* closed instance — leave cg as is */
+1415	      }
+1416	    }
+1417	
+1418	    let snapshotImport;
+1419	    try {
+1420	      snapshotImport = cg.getSnapshotImportInfo?.() ?? null;
+1421	    } catch {
+1422	      return result;
+1423	    }
+1424	    if (!snapshotImport) return result;
+1425	
+1426	    const [first, ...rest] = result.content;
+1427	    if (!first || first.type !== 'text') return result;
+1428	
+1429	    const notice = `> ⚠ ${describeSnapshotImportWarning(snapshotImport)}`;
+1430	    return { ...result, content: [{ type: 'text', text: `${notice}\n\n${first.text}` }, ...rest] };
+1431	  }
+1432	
+1433	  /**
+1434	   * Execute a tool by name
+1435	   */
+1436	  async execute(
+1437	    toolName: string,
+1438	    args: Record<string, unknown>,
+1439	    options: ToolExecutionOptions = {},
+1440	  ): Promise<ToolResult> {
+1441	    try {
+1442	      const outputSurface: OutputSurface = options.outputSurface === 'cli' ? 'cli' : 'mcp';
+1443	      // Block the first tool call on the engine's post-open reconcile so we
+1444	      // never serve rows for files deleted/edited while no MCP server was
+1445	      // running. The gate is cleared after first await — subsequent calls
+1446	      // pay nothing. Catch-up failures are logged by the engine; we
+1447	      // proceed regardless so a transient sync error never breaks tools.
+1448	      if (this.catchUpGate) {
+1449	        const gate = this.catchUpGate;
+1450	        this.catchUpGate = null;
+1451	        try { await gate; } catch { /* engine already logged */ }
+1452	      }
+1453	      // MCP only: honor the optional tool allowlist defensively even if a
+1454	      // client cached tools/list. CLI commands are first-class shell surfaces
+1455	      // and must not inherit MCP experiment knobs from the environment.
+1456	      if (options.enforceToolAllowlist !== false && !this.isToolAllowed(toolName)) {
+1457	        return this.errorResult(`Tool ${toolName} is disabled via OMNIWEAVE_MCP_TOOLS`);
+1458	      }
+1459	      // Cross-cutting input validation. All tools accept an optional
+1460	      // `projectPath` and most accept either `query`, `task`, or
+1461	      // `symbol` — bound their lengths centrally so individual handlers
+1462	      // can stay focused on tool-specific logic.
+1463	      const pathCheck = this.validateOptionalPath(args.projectPath, 'projectPath');
+1464	      if (typeof pathCheck === 'object' && pathCheck !== undefined) {
+1465	        return pathCheck;
+1466	      }
+
+... (output truncated to budget; the source above is complete and verbatim — treat it as already Read. For any area not covered, run another omniweave_explore with the specific names — do NOT Read these files.)

@@ -1,0 +1,741 @@
+## Exploration: vector embedding semantic similarity search index
+
+Candidate graph: 178 symbols across 12 source-candidate files. Source shown below covers 7 files; 5 candidate files not shown in this call.
+
+### Source Code
+
+> The code blocks below are **verbatim, current on-disk source ranges** — re-read from disk on this call and line-numbered, byte-for-byte identical to what the Read tool returns for those ranges. They are NOT summaries, outlines, or stale cache. Treat each complete block shown here as a Read you have already performed.
+
+#### src/errors.ts — VectorError(class), SearchError(class), OmniWeaveError(class), constructor(method), FileError(class), ParseError(class), DatabaseError(class), ConfigError(class)
+
+```typescript
+1	/**
+2	 * OmniWeave Error Classes
+3	 *
+4	 * Custom error types for better error handling and debugging.
+5	 *
+6	 * @module errors
+7	 *
+8	 * @example
+9	 * ```typescript
+10	 * import { FileError, ParseError, setLogger, silentLogger } from 'omniweave';
+11	 *
+12	 * // Catch specific error types
+13	 * try {
+14	 *   await cg.indexAll();
+15	 * } catch (error) {
+16	 *   if (error instanceof FileError) {
+17	 *     console.log(`File error at ${error.filePath}: ${error.message}`);
+18	 *   } else if (error instanceof ParseError) {
+19	 *     console.log(`Parse error at ${error.filePath}:${error.line}`);
+20	 *   }
+21	 * }
+22	 *
+23	 * // Disable logging for tests
+24	 * setLogger(silentLogger);
+25	 * ```
+26	 */
+27	
+28	/**
+29	 * Base error class for all OmniWeave errors.
+30	 *
+31	 * All OmniWeave-specific errors extend this class, allowing you to catch
+32	 * all OmniWeave errors with a single catch block.
+33	 *
+34	 * @example
+35	 * ```typescript
+36	 * try {
+37	 *   await cg.indexAll();
+38	 * } catch (error) {
+39	 *   if (error instanceof OmniWeaveError) {
+40	 *     console.log(`OmniWeave error [${error.code}]: ${error.message}`);
+41	 *   }
+42	 * }
+43	 * ```
+44	 */
+45	export class OmniWeaveError extends Error {
+46	  /** Error code for categorization (e.g., 'FILE_ERROR', 'PARSE_ERROR') */
+47	  readonly code: string;
+48	  /** Additional context about the error */
+49	  readonly context?: Record<string, unknown>;
+50	
+51	  constructor(message: string, code: string, context?: Record<string, unknown>) {
+52	    super(message);
+53	    this.name = 'OmniWeaveError';
+54	    this.code = code;
+55	    this.context = context;
+56	
+57	    // Maintain proper stack trace for V8
+58	    if (Error.captureStackTrace) {
+59	      Error.captureStackTrace(this, this.constructor);
+60	    }
+61	  }
+62	}
+63	
+64	/**
+65	 * Error reading or accessing files
+66	 */
+67	export class FileError extends OmniWeaveError {
+68	  readonly filePath: string;
+69	
+70	  constructor(message: string, filePath: string, cause?: Error) {
+71	    super(message, 'FILE_ERROR', { filePath, cause: cause?.message });
+72	    this.name = 'FileError';
+73	    this.filePath = filePath;
+74	    if (cause) {
+75	      this.cause = cause;
+76	    }
+77	  }
+78	}
+79	
+80	/**
+81	 * Error parsing source code
+82	 */
+83	export class ParseError extends OmniWeaveError {
+84	  readonly filePath: string;
+85	  readonly line?: number;
+86	  readonly column?: number;
+87	
+88	  constructor(
+89	    message: string,
+90	    filePath: string,
+91	    options?: { line?: number; column?: number; cause?: Error }
+92	  ) {
+93	    super(message, 'PARSE_ERROR', {
+94	      filePath,
+95	      line: options?.line,
+96	      column: options?.column,
+97	      cause: options?.cause?.message,
+98	    });
+99	    this.name = 'ParseError';
+100	    this.filePath = filePath;
+101	    this.line = options?.line;
+102	    this.column = options?.column;
+103	    if (options?.cause) {
+104	      this.cause = options.cause;
+105	    }
+106	  }
+107	}
+108	
+109	/**
+110	 * Error with database operations
+111	 */
+112	export class DatabaseError extends OmniWeaveError {
+113	  readonly operation: string;
+114	
+115	  constructor(message: string, operation: string, cause?: Error) {
+116	    super(message, 'DATABASE_ERROR', { operation, cause: cause?.message });
+117	    this.name = 'DatabaseError';
+118	    this.operation = operation;
+119	    if (cause) {
+120	      this.cause = cause;
+121	    }
+122	  }
+123	}
+124	
+125	/**
+126	 * Error with search operations
+127	 */
+128	export class SearchError extends OmniWeaveError {
+129	  readonly query: string;
+130	
+131	  constructor(message: string, query: string, cause?: Error) {
+132	    super(message, 'SEARCH_ERROR', { query, cause: cause?.message });
+133	    this.name = 'SearchError';
+134	    this.query = query;
+135	    if (cause) {
+136	      this.cause = cause;
+137	    }
+138	  }
+139	}
+140	
+141	/**
+142	 * Reserved for optional vector sidecars; core OmniWeave does not run embeddings.
+143	 */
+144	export class VectorError extends OmniWeaveError {
+145	  constructor(message: string, operation: string, cause?: Error) {
+146	    super(message, 'VECTOR_ERROR', { operation, cause: cause?.message });
+147	    this.name = 'VectorError';
+148	    if (cause) {
+149	      this.cause = cause;
+150	    }
+151	  }
+152	}
+153	
+154	/**
+155	 * Error with configuration
+156	 */
+157	export class ConfigError extends OmniWeaveError {
+158	  constructor(message: string, details?: Record<string, unknown>) {
+159	    super(message, 'CONFIG_ERROR', details);
+160	    this.name = 'ConfigError';
+161	  }
+162	}
+163	
+164	/**
+165	 * Simple logger for OmniWeave operations
+166	 *
+167	 * By default, logs to console.warn for warnings and console.error for errors.
+168	 * Can be configured to use custom logging.
+169	 */
+170	export interface Logger {
+171	  debug(message: string, context?: Record<string, unknown>): void;
+172	  warn(message: string, context?: Record<string, unknown>): void;
+173	  error(message: string, context?: Record<string, unknown>): void;
+174	}
+175	
+176	/**
+177	 * Default console-based logger
+178	 */
+179	export const defaultLogger: Logger = {
+180	  debug(message: string, context?: Record<string, unknown>): void {
+181	    if (process.env.OMNIWEAVE_DEBUG) {
+182	      console.debug(`[OmniWeave] ${message}`, context ?? '');
+183	    }
+184	  },
+185	  warn(message: string, context?: Record<string, unknown>): void {
+186	    console.warn(`[OmniWeave] ${message}`, context ?? '');
+187	  },
+188	  error(message: string, context?: Record<string, unknown>): void {
+189	    console.error(`[OmniWeave] ${message}`, context ?? '');
+190	  },
+191	};
+192	
+193	/**
+194	 * Silent logger (no output) - useful for tests
+195	 */
+196	export const silentLogger: Logger = {
+197	  debug(): void {},
+198	  warn(): void {},
+199	  error(): void {},
+200	};
+201	
+202	/**
+203	 * Current logger instance (can be replaced)
+204	 */
+205	let currentLogger: Logger = defaultLogger;
+206	
+207	/**
+208	 * Set the global logger
+209	 */
+210	export function setLogger(logger: Logger): void {
+211	  currentLogger = logger;
+212	}
+213	
+214	/**
+215	 * Get the current logger
+216	 */
+217	export function getLogger(): Logger {
+218	  return currentLogger;
+219	}
+220	
+221	/**
+222	 * Log a debug message
+223	 */
+224	export function logDebug(message: string, context?: Record<string, unknown>): void {
+225	  currentLogger.debug(message, context);
+226	}
+227	
+228	/**
+229	 * Log a warning message
+230	 */
+231	export function logWarn(message: string, context?: Record<string, unknown>): void {
+232	  currentLogger.warn(message, context);
+233	}
+234	
+235	/**
+236	 * Log an error message
+237	 */
+238	export function logError(message: string, context?: Record<string, unknown>): void {
+239	  currentLogger.error(message, context);
+240	}
+```
+
+#### src/mcp/tools.ts — imports(imports), WorktreeIndexMismatch(references), OmniWeave(imports), detectWorktreeIndexMismatch(imports), worktreeMismatchWarning(imports), worktreeMismatchNotice(imports), WorktreeIndexMismatch(imports), isGeneratedFile(imports), describeSnapshotImportWarning(imports), NotIndexedError(class), worktreeMismatchCache(property), worktreeMismatchFor(method), getProjectRoot(calls), getOmniWeave(calls), get(calls), +6 more
+
+```typescript
+4	 * Defines the tools exposed by the OmniWeave MCP server.
+5	 */
+6	
+7	import type OmniWeave from '../index';
+8	import { findNearestOmniWeaveRoot } from '../directory';
+9	// Lazy-load the heavy OmniWeave chain off the MCP startup path — see the same
+10	// helper in engine.ts. ToolHandler must load to answer tools/list (static
+11	// schemas), but it must NOT drag in sqlite/query layers before the daemon binds;
+12	// OmniWeave is pulled in only when a tool actually opens a project. require() is
+13	// sync + cached (CommonJS build).
+14	const loadOmniWeave = (): typeof import('../index').default =>
+15	  (require('../index') as typeof import('../index')).default;
+16	import {
+17	  detectWorktreeIndexMismatch,
+18	  worktreeMismatchWarning,
+19	  worktreeMismatchNotice,
+20	  type WorktreeIndexMismatch,
+21	} from '../sync/worktree';
+22	import type { PendingFile } from '../sync';
+23	import type { Node, Edge, SearchResult, Subgraph, NodeKind, EdgeKind } from '../types';
+24	import {
+25	  isDistinctiveIdentifier,
+26	  isLowSignalSourceFile,
+27	  isRepositorySnapshotFile,
+28	  isRepositorySnapshotQuery,
+29	  isTestFile,
+30	  normalizeNameToken,
+31	} from '../search/query-utils';
+32	import {
+33	  existsSync,
+34	  readFileSync,
+35	} from 'fs';
+36	import { clamp, validatePathWithinRoot, validateProjectPath, isConfigLeafNode, CONFIG_LEAF_LANGUAGES } from '../utils';
+37	import { isGeneratedFile } from '../extraction/generated-detection';
+38	import { scanDynamicDispatch } from './dynamic-boundaries';
+39	import { describeSnapshotImportWarning } from '../snapshot-metadata';
+40	
+41	/**
+42	 * An expected, recoverable "omniweave can't serve this" condition — most
+43	 * importantly a project with no index. The dispatch catch converts these to
+44	 * SUCCESS-shaped responses (guidance text, NO isError): an `isError: true`
+45	 * early in a session teaches the agent the toolset is broken and it stops
+46	 * calling omniweave entirely (observed repeatedly), which is exactly wrong
+47	 * for conditions the agent can simply work around (use built-in tools for
+48	 * that codebase / pass projectPath). isError is reserved for "stop trying"
+49	 * cases: security refusals ({@link PathRefusalError}) and genuine
+50	 * malfunctions.
+51	 */
+52	export class NotIndexedError extends Error {}
+53	
+54	/**
+55	 * A security refusal (sensitive system path). Stays `isError: true` WITHOUT
+56	 * retry guidance — abandoning this path is the desired agent reaction.
+57	 */
+58	export class PathRefusalError extends Error {}
+59	import { resolve as resolvePath } from 'path';
+60	
+61	/** Maximum output length to prevent context bloat (characters) */
+62	const MAX_OUTPUT_LENGTH = 15000;
+
+... (gap) ...
+
+965	  // .omniweave/ it resolves to), so the up-to-two `git rev-parse` spawns run
+966	  // once and every later tool call reuses the result — never shelling out to
+967	  // git on the hot path. `undefined` = not computed yet; `null` = no mismatch.
+968	  private worktreeMismatchCache: Map<string, WorktreeIndexMismatch | null> = new Map();
+969	  // Gate that the MCP engine pokes after `cg.open()` so the first tool call
+970	  // blocks on the post-open filesystem reconcile (catch-up sync). Without
+971	  // this, a tool call that races past `catchUpSync()` serves rows for files
+
+... (gap) ...
+
+1224	   * (e.g. nothing initialized yet), it reports "no mismatch" so a tool is never
+1225	   * broken by this check.
+1226	   */
+1227	  private worktreeMismatchFor(projectPath?: string): WorktreeIndexMismatch | null {
+1228	    const startPath = projectPath ?? this.defaultProjectHint ?? process.cwd();
+1229	    let indexRoot: string;
+1230	    try {
+1231	      indexRoot = this.getOmniWeave(projectPath).getProjectRoot();
+1232	    } catch {
+1233	      // No resolvable project (or any other resolution error) → nothing to warn.
+1234	      return null;
+1235	    }
+1236	
+1237	    const cacheKey = `${startPath}\0${indexRoot}`;
+1238	    const cached = this.worktreeMismatchCache.get(cacheKey);
+1239	    if (cached !== undefined) return cached;
+1240	
+1241	    const mismatch = detectWorktreeIndexMismatch(startPath, indexRoot);
+1242	    this.worktreeMismatchCache.set(cacheKey, mismatch);
+1243	    return mismatch;
+1244	  }
+1245	
+1246	  /**
+1247	   * Prefix a successful read-tool result with a compact worktree-mismatch
+1248	   * notice when the resolved index belongs to a different git working tree than
+1249	   * the caller's (issue #155). Without this, an agent in a nested worktree
+1250	   * silently trusts main-branch results. No-op on error results and when there
+1251	   * is no mismatch. `omniweave_status` is excluded — it embeds its own verbose
+1252	   * warning — so it stays out of this path.
+1253	   */
+1254	  private withWorktreeNotice(result: ToolResult, projectPath?: string): ToolResult {
+1255	    if (result.isError) return result;
+1256	    const mismatch = this.worktreeMismatchFor(projectPath);
+1257	    if (!mismatch) return result;
+1258	
+1259	    const notice = worktreeMismatchNotice(mismatch);
+1260	    const [first, ...rest] = result.content;
+1261	    if (first && first.type === 'text') {
+1262	      return { ...result, content: [{ type: 'text', text: `${notice}\n\n${first.text}` }, ...rest] };
+1263	    }
+1264	    return result;
+1265	  }
+1266	
+1267	  /**
+1268	   * Annotate a successful read-tool result with per-file staleness — the
+```
+
+#### src/index.ts — imports(imports), calls(calls), isInitialized(imports), IndexProgress(imports), IndexResult(imports), SyncResult(imports), getOmniWeaveDir(imports), IndexProgress(references), instantiates(instantiates), references(references), FileRecord(references), FileRecord(imports), ExtractionResult(imports), OmniWeaveError(imports), MCPServer(imports), +15 more
+
+```typescript
+5	 * code graph from any codebase.
+6	 */
+7	
+8	import * as path from 'path';
+9	import {
+10	  Node,
+11	  Edge,
+12	  FileRecord,
+13	  ExtractionResult,
+14	  Subgraph,
+15	  TraversalOptions,
+16	  SearchOptions,
+17	  SearchResult,
+18	  Context,
+19	  GraphStats,
+20	  TaskInput,
+21	  TaskContext,
+22	  BuildContextOptions,
+23	  FindRelevantContextOptions,
+24	} from './types';
+25	import { DatabaseConnection, getDatabasePath } from './db';
+26	import { QueryBuilder } from './db/queries';
+27	import {
+28	  isInitialized,
+29	  createDirectory,
+30	  removeDirectory,
+31	  validateDirectory,
+32	} from './directory';
+33	import {
+34	  ExtractionOrchestrator,
+35	  IndexProgress,
+36	  IndexResult,
+37	  SyncResult,
+38	  extractFromSource,
+39	  initGrammars,
+40	} from './extraction';
+41	import {
+42	  ReferenceResolver,
+43	  createResolver,
+44	  ResolutionResult,
+45	} from './resolution';
+46	import { GraphTraverser, GraphQueryManager } from './graph';
+47	import { ContextBuilder, createContextBuilder } from './context';
+48	import { Mutex, FileLock } from './utils';
+49	import { FileWatcher, WatchOptions, PendingFile, LockUnavailableError } from './sync';
+50	import { EXTRACTION_VERSION } from './extraction/extraction-version';
+51	import { getOmniWeaveDir } from './directory';
+52	import { deriveProjectNameTokens } from './search/query-utils';
+53	import { OmniWeavePackageVersion } from './mcp/version';
+54	import {
+55	  readSnapshotImportInfo,
+56	  SNAPSHOT_IMPORT_METADATA_KEYS,
+57	  type SnapshotImportInfo,
+58	} from './snapshot-metadata';
+59	
+60	// Re-export types for consumers
+61	export * from './types';
+62	// Storage building blocks for embedded/SDK consumers that drive the graph
+63	// directly (open a DB, run prepared queries) rather than through the OmniWeave
+64	// facade. Exposed from the package entry so they no longer require deep imports
+65	// into dist/ (issue #354).
+66	export { getDatabasePath, DatabaseConnection } from './db';
+67	export { QueryBuilder } from './db/queries';
+68	export {
+69	  getOmniWeaveDir,
+70	  isInitialized,
+71	  findNearestOmniWeaveRoot,
+72	  OMNIWEAVE_DIR,
+73	} from './directory';
+74	export { IndexProgress, IndexResult, SyncResult } from './extraction';
+75	export { detectLanguage, isLanguageSupported, isGrammarLoaded, getSupportedLanguages, initGrammars, loadGrammarsForLanguages, loadAllGrammars } from './extraction';
+76	export { ResolutionResult } from './resolution';
+77	export {
+78	  OmniWeaveError,
+79	  FileError,
+80	  ParseError,
+81	  DatabaseError,
+82	  SearchError,
+83	  VectorError,
+84	  ConfigError,
+85	  Logger,
+86	  setLogger,
+87	  getLogger,
+88	  silentLogger,
+89	  defaultLogger,
+90	} from './errors';
+91	export { Mutex, FileLock, processInBatches, debounce, throttle, MemoryMonitor } from './utils';
+92	export { FileWatcher, WatchOptions, PendingFile, LockUnavailableError } from './sync';
+93	export { MCPServer } from './mcp';
+94	
+95	/**
+96	 * Options for initializing a new OmniWeave project
+97	 */
+98	export interface InitOptions {
+99	  /** Whether to run initial indexing after init */
+100	  index?: boolean;
+101	
+102	  /** Progress callback for indexing */
+103	  onProgress?: (progress: IndexProgress) => void;
+104	}
+105	
+106	/**
+107	 * Options for opening an existing OmniWeave project
+
+... (gap) ...
+
+117	/**
+118	 * Options for indexing
+119	 */
+120	export interface IndexOptions {
+121	  /** Progress callback */
+122	  onProgress?: (progress: IndexProgress) => void;
+123	
+124	  /** Abort signal for cancellation */
+125	  signal?: AbortSignal;
+126	
+127	  /** Enable verbose logging (worker lifecycle, memory, timeouts) */
+128	  verbose?: boolean;
+129	}
+130	
+131	/**
+132	 * Main OmniWeave class
+
+... (gap) ...
+
+198	   * @param options - Initialization options
+199	   * @returns A new OmniWeave instance
+200	   */
+201	  static async init(projectRoot: string, options: InitOptions = {}): Promise<OmniWeave> {
+202	    await initGrammars();
+203	    const resolvedRoot = path.resolve(projectRoot);
+204	
+205	    // Check if already initialized
+206	    if (isInitialized(resolvedRoot)) {
+207	      throw new Error(`OmniWeave already initialized in ${resolvedRoot}`);
+208	    }
+209	
+210	    // Create directory structure
+211	    createDirectory(resolvedRoot);
+212	
+213	    // Initialize database
+214	    const dbPath = getDatabasePath(resolvedRoot);
+215	    const db = DatabaseConnection.initialize(dbPath);
+216	    const queries = new QueryBuilder(db.getDb());
+217	
+218	    const instance = new OmniWeave(db, queries, resolvedRoot);
+219	
+220	    // Run initial indexing if requested
+221	    if (options.index) {
+222	      await instance.indexAll({ onProgress: options.onProgress });
+223	    }
+224	
+225	    return instance;
+226	  }
+227	
+228	  /**
+229	   * Initialize synchronously (without indexing)
+
+... (gap) ...
+
+329	  /**
+330	   * Get the project root directory
+331	   */
+332	  getProjectRoot(): string {
+333	    return this.projectRoot;
+334	  }
+335	
+336	  reopenIfReplaced(): boolean {
+337	    if (!this.db.isReplacedOnDisk()) return false;
+
+... (gap) ...
+
+664	    return { version, extractionVersion: Number.isFinite(parsed) ? parsed : null };
+665	  }
+666	
+667	  getSnapshotImportInfo(): SnapshotImportInfo | null {
+668	    return readSnapshotImportInfo((key) => this.queries.getMetadata(key));
+669	  }
+670	
+671	  /**
+672	   * True when the on-disk index was built by an engine whose extraction is
+
+... (gap) ...
+
+711	   * Resolve references in batches to keep memory bounded on large codebases.
+712	   * Processes chunks of unresolved refs, persisting results after each batch.
+713	   */
+714	  async resolveReferencesBatched(onProgress?: (current: number, total: number) => void): Promise<ResolutionResult> {
+715	    return this.resolver.resolveAndPersistBatched(onProgress);
+716	  }
+717	
+718	  /**
+719	   * Get detected frameworks in the project
+
+... (gap) ...
+
+865	  /**
+866	   * Get a file record by path
+867	   */
+868	  getFile(filePath: string): FileRecord | null {
+869	    return this.queries.getFileByPath(filePath);
+870	  }
+871	
+872	  /**
+873	   * Get all tracked files
+874	   */
+875	  getFiles(): FileRecord[] {
+876	    return this.queries.getAllFiles();
+877	  }
+878	
+879	  // ===========================================================================
+880	  // Graph Query Methods
+```
+
+#### src/scip/protobuf.ts — decodeMessage(calls), readBytes(calls), ScipMetadata(references), ScipIndex(references), ScipSymbolInformation(references), ProtoReader(instantiates), eof(calls), readField(calls), pushLimited(calls), skip(calls), calls(calls), ScipIndex(interface), ScipDocument(references), ScipMetadata(interface), ScipToolInfo(references), +17 more
+
+```typescript
+9	export const SCIP_SYMBOL_ROLE_READ_ACCESS = 0x8;
+10	export const SCIP_SYMBOL_ROLE_FORWARD_DEFINITION = 0x40;
+11	
+12	export interface ScipIndex {
+13	  metadata?: ScipMetadata;
+14	  documents: ScipDocument[];
+15	  externalSymbols: ScipSymbolInformation[];
+16	}
+17	
+18	export interface ScipMetadata {
+19	  toolInfo?: ScipToolInfo;
+20	  projectRoot: string;
+21	  textDocumentEncoding: number;
+22	}
+23	
+24	export interface ScipToolInfo {
+25	  name: string;
+26	  version: string;
+27	  arguments: string[];
+28	}
+29	
+30	export interface ScipDocument {
+31	  relativePath: string;
+32	  language: string;
+33	  occurrences: ScipOccurrence[];
+34	  symbols: ScipSymbolInformation[];
+35	  text: string;
+36	  positionEncoding: number;
+37	}
+38	
+39	export interface ScipSymbolInformation {
+40	  symbol: string;
+41	  documentation: string[];
+42	  relationships: ScipRelationship[];
+43	  kind: number;
+44	  displayName: string;
+45	  signature?: ScipSignature;
+46	  enclosingSymbol: string;
+47	}
+48	
+49	export interface ScipSignature {
+50	  language: string;
+51	  text: string;
+52	}
+53	
+54	export interface ScipRelationship {
+55	  symbol: string;
+56	  isReference: boolean;
+57	  isImplementation: boolean;
+58	  isTypeDefinition: boolean;
+59	  isDefinition: boolean;
+60	}
+61	
+62	export interface ScipOccurrence {
+63	  range: number[];
+64	  symbol: string;
+65	  symbolRoles: number;
+66	  syntaxKind: number;
+67	}
+68	
+69	export function decodeScipIndexFile(filePath: string): ScipIndex {
+70	  const size = fs.statSync(filePath).size;
+71	  if (size > MAX_SCIP_INDEX_BYTES) {
+72	    throw new Error(`SCIP index exceeds maximum supported size (${size} bytes > ${MAX_SCIP_INDEX_BYTES} bytes)`);
+73	  }
+74	  return decodeScipIndex(fs.readFileSync(filePath));
+75	}
+76	
+77	export function decodeScipIndex(bytes: Uint8Array): ScipIndex {
+78	  const reader = new ProtoReader(bytes);
+79	  const index: ScipIndex = { documents: [], externalSymbols: [] };
+80	
+81	  while (!reader.eof()) {
+82	    const field = reader.readField();
+83	    switch (field.number) {
+84	      case 1:
+85	        index.metadata = decodeMessage(reader.readBytes(field.wireType), decodeMetadata);
+86	        break;
+87	      case 2:
+88	        pushLimited(index.documents, decodeMessage(reader.readBytes(field.wireType), decodeDocument), 'documents');
+89	        break;
+90	      case 3:
+91	        pushLimited(index.externalSymbols, decodeMessage(reader.readBytes(field.wireType), decodeSymbolInformation), 'externalSymbols');
+92	        break;
+93	      default:
+94	        reader.skip(field.wireType);
+95	    }
+96	  }
+97	
+98	  return index;
+99	}
+100	
+101	function decodeMetadata(bytes: Uint8Array): ScipMetadata {
+102	  const reader = new ProtoReader(bytes);
+103	  const metadata: ScipMetadata = { projectRoot: '', textDocumentEncoding: 0 };
+104	
+105	  while (!reader.eof()) {
+106	    const field = reader.readField();
+107	    switch (field.number) {
+108	      case 2:
+109	        metadata.toolInfo = decodeMessage(reader.readBytes(field.wireType), decodeToolInfo);
+110	        break;
+111	      case 3:
+112	        metadata.projectRoot = reader.readString(field.wireType);
+113	        break;
+114	      case 4:
+115	        metadata.textDocumentEncoding = reader.readVarintForField(field.wireType);
+116	        break;
+117	      default:
+118	        reader.skip(field.wireType);
+119	    }
+120	  }
+121	
+122	  return metadata;
+123	}
+124	
+125	function decodeToolInfo(bytes: Uint8Array): ScipToolInfo {
+126	  const reader = new ProtoReader(bytes);
+```
+
+#### site/src/pages/index.astro — GraphDiagram(references), wrap(constant), btn(constant), original(constant)
+
+```astro
+67							</div>
+68						</div>
+69						<div class="hero-right">
+70							<GraphDiagram />
+71						</div>
+72					</section>
+73	
+
+... (gap) ...
+
+130			</div>
+131	
+132			<script>
+133				const wrap = document.querySelector('.install');
+134				const btn = wrap?.querySelector('.copy');
+135				if (wrap && btn) {
+136					const original = btn.innerHTML;
+137					btn.addEventListener('click', async () => {
+138						try {
+139							await navigator.clipboard.writeText(wrap.getAttribute('data-install') || '');
+```
+
+... (output truncated to budget; trailing sections were dropped whole to keep this inline and avoid partial source. Treat only complete source blocks shown above as already Read. For uncovered names/files, run another `omniweave explore "<names>"` with the specific names.)

@@ -1,0 +1,380 @@
+## Exploration: vector embedding semantic similarity search index
+
+Found 218 symbols across 83 files.
+
+### Blast radius — what depends on these (update/verify before editing)
+
+- `Embedder` (research/2026-06-23-codegraph-ecosystem/repos/semantic-search-mcp/src/semantic_search_mcp/embedder.py:121) — 20 callers in `research/2026-06-23-codegraph-ecosystem/repos/semantic-search-mcp/scripts/profile_embedding.py`, `research/2026-06-23-codegraph-ecosystem/repos/semantic-search-mcp/scripts/profile_embedding2.py`, `research/2026-06-23-codegraph-ecosystem/repos/semantic-search-mcp/scripts/profile_indexer.py`, `research/2026-06-23-codegraph-ecosystem/repos/semantic-search-mcp/src/semantic_search_mcp/indexer.py` +3 more; tests: `research/2026-06-23-codegraph-ecosystem/repos/semantic-search-mcp/tests/test_embedder.py`, `research/2026-06-23-codegraph-ecosystem/repos/semantic-search-mcp/tests/test_indexer.py`, `research/2026-06-23-codegraph-ecosystem/repos/semantic-search-mcp/tests/test_integration.py`, `research/2026-06-23-codegraph-ecosystem/repos/semantic-search-mcp/tests/test_searcher.py`
+- `EmbeddedBackendSpec` (research/2026-06-23-codegraph-ecosystem/repos/cgc/src/codegraphcontext/core/database_embedded_kuzu.py:27) — 2 callers in `research/2026-06-23-codegraph-ecosystem/repos/cgc/src/codegraphcontext/core/database_kuzu.py`, `research/2026-06-23-codegraph-ecosystem/repos/cgc/src/codegraphcontext/core/database_ladybug.py`; ⚠️ no covering tests found
+- `EmbeddedCompatState` (research/2026-06-23-codegraph-ecosystem/repos/cgc/src/codegraphcontext/core/database_embedded_kuzu.py:39) — 6 callers in `research/2026-06-23-codegraph-ecosystem/repos/cgc/src/codegraphcontext/core/database_kuzu.py`, `research/2026-06-23-codegraph-ecosystem/repos/cgc/src/codegraphcontext/core/database_ladybug.py`, `research/2026-06-23-codegraph-ecosystem/repos/cgc/src/codegraphcontext/core/database_embedded_kuzu.py`; ⚠️ no covering tests found
+- `EmbeddedGraphManager` (research/2026-06-23-codegraph-ecosystem/repos/cgc/src/codegraphcontext/core/database_embedded_kuzu.py:51) — 2 callers in `research/2026-06-23-codegraph-ecosystem/repos/cgc/src/codegraphcontext/core/database_kuzu.py`, `research/2026-06-23-codegraph-ecosystem/repos/cgc/src/codegraphcontext/core/database_ladybug.py`; ⚠️ no covering tests found
+- `EmbeddingVector` (research/2026-06-23-codegraph-ecosystem/repos/claude-context/packages/core/src/embedding/base-embedding.ts:2) — 29 callers in `research/2026-06-23-codegraph-ecosystem/repos/claude-context/packages/core/src/context.ts`, `research/2026-06-23-codegraph-ecosystem/repos/claude-context/packages/core/src/embedding/gemini-embedding.ts`, `research/2026-06-23-codegraph-ecosystem/repos/claude-context/packages/core/src/embedding/ollama-embedding.ts`, `research/2026-06-23-codegraph-ecosystem/repos/claude-context/packages/core/src/embedding/openai-embedding.ts` +1 more; tests: `research/2026-06-23-codegraph-ecosystem/repos/claude-context/packages/core/src/context.abort.test.ts`, `research/2026-06-23-codegraph-ecosystem/repos/claude-context/packages/core/src/context.embedding-error.test.ts`, `research/2026-06-23-codegraph-ecosystem/repos/claude-context/packages/core/src/context.ignore-patterns.test.ts`, `research/2026-06-23-codegraph-ecosystem/repos/claude-context/packages/core/src/context.splitter.test.ts`
+
+### Relationships
+
+**extends:**
+- Embedder → BaseEmbedder
+- EmbeddedGraphManager → GraphQueryInterface
+- KuzuDBManager → EmbeddedGraphManager
+- LadybugDBManager → EmbeddedGraphManager
+
+**instantiates:**
+- EmbeddedGraphManager → EmbeddedCompatState
+- __init__ → EmbeddedCompatState
+- KuzuDBManager → EmbeddedCompatState
+- get_driver → EmbeddedDriverWrapper
+- session → EmbeddedSessionWrapper
+
+**references:**
+- embed → EmbeddingVector
+- embedBatch → EmbeddingVector
+- embed → EmbeddingVector
+- embedBatch → EmbeddingVector
+- run → SemanticEmbedStats
+- full_pipeline → indexer
+- embed → EmbeddingVector
+- embedBatch → EmbeddingVector
+- embed → EmbeddingVector
+- embedBatch → EmbeddingVector
+- semanticSearch → EmbeddingVector
+- processChunkBatch → EmbeddingVector
+- validateEmbeddings → EmbeddingVector
+- embed → EmbeddingVector
+- embedBatch → EmbeddingVector
+- ... and 20 more
+
+**calls:**
+- run → default
+- run → len
+- get_driver → error_logger
+- __init__ → get_config_value
+- _is_kuzu_available → get_config_value
+- _initialize_services → get_database_manager
+- get_driver → warning_logger
+- _initialize_schema → warning_logger
+- _run_schema_migrations → warning_logger
+- close_driver → warning_logger
+- resolve → warning_logger
+- default → default_similarity_threshold
+- default → default_embedding_model
+- kmeans_clustering → initialize_centroids_kmeans_plus_plus
+- get_database_manager → info_logger
+- ... and 168 more
+
+### Source Code
+
+> The code below is the **verbatim, current on-disk source** of these files — re-read from disk on this call and line-numbered, byte-for-byte identical to what the Read tool returns. It is NOT a summary, outline, or stale cache. Treat each block as a Read you have already performed: do not Read a file shown here.
+
+#### research/2026-06-23-codegraph-ecosystem/repos/codanna-clean/src/storage/tantivy.rs — calls(calls), references(references), instantiates(instantiates), search(method)
+
+```rust
+1074	    }
+1075	
+1076	    /// Search for documents
+1077	    pub fn search(
+1078	        &self,
+1079	        query_str: &str,
+1080	        limit: usize,
+1081	        kind_filter: Option<SymbolKind>,
+1082	        module_filter: Option<&str>,
+1083	        language_filter: Option<&str>,
+1084	    ) -> StorageResult<Vec<SearchResult>> {
+1085	        let searcher = self.reader.searcher();
+1086	
+1087	        let query_parser = QueryParser::for_index(
+1088	            &self.index,
+1089	            vec![
+1090	                self.schema.name_text, // Use name_text for full-text search (tokenized)
+1091	                self.schema.doc_comment,
+1092	                self.schema.signature,
+1093	                self.schema.context,
+1094	            ],
+1095	        );
+1096	
+1097	        // Try parsing as Tantivy query syntax first, fall back to literal matching
+1098	        // for queries with special characters (interface{}, Vec<T>, etc.)
+1099	        let main_query = match query_parser.parse_query(query_str) {
+1100	            Ok(query) => query,
+1101	            Err(_parse_error) => {
+1102	                // Query contains syntax that conflicts with Tantivy parser.
+1103	                // Fall back to literal term matching across searchable fields.
+1104	                let name_term = Term::from_field_text(self.schema.name_text, query_str);
+1105	                let doc_term = Term::from_field_text(self.schema.doc_comment, query_str);
+1106	                let sig_term = Term::from_field_text(self.schema.signature, query_str);
+1107	                let ctx_term = Term::from_field_text(self.schema.context, query_str);
+1108	
+1109	                Box::new(BooleanQuery::new(vec![
+1110	                    (
+1111	                        Occur::Should,
+1112	                        Box::new(TermQuery::new(name_term, IndexRecordOption::Basic))
+1113	                            as Box<dyn Query>,
+1114	                    ),
+1115	                    (
+1116	                        Occur::Should,
+1117	                        Box::new(TermQuery::new(doc_term, IndexRecordOption::Basic))
+1118	                            as Box<dyn Query>,
+1119	                    ),
+1120	                    (
+1121	                        Occur::Should,
+1122	                        Box::new(TermQuery::new(sig_term, IndexRecordOption::Basic))
+1123	                            as Box<dyn Query>,
+1124	                    ),
+1125	                    (
+1126	                        Occur::Should,
+1127	                        Box::new(TermQuery::new(ctx_term, IndexRecordOption::Basic))
+1128	                            as Box<dyn Query>,
+1129	                    ),
+1130	                ])) as Box<dyn Query>
+1131	            }
+1132	        };
+1133	
+1134	        // Fuzzy query for typo tolerance on the name_text field (ngram tokens)
+1135	        let name_text_term = Term::from_field_text(self.schema.name_text, query_str);
+1136	        let fuzzy_ngram_query = FuzzyTermQuery::new(name_text_term, 1, true);
+1137	
+1138	        // ADDITIONAL: Fuzzy query on the non-tokenized name field for whole-word typo tolerance
+1139	        // This fixes the limitation where "ArchivService" (missing 'e') couldn't find "ArchiveService"
+1140	        // because ngram tokenization shifted all tokens after the typo
+1141	        let name_term = Term::from_field_text(self.schema.name, query_str);
+1142	        let fuzzy_whole_word_query = FuzzyTermQuery::new(name_term, 1, true);
+1143	
+1144	        // All queries will be collected here.
+1145	        let mut all_clauses: Vec<(Occur, Box<dyn Query>)> = Vec::new();
+1146	
+1147	        // The text search part: must match one of:
+1148	        // 1. Main query (ngram partial matching)
+1149	        // 2. Fuzzy on ngram tokens (typos in short queries)
+1150	        // 3. Fuzzy on whole word (typos in full symbol names)
+1151	        all_clauses.push((
+1152	            Occur::Must,
+1153	            Box::new(BooleanQuery::new(vec![
+1154	                (Occur::Should, main_query),
+1155	                (Occur::Should, Box::new(fuzzy_ngram_query)),
+1156	                (Occur::Should, Box::new(fuzzy_whole_word_query)),
+1157	            ])),
+1158	        ));
+1159	
+1160	        // Add mandatory filters.
+1161	        all_clauses.push((
+1162	            Occur::Must,
+1163	            Box::new(TermQuery::new(
+1164	                Term::from_field_text(self.schema.doc_type, "symbol"),
+1165	                IndexRecordOption::Basic,
+1166	            )),
+1167	        ));
+1168	
+1169	        if let Some(kind) = kind_filter {
+1170	            let term = Term::from_field_text(self.schema.kind, &format!("{kind:?}"));
+1171	            all_clauses.push((
+1172	                Occur::Must,
+1173	                Box::new(TermQuery::new(term, IndexRecordOption::Basic)),
+1174	            ));
+1175	        }
+1176	
+1177	        if let Some(module) = module_filter {
+1178	            let term = Term::from_field_text(self.schema.module_path, module);
+1179	            all_clauses.push((
+1180	                Occur::Must,
+1181	                Box::new(TermQuery::new(term, IndexRecordOption::Basic)),
+1182	            ));
+1183	        }
+1184	
+1185	        // Add language filter if provided
+1186	        if let Some(lang) = language_filter {
+1187	            let term = Term::from_field_text(self.schema.language, lang);
+1188	            all_clauses.push((
+1189	                Occur::Must,
+1190	                Box::new(TermQuery::new(term, IndexRecordOption::Basic)),
+1191	            ));
+1192	        }
+1193	
+1194	        let final_query = BooleanQuery::new(all_clauses);
+1195	
+1196	        let top_docs =
+1197	            searcher.search(&final_query, &TopDocs::with_limit(limit).order_by_score())?;
+1198	
+1199	        let mut results = Vec::new();
+1200	        for (score, doc_address) in top_docs {
+1201	            let doc: Document = searcher.doc(doc_address)?;
+1202	
+1203	            // Extract fields
+1204	            let symbol_id = doc
+1205	                .get_first(self.schema.symbol_id)
+1206	                .and_then(|v| v.as_u64())
+1207	                .and_then(|id| SymbolId::new(id as u32))
+1208	                .ok_or(StorageError::InvalidFieldValue {
+1209	                    field: "symbol_id".to_string(),
+1210	                    reason: "not a valid u32".to_string(),
+1211	                })?;
+1212	
+1213	            let name = doc
+1214	                .get_first(self.schema.name)
+1215	                .and_then(|v| v.as_str())
+1216	                .unwrap_or("")
+1217	                .to_string();
+1218	
+1219	            let file_path = doc
+1220	                .get_first(self.schema.file_path)
+1221	                .and_then(|v| v.as_str())
+1222	                .unwrap_or("")
+1223	                .to_string();
+1224	
+1225	            let line = doc
+1226	                .get_first(self.schema.line_number)
+1227	                .and_then(|v| v.as_u64())
+1228	                .unwrap_or(0) as u32;
+1229	
+1230	            let column = doc
+1231	                .get_first(self.schema.column)
+1232	                .and_then(|v| v.as_u64())
+1233	                .unwrap_or(0) as u16;
+1234	
+1235	            let doc_comment = doc
+1236	                .get_first(self.schema.doc_comment)
+1237	                .and_then(|v| v.as_str())
+1238	                .map(|s| s.to_string());
+1239	
+1240	            let signature = doc
+1241	                .get_first(self.schema.signature)
+1242	                .and_then(|v| v.as_str())
+1243	                .map(|s| s.to_string());
+1244	
+1245	            let context = doc
+1246	                .get_first(self.schema.context)
+1247	                .and_then(|v| v.as_str())
+1248	                .map(|s| s.to_string());
+1249	
+1250	            // Extract kind from facet (stored as string representation)
+1251	            let kind_str = doc
+1252	                .get_first(self.schema.kind)
+1253	                .and_then(|v| v.as_str())
+1254	                .unwrap_or("Unknown");
+1255	
+1256	            let kind = match kind_str {
+1257	                "Function" => SymbolKind::Function,
+1258	                "Struct" => SymbolKind::Struct,
+1259	                "Trait" => SymbolKind::Trait,
+1260	                "Method" => SymbolKind::Method,
+1261	                "Field" => SymbolKind::Field,
+1262	                "Module" => SymbolKind::Module,
+1263	                "Constant" => SymbolKind::Constant,
+1264	                _ => SymbolKind::Function, // Default fallback
+1265	            };
+1266	
+1267	            let module_path = doc
+1268	                .get_first(self.schema.module_path)
+1269	                .and_then(|v| v.as_str())
+1270	                .unwrap_or("")
+1271	                .to_string();
+1272	
+1273	            results.push(SearchResult {
+1274	                symbol_id,
+1275	                name,
+1276	                kind,
+1277	                file_path,
+1278	                line,
+1279	                column,
+1280	                doc_comment,
+1281	                signature,
+1282	                module_path,
+1283	                score,
+1284	                highlights: Vec::new(), // TODO: Implement highlighting
+1285	                context,
+1286	            });
+1287	        }
+1288	
+1289	        Ok(results)
+1290	    }
+1291	
+1292	    /// Get total number of indexed documents
+1293	    pub fn document_count(&self) -> StorageResult<u64> {
+```
+
+#### site/src/pages/index.astro — calls(calls), references(references)
+
+```astro
+1	---
+2	import '@fontsource-variable/archivo';
+3	import '@fontsource/ibm-plex-mono/400.css';
+4	import '@fontsource/ibm-plex-mono/500.css';
+
+... (gap) ...
+
+67							</div>
+68						</div>
+69						<div class="hero-right">
+70							<GraphDiagram />
+71						</div>
+72					</section>
+73	
+```
+
+#### research/2026-06-23-codegraph-ecosystem/repos/cgc/src/codegraphcontext/core/database_embedded_kuzu.py — get(method), get(calls), EmbeddedResultWrapper(class), __init__(method), consume(method), single(method), calls(calls), instantiates(instantiates)
+
+```python
+1205	            # String key - get by column name
+1206	            return self._data[key]
+1207	    
+1208	    def get(self, key, default=None):
+1209	        return self._data.get(key, default)
+1210	
+1211	class EmbeddedResultWrapper:
+1212	    def __init__(self, result):
+1213	        self.result = result
+1214	        self._consumed = False
+1215	    def consume(self):
+1216	        self._consumed = True
+1217	        return self
+1218	    def single(self):
+1219	        records = self.data_raw()
+1220	        return EmbeddedRecord(records[0]) if records else None
+1221	    def data_raw(self) -> List[Dict[str, Any]]:
+1222	        if not self.result: return []
+1223	        records = []
+1224	        cols = self.result.get_column_names()
+1225	        while self.result.has_next():
+1226	            row = self.result.get_next()
+1227	            record = {}
+1228	            for i, val in enumerate(row):
+1229	                # Handle Kuzu Node/Rel objects for visualization compatibility
+1230	                processed_val = val
+1231	                try:
+1232	                    # Kuzu 0.11+ objects often have a specific structure
+1233	                    if hasattr(val, '__class__') and 'Node' in str(val.__class__):
+1234	                        processed_val = val
+1235	                        if not hasattr(processed_val, 'labels'):
+1236	                            processed_val.labels = [val.get_label_name()]
+1237	                        if not hasattr(processed_val, 'id'):
+1238	                           props = val.get_properties()
+1239	                           processed_val.id = props.get('uid', props.get('path', str(id(val))))
+1240	                        if not hasattr(processed_val, 'properties'):
+1241	                            processed_val.properties = val.get_properties()
+1242	                    
+1243	                    elif hasattr(val, '__class__') and 'Rel' in str(val.__class__):
+1244	                        processed_val = val
+1245	                        if not hasattr(processed_val, 'type'):
+1246	                            processed_val.type = val.get_label_name()
+1247	                        if not hasattr(processed_val, 'src_node'):
+1248	                            processed_val.src_node = val.get_src_id()['offset']
+1249	                        if not hasattr(processed_val, 'dest_node'):
+1250	                            processed_val.dest_node = val.get_dst_id()['offset']
+1251	                        if not hasattr(processed_val, 'properties'):
+1252	                            processed_val.properties = val.get_properties()
+1253	                except Exception:
+1254	                    pass
+1255	                
+1256	                record[cols[i]] = processed_val
+1257	            records.append(record)
+1258	        return records
+1259	
+1260	    def data(self) -> List[Dict[str, Any]]:
+1261	        # Return raw dict data, not EmbeddedRecord.data()
+1262	        return self.data_raw()
+1263	
+1264	    def __iter__(self):
+1265	        return iter([EmbeddedRecord(r) for r in self.data_raw()])
+1266	
+```
+
+
+... (output truncated to budget; the source above is complete and verbatim — treat it as already Read. For any area not covered, run another omniweave_explore with the specific names — do NOT Read these files.)

@@ -1,0 +1,9 @@
+No relevant code found for "zzqxqNoSuchSymbolHere12345".
+
+This is an empty retrieval result, not a tool failure.
+
+Next best steps:
+- Check the exact symbol or file name with `omniweave query <name>`.
+- If you already know the file path, use `omniweave node <path>` to read it with line numbers.
+- If this was a prose query, retry `omniweave explore "<identifier1 identifier2 ...>"` with 2-5 concrete identifiers from the error, stack trace, or surrounding code.
+- If the file was just created, renamed, or generated, run `omniweave sync` before querying it.

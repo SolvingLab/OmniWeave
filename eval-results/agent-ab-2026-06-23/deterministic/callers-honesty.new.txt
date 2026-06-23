@@ -1,0 +1,7 @@
+## Callers of handleExplore — 2 distinct definitions (narrow with `file`)
+
+### ToolHandler::handleExplore (method) — src/mcp/tools.ts:2436 — key: `omniweave_node symbol="handleExplore" file="src/mcp/tools.ts" line=2436`
+- ToolHandler::execute (method) - src/mcp/tools.ts:1436 — key: `omniweave_node symbol="execute" file="src/mcp/tools.ts" line=1436`
+
+### ToolHandler::handleExplore (method) — research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/tools.ts:2299 — key: `omniweave_node symbol="handleExplore" file="research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/tools.ts" line=2299`
+- ToolHandler::execute (method) - research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/tools.ts:1204 — key: `omniweave_node symbol="execute" file="research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/tools.ts" line=1204`

@@ -1,0 +1,6 @@
+**2 definitions named "handleExplore"**
+
+Re-query with `includeCode: true` to get every body in one call — no need to pick one first.
+
+- `handleExplore` (method) — research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/tools.ts:2299
+- `handleExplore` (method) — src/mcp/tools.ts:2436

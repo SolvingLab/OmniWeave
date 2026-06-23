@@ -1,0 +1,222 @@
+## Impact of ToolHandler — 14 distinct definitions (each with its own blast radius; narrow with `file`)
+
+## Impact: "ToolHandler (src/mcp/tools.ts:957)" affects 72 symbols
+
+**src/mcp/tools.ts:**
+ToolHandler:957, projectCache:959, defaultProjectHint:962, worktreeMismatchCache:968, catchUpGate:976, constructor:978, setDefaultOmniWeave:983, setCatchUpGate:994, setDefaultProjectHint:1002, hasDefaultOmniWeave:1009, toolAllowlist:1021, isToolAllowed:1026, execute:1436, getTools:1037, getOmniWeave:1086, worktreeMismatchFor:1227, withWorktreeNotice:1254, handleStatus:3899, withStalenessNotice:1280, withSnapshotImportNotice:1398, handleSearch:1540, handleCallers:1681, handleCallees:1743, handleImpact:1802, handleExplore:2436, handleNode:3502, handleFiles:4005, freshen:1149, closeAll:1165, validateString:1181, validateOptionalPath:1201, groupDefinitions:1582, definitionHeading:1610, collectCallSurfaceRelationships:1616, buildBlastRadiusSection:2283, relationshipOmissionNote:1667, synthEdgeNote:1873, buildFlowFromNamedSymbols:1966, formatTrail:3846, renderNodeSection:3814, formatExploreRelationshipEdge:4504, buildDynamicBoundaries:2161, boundaryCandidates:2216, computeGraphRelevance:2370, handleFileView:3677, globToRegex:4067, formatFilesFlat:4080, formatFilesGrouped:4097, formatFilesTree:4129, matchesSymbol:4227, findSymbolMatches:4272, findAllSymbols:4323, truncateOutput:4364, formatSearchResults:4376, callerDisplayName:4404, formatNodeList:4410, moreResultsNote:4450, scipTrustLabels:4464, edgeLabel:4472, formatImpact:4526, nodeContinuationKey:4485, nodeContinuation:4500, formatNodeDetails:4605, buildAmbiguousExploreSection:4700, cliArg:4491, cliNodeCommand:4495, buildContainerOutline:4590, textResult:4646, buildNoExploreResultsMessage:4652, errorResult:4735
+
+**__tests__/scip-import.test.ts:**
+scip-import.test.ts:1
+
+**__tests__/snapshot-import.test.ts:**
+snapshot-import.test.ts:1
+
+
+## Impact: "ToolHandler (scripts/agent-eval/probe-context.mjs:15)" affects 2 symbols
+
+**scripts/agent-eval/probe-context.mjs:**
+ToolHandler:15, probe-context.mjs:1
+
+
+## Impact: "ToolHandler (scripts/agent-eval/probe-explore.mjs:20)" affects 2 symbols
+
+**scripts/agent-eval/probe-explore.mjs:**
+ToolHandler:20, probe-explore.mjs:1
+
+
+## Impact: "ToolHandler (scripts/agent-eval/probe-node.mjs:14)" affects 2 symbols
+
+**scripts/agent-eval/probe-node.mjs:**
+ToolHandler:14, probe-node.mjs:1
+
+
+## Impact: "ToolHandler (scripts/agent-eval/probe-sweep.mjs:26)" affects 2 symbols
+
+**scripts/agent-eval/probe-sweep.mjs:**
+ToolHandler:26, probe-sweep.mjs:1
+
+
+## Impact: "ToolHandler (scripts/agent-eval/probe-trace.mjs:14)" affects 2 symbols
+
+**scripts/agent-eval/probe-trace.mjs:**
+ToolHandler:14, probe-trace.mjs:1
+
+
+## Impact: "ToolHandler (research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/tools.ts:691)" affects 121 symbols
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/tools.ts:**
+ToolHandler:691, projectCache:693, defaultProjectHint:696, worktreeMismatchCache:702, catchUpGate:712, constructor:714, setDefaultCodeGraph:719, setCatchUpGate:730, awaitCatchUpGate:743, execute:1204, setDefaultProjectHint:775, hasDefaultCodeGraph:782, toolAllowlist:794, isToolAllowed:803, getTools:814, getCodeGraph:884, worktreeMismatchFor:1047, withWorktreeNotice:1084, handleStatus:3663, withStalenessNotice:1110, handleSearch:1297, handleCallers:1376, handleCallees:1449, handleImpact:1519, handleExplore:2299, handleNode:3343, handleFiles:3766, freshen:967, closeAll:985, validateString:1001, validateOptionalPath:1021, groupDefinitions:1339, definitionHeading:1367, synthEdgeNote:1586, buildFlowFromNamedSymbols:1686, formatTrail:3630, renderNodeSection:3603, buildDynamicBoundaries:1958, buildPolymorphicBoundaries:2022, boundaryCandidates:2098, buildBlastRadiusSection:2165, computeGraphRelevance:2233, handleFileView:3472, globToRegex:3828, formatFilesFlat:3841, formatFilesGrouped:3858, formatFilesTree:3890, matchesSymbol:3988, findSymbolMatches:4033, findAllSymbols:4084, truncateOutput:4125, formatSearchResults:4137, formatNodeList:4153, edgeLabel:4175, formatImpact:4184, buildContainerOutline:4219, formatNodeDetails:4234, textResult:4264, errorResult:4270
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/worktree-detection.test.ts:**
+worktree-detection.test.ts:1
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/engine.ts:**
+retryInitializeSync:119, doInitialize:155, ensureInitialized:95, catchUpSync:249, setProjectPathHint:66, stop:145, engine.ts:1, constructor:55, toolHandler:44, getToolHandler:77
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/session.ts:**
+retryInitIfNeeded:275, handleToolsCall:234, handleToolsList:220
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/mcp-tool-allowlist.test.ts:**
+mcp-tool-allowlist.test.ts:1
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/mcp-unindexed.test.ts:**
+mcp-unindexed.test.ts:1
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/proxy.ts:**
+runLocalHandshakeProxy:204
+
+**__tests__/symbol-lookup.test.ts:**
+symbol-lookup.test.ts:1
+
+**__tests__/mcp-unindexed.test.ts:**
+mcp-unindexed.test.ts:1
+
+**__tests__/explore-output-budget.test.ts:**
+explore-output-budget.test.ts:1
+
+**__tests__/dynamic-boundaries.test.ts:**
+dynamic-boundaries.test.ts:1
+
+**__tests__/node-file-view.test.ts:**
+node-file-view.test.ts:1
+
+**__tests__/mcp-staleness-banner.test.ts:**
+mcp-staleness-banner.test.ts:1
+
+**__tests__/security.test.ts:**
+security.test.ts:1
+
+**__tests__/worktree-detection.test.ts:**
+worktree-detection.test.ts:1
+
+**__tests__/context-ranking.test.ts:**
+context-ranking.test.ts:1
+
+**__tests__/adaptive-explore-sizing.test.ts:**
+adaptive-explore-sizing.test.ts:1
+
+**__tests__/explore-blast-radius.test.ts:**
+explore-blast-radius.test.ts:1
+
+**__tests__/explore-relationships.test.ts:**
+explore-relationships.test.ts:1
+
+**__tests__/mcp-tool-allowlist.test.ts:**
+mcp-tool-allowlist.test.ts:1
+
+**src/bin/omniweave.ts:**
+main:230
+
+**__tests__/scip-import.test.ts:**
+scip-import.test.ts:1
+
+**__tests__/snapshot-import.test.ts:**
+snapshot-import.test.ts:1
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/daemon.ts:**
+constructor:143
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/concurrent-locking.test.ts:**
+concurrent-locking.test.ts:1
+
+**src/mcp/tools.ts:**
+handleSearch:1540, execute:1436, handleCallers:1681, handleCallees:1743, handleImpact:1802, handleExplore:2436, handleNode:3502
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/pr19-improvements.test.ts:**
+pr19-improvements.test.ts:1
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/symbol-lookup.test.ts:**
+symbol-lookup.test.ts:1
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/adaptive-explore-sizing.test.ts:**
+adaptive-explore-sizing.test.ts:1
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/config-secret-redaction.test.ts:**
+config-secret-redaction.test.ts:1
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/dynamic-boundaries.test.ts:**
+dynamic-boundaries.test.ts:1
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/explore-blast-radius.test.ts:**
+explore-blast-radius.test.ts:1
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/explore-corroboration-ranking.test.ts:**
+explore-corroboration-ranking.test.ts:1
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/explore-output-budget.test.ts:**
+explore-output-budget.test.ts:1
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/explore-synth-constant-endpoints.test.ts:**
+explore-synth-constant-endpoints.test.ts:1
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/integration/mcp-input-limits.test.ts:**
+mcp-input-limits.test.ts:1
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/mcp-catchup-gate.test.ts:**
+mcp-catchup-gate.test.ts:1
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/mcp-files-path-normalization.test.ts:**
+mcp-files-path-normalization.test.ts:1
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/mcp-staleness-banner.test.ts:**
+mcp-staleness-banner.test.ts:1
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/node-file-view.test.ts:**
+node-file-view.test.ts:1
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/same-name-disambiguation.test.ts:**
+same-name-disambiguation.test.ts:1, handler:24
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/__tests__/security.test.ts:**
+security.test.ts:1
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/index.ts:**
+index.ts:1
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/bin/codegraph.ts:**
+main:114, codegraph.ts:1
+
+> ⚠️ Partial — traversal stopped at depth 2; at least 7 more dependent symbol(s) exist deeper. Re-run `omniweave_impact` with a higher `depth` (e.g. depth=4) for the full transitive closure.
+
+
+## Impact: "ToolHandler (research/2026-06-23-codegraph-ecosystem/repos/codegraph/scripts/agent-eval/offload-eval-effort.mjs:30)" affects 2 symbols
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/scripts/agent-eval/offload-eval-effort.mjs:**
+ToolHandler:30, offload-eval-effort.mjs:1
+
+
+## Impact: "ToolHandler (research/2026-06-23-codegraph-ecosystem/repos/codegraph/scripts/agent-eval/offload-eval-hook.mjs:53)" affects 2 symbols
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/scripts/agent-eval/offload-eval-hook.mjs:**
+ToolHandler:53, offload-eval-hook.mjs:1
+
+
+## Impact: "ToolHandler (research/2026-06-23-codegraph-ecosystem/repos/codegraph/scripts/agent-eval/probe-context.mjs:15)" affects 2 symbols
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/scripts/agent-eval/probe-context.mjs:**
+ToolHandler:15, probe-context.mjs:1
+
+
+## Impact: "ToolHandler (research/2026-06-23-codegraph-ecosystem/repos/codegraph/scripts/agent-eval/probe-explore.mjs:20)" affects 2 symbols
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/scripts/agent-eval/probe-explore.mjs:**
+ToolHandler:20, probe-explore.mjs:1
+
+
+## Impact: "ToolHandler (research/2026-06-23-codegraph-ecosystem/repos/codegraph/scripts/agent-eval/probe-node.mjs:14)" affects 2 symbols
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/scripts/agent-eval/probe-node.mjs:**
+ToolHandler:14, probe-node.mjs:1
+
+
+## Impact: "ToolHandler (research/2026-06-23-codegraph-ecosystem/repos/codegraph/scripts/agent-eval/probe-sweep.mjs:26)" affects 2 symbols
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/scripts/agent-eval/probe-sweep.mjs:**
+ToolHandler:26, probe-sweep.mjs:1
+
+
+## Impact: "ToolHandler (research/2026-06-23-codegraph-ecosystem/repos/codegraph/scripts/agent-eval/probe-trace.mjs:14)" affects 2 symbols
+
+**research/2026-06-23-codegraph-ecosystem/repos/codegraph/scripts/agent-eval/probe-trace.mjs:**
+ToolHandler:14, probe-trace.mjs:1
+

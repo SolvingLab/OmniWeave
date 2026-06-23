@@ -1,0 +1,9 @@
+[1m
+Callers of "handleExplore" (2):
+[0m
+[36mmethod      [0m[37mexecute[0m
+[2m  research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/tools.ts:1204[0m
+
+[36mmethod      [0m[37mexecute[0m
+[2m  src/mcp/tools.ts:1436[0m
+
