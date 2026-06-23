@@ -13,7 +13,7 @@ The relationships that matter most to an agent are exactly the ones a language s
 [![Node](https://img.shields.io/badge/node-%E2%89%A522.5-blue.svg)](https://nodejs.org/)
 [![MCP](https://img.shields.io/badge/MCP-native-blueviolet.svg)](#use-it-from-an-agent)
 [![Tests](https://img.shields.io/badge/tests-1724%20passing-success.svg)](#engineering)
-[![Agent A/B](https://img.shields.io/badge/agent_A%2FB-6_rounds_measured-orange.svg)](#does-an-agent-actually-do-better-with-omniweave)
+[![Agent A/B](https://img.shields.io/badge/agent_A%2FB-7_rounds_measured-orange.svg)](#does-an-agent-actually-do-better-with-omniweave)
 
 </div>
 
@@ -28,17 +28,19 @@ A coding agent already has `grep` and an LSP. OmniWeave earns its place by winni
 - **Dynamic dispatch.** Runtime dispatch is invisible to static call graphs. OmniWeave models R's S4 `setGeneric`/`setMethod` as a dispatch graph (class → method → generic) and routes a bare generic call to the right entry point.
 - **Token economy.** One typed, traversable answer instead of a dozen `grep` passes the agent has to re-parse. The graph is built **by relationship**, not padded by language count.
 
-> **Honest by construction.** Every inferred edge carries a `provenance` and a `confidence`. What can't be known statically — a runtime-built path, NSE, runtime dispatch — is *skipped, never guessed*. The agent is never handed a fabricated edge it might trust.
+> **Honest by construction.** Every inferred edge carries a `provenance` and a `confidence`. What can't be known statically — a runtime-built path, NSE, runtime dispatch — is *skipped, never guessed*. Empty results return a recovery path, not a dead-end; nothing irrelevant or stale is surfaced as fact; and the daemon refuses to serve answers from code that no longer matches what's on disk. The agent is never handed a fabricated edge — or a stale one — it might trust.
 
 ---
 
 ## Does an agent actually do better with OmniWeave?
 
-Not a claim — a measurement. An A/B benchmark across **6 rounds, 15+ real repositories, ~120 headless runs**, 5 languages (R · Python · TS · Java · polyglot), 2 models (Claude Sonnet + Haiku), identical prompts. The *only* variable is whether OmniWeave's MCP graph is attached; both arms keep the same built-in `grep` / `read` / `bash`. Tool-calls are the reliable effort signal (token cost is prompt-cache-sensitive); both are reported. **Every number below is reproducible** (`scripts/agent-eval/`, raw transcripts and per-question judging in `eval-results/`).
+Not a claim — a measurement. An A/B benchmark across **7 rounds, 15+ real repositories, ~140 headless runs**, 5 languages (R · Python · TS · Java · polyglot), 3 model families (Claude Sonnet + Haiku + a local weak model), identical prompts. Rounds 1–6 hold the *only* variable to whether OmniWeave's MCP graph is attached (both arms keep the same built-in `grep` / `read` / `bash`); round 7 isolates a second axis — whether the graph's **output** misleads the agent — by diffing the current build against a pre-hardening one on the same index. Tool-calls are the reliable effort signal (token cost is prompt-cache-sensitive); both are reported. **Every number below is reproducible** (`scripts/agent-eval/`, raw transcripts and per-question judging in `eval-results/`).
+
+**What the seven rounds actually establish is two contributions — and neither is "more correct."** First, **economy of form**: for reverse/blast-radius at scale, cross-boundary structure an LSP can't see, zero-config checkouts, and weaker models, OmniWeave reaches the *same* answer in a fraction of the tool-calls and tokens, scaling *up* with repo size. Second, **trustworthy output**: it is built so the agent is never silently misled — every inferred edge carries provenance/confidence, the unknowable is skipped rather than guessed, empty results return a recovery path instead of a dead-end, and (round 7) it no longer leaks irrelevant or competitor-snapshot source into the agent's context. The rest of this section is the evidence for both, ties included.
 
 ### The bottom line, by query shape
 
-OmniWeave doesn't win everywhere, and it's built to tell you where. The six rounds map a precise boundary:
+OmniWeave doesn't win everywhere, and it's built to tell you where. The first six rounds (efficiency) map a precise boundary:
 
 | Use it for — **clear win** | It's a **tie** (use anything) | Reach for `grep`/LSP instead |
 |---|---|---|
@@ -84,6 +86,22 @@ A common worry about MCP graphs is system-prompt bloat. Measured directly (same 
 
 The graph's value is only as good as the precision of what it hands back, so round 6 audited every tool's output and tightened `callers`/`callees`: the list now reports the **true total** (`showing 20 of 57`, never a silently-capped `20 found` that makes an agent under-count), and **drops file-level `import` edges that aren't calls** — a file importing a name is a dependency, not a caller, and was redundant with the function-level callers from the same file (the full dependency closure stays on `impact`). On a 57-caller symbol this shrank the tool result **33 %** and removed a manual de-noising step the agent had been doing by hand, with **zero correctness change**. *(Honest caveat: on that symbol the agent's reported count varied across arms — 57/50 with the graph vs 136/206 with `grep` — not because either is "wrong" but because "distinct caller" is genuinely ambiguous in factory code full of anonymous accessors. The graph's answer is **stable**; `grep`'s varies run to run. The moat there is effort and stability, not correctness.)*
 
+### Round 7 — the tool that doesn't mislead
+
+Efficiency is one contribution; **trust** is the other, and round 7 measured it directly. The question: did a 71-commit output-honesty pass actually help an agent, or just feel tidier? It was isolated by diffing the current build against the commit *before* that pass — **same index, so the only variable is the output code** — on a local weak model.
+
+The cleanest result is deterministic (no LLM needed). Ask `explore` for a **symbol that doesn't exist**:
+
+| | pre-hardening | now |
+|---|---|---|
+| Output for a missing symbol | **24,273 chars** — a blast radius of `Embedder`, `Symbol`… from **5 gitignored competitor snapshots** (`serena`, `scip`, `semantic-search-mcp`) | **558 chars** — "empty result, not a tool failure" + a recovery path |
+
+Pre-hardening, OmniWeave indexed source a `grep` *can't even see* (the repo vendors competitor checkouts under a gitignored path) and then **leaked it into the agent's context** — so on a missing symbol it was briefly **dirtier than `grep`**, handing the agent ~6 K tokens of someone else's code to be misled by. The hardening makes it **as clean as a gitignore-aware `grep`, plus a recovery path**. In the agent A/B, asking "does this repo do vector search?" (it doesn't — that's a deliberate non-feature), the pre-hardening `explore` dumped competitor embedding code and the agent spent **~2 extra tool calls / ~2 extra turns** discounting it as "not first-party"; on the weak model the worst pre-hardening run flailed to **8 turns / 160 K tokens** where the hardened arm held at 3–4. **Correctness tied every time** — a capable agent recovers either way — so, as everywhere else, the contribution is *effort and trust, not correctness*.
+
+> **Honest boundary.** Snapshot-suppression is **not** a moat *over* `grep` — a gitignore-aware `grep` never saw those files. It is OmniWeave fixing *itself*: an index that reaches further than `grep` must be at least as disciplined about what it surfaces. The generalizable wins — empty-result recovery, honest call-surface, one-call source instead of a forced re-read — hold on any repo; the competitor-snapshot specifics are amplified by *this* repo vendoring rival source.
+
+A matching distribution-trust fix lives below the output: a long-running daemon holds the code it loaded, so a `npm run build` (same version, new logic) used to let a stale daemon serve pre-rebuild answers while claiming to be current. The daemon/proxy handshake now rendezvous on a **build fingerprint** (version + content hash), so a freshly-rebuilt client detects the stale daemon and serves in-process with current code. The "most trusted" claim has to hold for the tool's own running instance, not just its edges.
+
 ### Versus the alternatives
 
 The comparison that matters isn't just `grep` — it's the tools an agent already has:
@@ -95,7 +113,7 @@ The comparison that matters isn't just `grep` — it's the tools an agent alread
 | **Aider repo-map** | PageRank-ranked context list | **Category win** — a ranked list has no traversable edges, so it can't answer "what calls X across a process boundary" at all |
 | **Vector / embedding search** | Concept recall ("where's the auth logic") | **Different tool** — OmniWeave is structural, not semantic; it does not compete here and shouldn't be used for it |
 
-The takeaway is the one stated up front: a real, measured efficiency edge in a **bounded intersection**, honest ties or no-help outside it. (Full methodology, per-question ground truth, and raw transcripts in [`eval-results/`](eval-results/agent-ab-2026-06-13/).)
+The takeaway is the one stated up front: a real, measured efficiency edge in a **bounded intersection** plus an output the agent can trust, honest ties or no-help outside it. (Full methodology, per-question ground truth, and raw transcripts in [`eval-results/`](eval-results/) — the rounds-1–6 efficiency study in [`agent-ab-2026-06-13/`](eval-results/agent-ab-2026-06-13/), the round-7 output-honesty study in [`agent-ab-2026-06-23/`](eval-results/agent-ab-2026-06-23/).)
 
 ---
 
@@ -208,7 +226,7 @@ node dist/bin/omniweave.js serve --mcp
 - **Hand-written extractors, no `.scm`.** Each language is a focused TypeScript walker — adding a language or a relationship is a small, testable change, not a grammar rewrite.
 - **Eval-gated.** A recall/precision harness with edge, reachability, and **negative** assertions guards every capability — red before the feature, green after, with teeth that fail if a target regresses. **1724** unit tests, 25 evaluation gates, zero known false positives across six real repositories.
 - **A §1.5 benchmark** (`npm run benchmark`) measures, honestly, the bounded class of queries where the graph wins, ties, or loses against `grep`/LSP — including the ones it loses.
-- **Adversarial agent A/B evaluation** (`scripts/agent-eval/`, six rounds in `eval-results/`). Rather than trust a self-reported metric, every value claim is measured by running a real coding agent **with vs without** the graph attached, on real repositories, with human-judged ground truth — and the discipline is to *go looking for where the tool loses*: correctness ties were confirmed by building traps meant to break them, a prior round's "~34 K overhead" claim was retracted after direct measurement (+682), and the cross-process-at-scale and in-process-mode bets were both retired as NO-GO on the evidence. The boundary in this README is drawn by that evaluation, not by marketing.
+- **Adversarial agent A/B evaluation** (`scripts/agent-eval/`, seven rounds in `eval-results/`). Rather than trust a self-reported metric, every value claim is measured by running a real coding agent **with vs without** the graph attached, on real repositories, with human-judged ground truth — and the discipline is to *go looking for where the tool loses*: correctness ties were confirmed by building traps meant to break them, a prior round's "~34 K overhead" claim was retracted after direct measurement (+682), the cross-process-at-scale and in-process-mode bets were both retired as NO-GO, and round 7's headline win — suppressing leaked competitor-snapshot source — was recorded as OmniWeave fixing *itself* (it had been dirtier than `grep`), not as a moat over `grep`. The boundary in this README is drawn by that evaluation, not by marketing.
 
 ```
 extraction (WASM tree-sitter workers)
@@ -223,7 +241,7 @@ extraction (WASM tree-sitter workers)
 
 OmniWeave is a **general** code-analysis graph. Bioinformatics — R/S4, Snakemake/Nextflow, mixed tool-and-data pipelines — is its proving ground precisely *because* it is the hardest polyglot, cross-process terrain there is: **general engine, proven on the hardest domain.**
 
-**What it is not**, stated plainly so you can choose the right tool: it is not a correctness oracle (a capable agent ties it with `grep`), not a semantic/concept search (that's embeddings), not a replacement for a language server on same-language navigation (it ties one), and not a universal win (single-point lookups and cross-process-at-scale are honest ties). It is the most economical structural form for the bounded intersection mapped above — and it's built to tell you where that boundary is.
+**What it is not**, stated plainly so you can choose the right tool: it is not a correctness oracle (a capable agent ties it with `grep`), not a semantic/concept search (that's embeddings), not a replacement for a language server on same-language navigation (it ties one), and not a universal win (single-point lookups and cross-process-at-scale are honest ties). What it **is**: the most economical structural form for the bounded intersection mapped above, *and* an output an agent can trust — provenance on every inferred edge, the unknowable skipped rather than guessed, no leaked or stale source masquerading as fact. Economy of form and trustworthy output — measured, ties included — and built to tell you exactly where its boundary is.
 
 ---
 
