@@ -6,6 +6,8 @@ import { createDirectory, getOmniWeaveDir, isInitialized, unsafeIndexRootReason,
 import { DatabaseConnection, getDatabasePath, type SqliteDatabase } from './db';
 import { CURRENT_SCHEMA_VERSION } from './db/migrations';
 import { QueryBuilder } from './db/queries';
+import { detectLanguage, scanDirectory } from './extraction';
+import { loadExtensionOverrides } from './project-config';
 import { FileLock, validatePathWithinRoot } from './utils';
 import type { FileRecord, GraphStats, SchemaVersion } from './types';
 
@@ -233,6 +235,9 @@ async function verifySnapshotWithStaging(
   const manifestPath = path.join(directory, SNAPSHOT_MANIFEST_FILENAME);
   const errors: string[] = [];
   const warnings: string[] = [];
+  const targetRoot = options.projectRoot
+    ? resolveExistingDirectory(options.projectRoot, 'project root')
+    : undefined;
 
   const manifest = parseSnapshotManifest(manifestPath, errors);
   let stagingDir: string | undefined;
@@ -246,7 +251,7 @@ async function verifySnapshotWithStaging(
           await validateStagedSnapshotArtifacts(stagingDir, manifest, errors);
         }
         if (errors.length === 0) {
-          validateStagedSnapshotDatabase(path.join(stagingDir, SNAPSHOT_DATABASE_FILENAME), manifest, errors);
+          validateStagedSnapshotDatabase(path.join(stagingDir, SNAPSHOT_DATABASE_FILENAME), manifest, errors, targetRoot);
         }
         if (errors.length === 0) {
           await validateStagedSnapshotArtifacts(stagingDir, manifest, errors);
@@ -258,9 +263,8 @@ async function verifySnapshotWithStaging(
   }
 
   let staleness: SnapshotStaleness | undefined;
-  if (manifest && stagingDir && errors.length === 0 && options.projectRoot) {
-    const root = resolveExistingDirectory(options.projectRoot, 'project root');
-    staleness = await computeSnapshotStaleness(root, path.join(stagingDir, SNAPSHOT_DATABASE_FILENAME));
+  if (manifest && stagingDir && errors.length === 0 && targetRoot) {
+    staleness = await computeSnapshotStaleness(targetRoot, path.join(stagingDir, SNAPSHOT_DATABASE_FILENAME));
     if (staleness.unsafeFiles.length > 0) {
       errors.push(
         `Snapshot database contains indexed paths outside the target root: ${summarizePaths(staleness.unsafeFiles)}`
@@ -598,6 +602,7 @@ function validateStagedSnapshotDatabase(
   databasePath: string,
   manifest: SnapshotManifest,
   errors: string[],
+  targetRoot?: string,
 ): void {
   let conn: DatabaseConnection | undefined;
   try {
@@ -614,11 +619,94 @@ function validateStagedSnapshotDatabase(
     validateSnapshotPathColumn(conn.getDb(), 'unresolved_refs', 'file_path', 'unresolved_refs.file_path', errors);
     validateSnapshotDatabasePragmas(conn.getDb(), errors);
     validateSnapshotIndexedPathMembership(conn.getDb(), errors);
+    if (targetRoot) {
+      validateSnapshotTargetImportPolicy(targetRoot, conn.getDb(), errors);
+    }
     validateSnapshotManifestMatchesDatabase(conn.getDb(), manifest, errors);
   } catch (err) {
     errors.push(`Snapshot database validation failed: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
     conn?.close();
+  }
+}
+
+function validateSnapshotTargetImportPolicy(projectRoot: string, db: SqliteDatabase, errors: string[]): void {
+  let importablePaths: Set<string>;
+  try {
+    importablePaths = new Set(scanDirectory(projectRoot));
+  } catch (err) {
+    errors.push(`Snapshot target import policy failed: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+
+  const files = new QueryBuilder(db).getAllFiles();
+  const filesByPath = new Map(files.map((file) => [file.path, file.language]));
+  const extensionOverrides = loadExtensionOverrides(projectRoot);
+  const unimportable: string[] = [];
+  const languageMismatches: string[] = [];
+
+  for (const file of files) {
+    if (!importablePaths.has(file.path)) {
+      unimportable.push(file.path);
+      continue;
+    }
+    const fullPath = validatePathWithinRoot(projectRoot, file.path);
+    if (!fullPath) {
+      unimportable.push(file.path);
+      continue;
+    }
+    let content: string;
+    try {
+      content = fs.readFileSync(fullPath, 'utf-8');
+    } catch {
+      unimportable.push(file.path);
+      continue;
+    }
+    const actualLanguage = detectLanguage(file.path, content, extensionOverrides);
+    if (actualLanguage !== file.language) {
+      languageMismatches.push(`${file.path} (snapshot ${file.language}, target ${actualLanguage})`);
+    }
+  }
+
+  if (unimportable.length > 0) {
+    errors.push(`Snapshot database contains files.path values the target indexer would not import: ${summarizePaths(unimportable)}`);
+  }
+  if (languageMismatches.length > 0) {
+    errors.push(`Snapshot database contains files.language values that do not match the target indexer: ${summarizePaths(languageMismatches)}`);
+  }
+
+  validateSnapshotLanguageMembership(db, 'nodes', 'file_path', 'language', 'nodes.language', filesByPath, errors);
+  validateSnapshotLanguageMembership(db, 'unresolved_refs', 'file_path', 'language', 'unresolved_refs.language', filesByPath, errors);
+}
+
+function validateSnapshotLanguageMembership(
+  db: SqliteDatabase,
+  table: string,
+  pathColumn: string,
+  languageColumn: string,
+  label: string,
+  filesByPath: Map<string, string>,
+  errors: string[],
+): void {
+  let rows: Array<{ path: unknown; language: unknown }>;
+  try {
+    rows = db.prepare(`
+      SELECT DISTINCT ${pathColumn} AS path, ${languageColumn} AS language
+      FROM ${table}
+      WHERE ${pathColumn} IS NOT NULL
+        AND ${pathColumn} != ''
+    `).all() as Array<{ path: unknown; language: unknown }>;
+  } catch (err) {
+    errors.push(`Snapshot database cannot validate ${label}: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+
+  const mismatches = rows
+    .filter((row) => typeof row.path === 'string')
+    .filter((row) => filesByPath.get(row.path as string) !== row.language)
+    .map((row) => `${displayPathValue(row.path)} (snapshot ${String(row.language)}, files ${String(filesByPath.get(row.path as string))})`);
+  if (mismatches.length > 0) {
+    errors.push(`Snapshot database contains ${label} values that do not match files.language: ${summarizePaths(mismatches)}`);
   }
 }
 

@@ -305,6 +305,56 @@ describe('snapshot import and verify', () => {
     expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
   });
 
+  it('rejects snapshot files the target indexer would not import even when stale import is allowed', async () => {
+    fs.writeFileSync(path.join(targetRoot, '.env'), 'SECRET=keep-local\n');
+    const conn = DatabaseConnection.open(path.join(outputDir, SNAPSHOT_DATABASE_FILENAME));
+    try {
+      const now = Date.now();
+      const envHash = createHash('sha256').update('SECRET=keep-local\n').digest('hex');
+      conn.getDb().prepare(
+        `INSERT OR REPLACE INTO files
+          (path, content_hash, language, size, modified_at, indexed_at, node_count, errors)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run('.env', envHash, 'typescript', 18, now, now, 1, '[]');
+      conn.getDb().prepare(
+        `INSERT INTO nodes
+          (id, kind, name, qualified_name, file_path, language, start_line, end_line, start_column, end_column, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run('env-secret-node', 'constant', 'SECRET', 'SECRET', '.env', 'typescript', 1, 1, 0, 6, now);
+      conn.getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      conn.close();
+    }
+    refreshSnapshotDatabaseManifest(outputDir);
+
+    const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+
+    expect(verification.ok).toBe(false);
+    expect(verification.errors.join('\n')).toContain('target indexer would not import');
+    expect(verification.errors.join('\n')).toContain('.env');
+    await expect(importSnapshot(outputDir, targetRoot, { allowStale: true })).rejects.toThrow(/Invalid snapshot/);
+    expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+  });
+
+  it('rejects snapshot file languages that do not match the target indexer', async () => {
+    const conn = DatabaseConnection.open(path.join(outputDir, SNAPSHOT_DATABASE_FILENAME));
+    try {
+      conn.getDb().prepare('UPDATE files SET language = ? WHERE path = ?').run('python', 'src/index.ts');
+      conn.getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      conn.close();
+    }
+    refreshSnapshotDatabaseManifest(outputDir);
+
+    const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+
+    expect(verification.ok).toBe(false);
+    expect(verification.errors.join('\n')).toContain('files.language values that do not match the target indexer');
+    expect(verification.errors.join('\n')).toContain('src/index.ts');
+    await expect(importSnapshot(outputDir, targetRoot, { allowStale: true })).rejects.toThrow(/Invalid snapshot/);
+    expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+  });
+
   it('rejects snapshots whose node file paths are unsafe', async () => {
     const conn = DatabaseConnection.open(path.join(outputDir, SNAPSHOT_DATABASE_FILENAME));
     try {
@@ -405,8 +455,8 @@ describe('snapshot import and verify', () => {
       const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
 
       expect(verification.ok).toBe(false);
-      expect(verification.errors.join('\n')).toContain('indexed paths outside the target root');
-      expect(verification.staleness?.unsafeFiles).toEqual(['src/index.ts']);
+      expect(verification.errors.join('\n')).toContain('target indexer would not import');
+      expect(verification.errors.join('\n')).toContain('src/index.ts');
       await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
       expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
     } finally {
