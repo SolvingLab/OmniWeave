@@ -372,6 +372,26 @@ describe('snapshot import and verify', () => {
     expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
   });
 
+  it('treats target files that symlink outside the project as unsafe', async () => {
+    const externalDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omniweave-snapshot-external-'));
+    try {
+      const externalFile = path.join(externalDir, 'index.ts');
+      fs.writeFileSync(externalFile, SOURCE);
+      fs.rmSync(path.join(targetRoot, 'src', 'index.ts'));
+      fs.symlinkSync(externalFile, path.join(targetRoot, 'src', 'index.ts'));
+
+      const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+
+      expect(verification.ok).toBe(false);
+      expect(verification.errors.join('\n')).toContain('indexed paths outside the target root');
+      expect(verification.staleness?.unsafeFiles).toEqual(['src/index.ts']);
+      await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
+      expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+    } finally {
+      rmTree(externalDir);
+    }
+  });
+
   it('rejects import when the target OmniWeave directory is a symlink', async () => {
     const symlinkTarget = fs.mkdtempSync(path.join(os.tmpdir(), 'omniweave-snapshot-linked-index-'));
     try {

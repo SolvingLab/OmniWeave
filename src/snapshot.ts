@@ -813,7 +813,7 @@ async function computeSnapshotStaleness(projectRoot: string, dbPath: string): Pr
   const unsafeFiles: string[] = [];
 
   for (const file of files) {
-    const fullPath = validatePathWithinRoot(projectRoot, file.path, { allowSymlinkEscape: true });
+    const fullPath = validatePathWithinRoot(projectRoot, file.path);
     if (!fullPath) {
       unsafeFiles.push(file.path);
       continue;
