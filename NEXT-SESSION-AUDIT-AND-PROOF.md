@@ -71,3 +71,28 @@
 ## 6. 节奏
 
 ultracode：每个实质子任务起 Workflow 并行（审计 fan-out / 竞品对照 fan-out / A/B 矩阵 fan-out），并对抗式核验每个结论与每条 win（skeptic agent 默认证伪）。串行只用于改一个文件的机械编辑。**不做「差不多」**——任一项未达 DONE 即继续 loop。
+
+## 7. 靠谱测试题库（任务二证明用 —— 先定 ground truth 再跑）
+
+**铁律**：每题**先人工定死 ground truth**（标准答案 + 真实 `file:symbol` + 那条边的来源），再跑 A/B，否则判分主观 = 造假。每题标注**预期裁定**（effort-win / 正确性 tie / no-help），**必须含 tie 与 no-help 题**——只挑 win 题 = cherry-pick = 失信。每题 ≥3 run × ≥2 模型（MiMo 主力 + 一弱模型 如 Qwen/Haiku）；三臂对照：`grep+read` / OmniWeave / `codegraph`(或同语言 LSP)。题目须落在**可索引的真实仓 / fixture**（capstone、polyglot-subprocess、DESeq2 等 Bioconductor 包、Snakemake/Nextflow 真实 pipeline、vscode/大 TS 仓）。
+
+### A. 差异化（OmniWeave 应赢 effort，或拿得到别人拿不到的边）
+- **A1 S4 分派**（R/Bioconductor）：「泛型 `results()` 对类 `DESeqDataSet` 的 S4 方法实现在哪？override 了哪个 generic？」GT = `setMethod` 那行 + `Class::generic`。codegraph/grep 连不上 setMethod→generic。
+- **A2 跨进程入口**（polyglot-subprocess / 真实流水线）：「`main.py` 用 subprocess 跑 `tool.py` —— `tool.py` 真正干活的入口函数是哪个？」GT = `crossLang` 边目标。**注意大仓跨进程是 PARK 的 NO-GO（运行时拼命令），小仓才赢——如实记。**
+- **A3 workflow DAG**（Snakemake/Nextflow）：「rule `align` 的 output 被哪条 rule 当 input 消费？中间产物文件是哪个？」GT = `produces`/`consumes` 共享 artifact 节点。
+- **A4 invokes 外部工具**：「pipeline 步骤 W 调了哪个外部二进制（bwa/STAR/samtools）？谁产出它的输入？」GT = `invokes` + 上游 `produces`。
+- **A5 大仓反向 blast**（vscode/大 TS 仓）：「全仓什么调用 `F`？改 `F` 签名影响哪些？」正确性大概率 **tie**，OmniWeave 赢在**工具数/token（~1/20）**——量 tool-calls，别吹正确性。
+
+### B. 诚实对照（必须做，证明不是 cherry-pick）
+- **B1 单点 tie**：「`X` 定义在哪？」grep 平手 —— 记 tie，别包装成 win。
+- **B2 同语言 + LSP tie**：「这个 TS 方法的所有 caller」—— tsserver 平手。
+- **B3 概念 no-help**：「auth 逻辑在哪？」—— embedding 地盘，OmniWeave 不竞争，应明说「这不是结构问题，用语义搜」。
+- **B4 虚分派 trap（正确性 tie）**：Java `Ordering.natural().reverse()` 类问题，naive read 返回错类 —— **两臂正确性都 tie**（OmniWeave 静态边也只到声明不到运行时分派），硬证「护城河不是更正确」。
+
+### C. 输出诚实（round-7 复刻 + 强化）
+- **C1 缺失符号**：查不存在的符号 —— 必须 <1K 恢复指引，**绝不倒 `research/*/repos/` 竞品快照**。
+- **C2 否定特征**：「本仓做向量检索吗？」（答：不做，故意非特征）—— 干净空 + 不泄漏竞品 embedding 代码。
+- **C3 stale**：改一个已索引文件不 sync 再查 —— stale banner + 磁盘当前字节 + 不让 agent 信旧行号/边。
+
+### 判分维度
+工具数 / input token / turn / latency（effort，机器抽）+ 正确性（人判 GT，二值）+ 稳定性（多 run 方差）。**正确性平手是常态、是诚实结论；effort 与 trust 才是结论。** 全部 raw transcript + 判分落 `eval-results/agent-ab-<新日期>/`，可复现（脚本入口 `scripts/agent-eval/`）。
