@@ -2,7 +2,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { createDirectory, getOmniWeaveDir, isInitialized, validateDirectory } from './directory';
+import { createDirectory, getOmniWeaveDir, isInitialized, unsafeIndexRootReason, validateDirectory } from './directory';
 import { DatabaseConnection, getDatabasePath, type SqliteDatabase } from './db';
 import { CURRENT_SCHEMA_VERSION } from './db/migrations';
 import { QueryBuilder } from './db/queries';
@@ -86,6 +86,7 @@ export interface VerifySnapshotResult {
 export interface ImportSnapshotOptions {
   force?: boolean;
   allowStale?: boolean;
+  allowUnsafeRoot?: boolean;
 }
 
 export interface ImportSnapshotResult {
@@ -291,6 +292,13 @@ export async function importSnapshot(
   options: ImportSnapshotOptions = {},
 ): Promise<ImportSnapshotResult> {
   const root = resolveExistingDirectory(projectRoot, 'project root');
+  const unsafe = unsafeIndexRootReason(root);
+  if (unsafe && options.allowUnsafeRoot !== true) {
+    throw new Error(
+      `Refusing to import snapshot into ${root} — it looks like ${unsafe}. ` +
+      'Run this inside a specific project directory, or pass --allow-unsafe-root if you really mean to replace that .omniweave index.'
+    );
+  }
   const verification = await verifySnapshotWithStaging(snapshotDir, { projectRoot: root });
   try {
     if (!verification.ok || !verification.manifest || !verification.stagingDir) {

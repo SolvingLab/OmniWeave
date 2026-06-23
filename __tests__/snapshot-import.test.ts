@@ -68,6 +68,21 @@ function updateSnapshotManifestForTest(
   writeSnapshotManifestForTest(outputDir, manifest);
 }
 
+async function withFakeHome<T>(home: string, fn: () => T | Promise<T>): Promise<T> {
+  const oldHome = process.env.HOME;
+  const oldUserProfile = process.env.USERPROFILE;
+  process.env.HOME = home;
+  process.env.USERPROFILE = home;
+  try {
+    return await fn();
+  } finally {
+    if (oldHome === undefined) delete process.env.HOME;
+    else process.env.HOME = oldHome;
+    if (oldUserProfile === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = oldUserProfile;
+  }
+}
+
 describe('snapshot import and verify', () => {
   let sourceRoot: string;
   let targetRoot: string;
@@ -408,6 +423,17 @@ describe('snapshot import and verify', () => {
     });
   });
 
+  it('refuses unsafe target roots unless explicitly allowed', async () => {
+    await withFakeHome(targetRoot, async () => {
+      await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Refusing to import snapshot/);
+      expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+
+      await expect(importSnapshot(outputDir, targetRoot, { allowUnsafeRoot: true })).resolves.toMatchObject({
+        projectRoot: fs.realpathSync(targetRoot),
+      });
+    });
+  });
+
   it('verifies and imports through the built CLI JSON contract', () => {
     const verify = spawnSync(process.execPath, [
       BIN,
@@ -454,5 +480,55 @@ describe('snapshot import and verify', () => {
     const result = JSON.parse(imported.stdout) as Awaited<ReturnType<typeof importSnapshot>>;
     expect(result.manifest.format).toBe(SNAPSHOT_FORMAT);
     expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(true);
+  });
+
+  it('requires an explicit CLI flag for unsafe snapshot import roots', async () => {
+    await withFakeHome(targetRoot, () => {
+      const refused = spawnSync(process.execPath, [
+        BIN,
+        'snapshot',
+        'import',
+        outputDir,
+        '--path',
+        targetRoot,
+        '--json',
+      ], {
+        cwd: targetRoot,
+        encoding: 'utf-8',
+        env: {
+          ...process.env,
+          OMNIWEAVE_NO_DAEMON: '1',
+          OMNIWEAVE_NO_WATCH: '1',
+        },
+      });
+
+      expect(refused.status).toBe(1);
+      expect(refused.stderr).toContain('Refusing to import snapshot');
+      expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+
+      const imported = spawnSync(process.execPath, [
+        BIN,
+        'snapshot',
+        'import',
+        outputDir,
+        '--path',
+        targetRoot,
+        '--allow-unsafe-root',
+        '--json',
+      ], {
+        cwd: targetRoot,
+        encoding: 'utf-8',
+        env: {
+          ...process.env,
+          OMNIWEAVE_NO_DAEMON: '1',
+          OMNIWEAVE_NO_WATCH: '1',
+        },
+      });
+
+      expect(imported.status).toBe(0);
+      const result = JSON.parse(imported.stdout) as Awaited<ReturnType<typeof importSnapshot>>;
+      expect(result.manifest.format).toBe(SNAPSHOT_FORMAT);
+      expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(true);
+    });
   });
 });

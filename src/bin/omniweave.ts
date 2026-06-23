@@ -1876,8 +1876,9 @@ snapshotCommand
   .option('-p, --path <path>', 'Project path')
   .option('-f, --force', 'Replace existing OmniWeave database files in the target project')
   .option('--allow-stale', 'Import even when indexed files differ from the target working tree')
+  .option('--allow-unsafe-root', 'Import into a filesystem root, home directory, or home ancestor')
   .option('-j, --json', 'Output import metadata as JSON')
-  .action(async (snapshotDir: string, options: { path?: string; force?: boolean; allowStale?: boolean; json?: boolean }) => {
+  .action(async (snapshotDir: string, options: { path?: string; force?: boolean; allowStale?: boolean; allowUnsafeRoot?: boolean; json?: boolean }) => {
     const projectPath = resolveProjectPath(options.path);
 
     try {
@@ -1885,6 +1886,7 @@ snapshotCommand
       const result = await importSnapshot(snapshotDir, projectPath, {
         force: options.force === true,
         allowStale: options.allowStale === true,
+        allowUnsafeRoot: options.allowUnsafeRoot === true,
       });
 
       if (options.json) {
