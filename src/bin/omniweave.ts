@@ -1108,7 +1108,10 @@ program
       const { ToolHandler } = await import('../mcp/tools');
       const handler = new ToolHandler(cg);
 
-      const args: Record<string, unknown> = { query: queryParts.join(' ') };
+      const args: Record<string, unknown> = {
+        query: queryParts.join(' '),
+        __outputSurface: 'cli',
+      };
       if (options.maxFiles) args.maxFiles = options.maxFiles;
       const result = await handler.execute('omniweave_explore', args);
 

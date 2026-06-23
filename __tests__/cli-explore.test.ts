@@ -224,9 +224,13 @@ export function snapshotCaller(): string {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('No relevant code found for "xqzvbnmwrtypsdfghjkl"');
     expect(result.stdout).toContain('not a tool failure');
-    expect(result.stdout).toContain('omniweave_search');
-    expect(result.stdout).toContain('omniweave_node');
-    expect(result.stdout).toContain('refresh the index');
+    expect(result.stdout).toContain('omniweave query <name>');
+    expect(result.stdout).toContain('omniweave node <path>');
+    expect(result.stdout).toContain('omniweave explore "<identifier1 identifier2 ...>"');
+    expect(result.stdout).toContain('omniweave sync');
+    expect(result.stdout).not.toContain('omniweave_search');
+    expect(result.stdout).not.toContain('omniweave_node');
+    expect(result.stdout).not.toContain('omniweave_explore');
   });
 
   it('warns that empty shell explore results may be stale when new files are not indexed yet', () => {

@@ -2320,8 +2320,10 @@ export class ToolHandler {
       minScore: 0.2,
     });
 
+    const outputSurface = args.__outputSurface === 'cli' ? 'cli' : 'mcp';
+
     if (subgraph.nodes.size === 0) {
-      return this.textResult(this.buildNoExploreResultsMessage(query, fileCount));
+      return this.textResult(this.buildNoExploreResultsMessage(query, fileCount, outputSurface));
     }
 
     // Graph-aware glue: findRelevantContext builds the subgraph from name/text
@@ -2513,7 +2515,7 @@ export class ToolHandler {
       }
     }
     if (relevantFiles.length === 0) {
-      return this.textResult(this.buildNoExploreResultsMessage(query, fileCount));
+      return this.textResult(this.buildNoExploreResultsMessage(query, fileCount, outputSurface));
     }
 
     // Secondary signal: how many DISTINCT query terms each file matches (path +
@@ -4397,7 +4399,11 @@ export class ToolHandler {
     };
   }
 
-  private buildNoExploreResultsMessage(query: string, fileCount: number | null = null): string {
+  private buildNoExploreResultsMessage(
+    query: string,
+    fileCount: number | null = null,
+    outputSurface: 'mcp' | 'cli' = 'mcp'
+  ): string {
     if (fileCount === 0) {
       return [
         `No relevant code found for "${query}".`,
@@ -4413,16 +4419,27 @@ export class ToolHandler {
       ].join('\n');
     }
 
+    const nextSteps = outputSurface === 'cli'
+      ? [
+        '- Check the exact symbol or file name with `omniweave query <name>`.',
+        '- If you already know the file path, use `omniweave node <path>` to read it with line numbers.',
+        '- If this was a prose query, retry `omniweave explore "<identifier1 identifier2 ...>"` with 2-5 concrete identifiers from the error, stack trace, or surrounding code.',
+        '- If the file was just created, renamed, or generated, run `omniweave sync` before querying it.',
+      ]
+      : [
+        '- Check the exact symbol or file name with `omniweave_search <name>`.',
+        '- If you already know the file path, use `omniweave_node <path>` to read it with line numbers.',
+        '- If this was a prose query, retry `omniweave_explore` with 2-5 concrete identifiers from the error, stack trace, or surrounding code.',
+        '- If the file was just created, renamed, or generated, refresh the index before querying it.',
+      ];
+
     return [
       `No relevant code found for "${query}".`,
       '',
       'This is an empty retrieval result, not a tool failure.',
       '',
       'Next best steps:',
-      '- Check the exact symbol or file name with `omniweave_search <name>`.',
-      '- If you already know the file path, use `omniweave_node <path>` to read it with line numbers.',
-      '- If this was a prose query, retry `omniweave_explore` with 2-5 concrete identifiers from the error, stack trace, or surrounding code.',
-      '- If the file was just created, renamed, or generated, refresh the index before querying it.',
+      ...nextSteps,
     ].join('\n');
   }
 

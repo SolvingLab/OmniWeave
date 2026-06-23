@@ -196,6 +196,35 @@ describe('No-error policy on expected conditions', () => {
     }
   });
 
+  it('MCP empty retrieval guidance keeps MCP tool names', async () => {
+    fs.writeFileSync(
+      path.join(tempDir, 'index.ts'),
+      `export function knownThing(): string {
+  return 'known';
+}
+`
+    );
+    const cg = OmniWeave.initSync(tempDir, {
+      config: { include: ['**/*.ts'], exclude: [] },
+    });
+    try {
+      await cg.indexAll();
+
+      const res = await new ToolHandler(cg).execute('omniweave_explore', { query: 'xqzvbnmwrtypsdfghjkl' });
+      const text = res.content[0]!.text;
+
+      expect(res.isError).toBeUndefined();
+      expect(text).toContain('No relevant code found for "xqzvbnmwrtypsdfghjkl"');
+      expect(text).toContain('omniweave_search <name>');
+      expect(text).toContain('omniweave_node <path>');
+      expect(text).toContain('omniweave_explore');
+      expect(text).not.toContain('omniweave query <name>');
+      expect(text).not.toContain('omniweave node <path>');
+    } finally {
+      cg.close();
+    }
+  });
+
   it.runIf(process.platform !== 'win32')(
     'sensitive-path refusal stays a hard error (no retry encouragement)',
     async () => {
