@@ -178,6 +178,18 @@ describe('SCIP importer', () => {
     expect(second.edgesImported).toBe(0);
   });
 
+  it('deduplicates kept SCIP edges when the same artifact buffer has a different filename', async () => {
+    const copiedIndexPath = path.join(projectRoot, 'copied.scip');
+    fs.copyFileSync(indexPath, copiedIndexPath);
+
+    const first = await importScipIndex(projectRoot, indexPath, { replace: false });
+    const second = await importScipIndex(projectRoot, copiedIndexPath, { replace: false });
+
+    expect(first.edgesImported).toBe(2);
+    expect(second.deletedScipEdges).toBe(0);
+    expect(second.edgesImported).toBe(0);
+  });
+
   it('infers empty SCIP document language from indexed files', async () => {
     writeScipIndex(indexPath, '');
 
@@ -187,6 +199,23 @@ describe('SCIP importer', () => {
     expect(result.referencesImported).toBe(1);
     expect(result.relationshipsImported).toBe(1);
     expect(result.warnings).toEqual([]);
+  });
+
+  it('skips explicit SCIP document languages that mismatch indexed file languages', async () => {
+    writeScipIndex(indexPath, 'python');
+
+    const result = await importScipIndex(projectRoot, indexPath);
+
+    expect(result.documentsRead).toBe(2);
+    expect(result.documentsImported).toBe(0);
+    expect(result.nodesImported).toBe(0);
+    expect(result.edgesImported).toBe(0);
+    expect(result.referencesImported).toBe(0);
+    expect(result.relationshipsImported).toBe(0);
+    expect(result.warnings).toEqual([
+      'Skipping SCIP document with language mismatch: src/a.ts (SCIP python, indexed typescript)',
+      'Skipping SCIP document with language mismatch: src/animals.ts (SCIP python, indexed typescript)',
+    ]);
   });
 
   it('rejects unsafe SCIP document paths', async () => {

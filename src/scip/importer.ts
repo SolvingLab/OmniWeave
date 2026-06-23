@@ -72,6 +72,12 @@ interface ScipPlan {
   warnings: string[];
 }
 
+interface ScipLanguageResolution {
+  language: Language;
+  explicitLanguage?: Language;
+  indexedLanguage?: Language;
+}
+
 const supportedLanguages = new Set<string>(LANGUAGES);
 
 export async function importScipIndex(
@@ -97,7 +103,7 @@ export async function importScipIndex(
     const conn = DatabaseConnection.open(dbPath);
     try {
       const queries = new QueryBuilder(conn.getDb());
-      const plan = buildScipImportPlan(root, resolvedIndexPath, index, queries);
+      const plan = buildScipImportPlan(root, index, queries);
       const replacement = options.replace === false
         ? queries.insertScipFacts(plan.nodes, plan.edges)
         : queries.replaceScipFacts(plan.nodes, plan.edges);
@@ -126,7 +132,6 @@ export async function importScipIndex(
 
 function buildScipImportPlan(
   projectRoot: string,
-  indexPath: string,
   index: ScipIndex,
   queries: QueryBuilder,
 ): ScipPlan {
@@ -164,7 +169,6 @@ function buildScipImportPlan(
       const edge = createScipEdge(sourceNode.id, target.nodeId, 'references', occurrence, {
         scipSource: 'occurrence',
         scipTargetSymbol: occurrence.symbol,
-        scipIndex: path.basename(indexPath),
       });
       addEdge(edge, edgesByKey);
       referencesImported++;
@@ -189,7 +193,6 @@ function buildScipImportPlan(
           scipRelationship: relationshipMetadata(relationship),
           scipSourceSymbol: info.symbol,
           scipTargetSymbol: relationship.symbol,
-          scipIndex: path.basename(indexPath),
         });
         addEdge(edge, edgesByKey);
         relationshipsImported++;
@@ -238,8 +241,18 @@ function buildDocumentContexts(
     }
     const nodesInFile = queries.getNodesByFile(filePath).filter((node) => !node.id.startsWith('scip:'));
     const language = resolveScipDocumentLanguage(document.language, filePath, nodesInFile, extensionOverrides);
-    if (language === 'unknown') {
+    if (language.language === 'unknown') {
       warnings.push(`Skipping SCIP document with unsupported language "${document.language || 'unknown'}": ${filePath}`);
+      continue;
+    }
+    if (
+      language.explicitLanguage &&
+      language.indexedLanguage &&
+      !compatibleDocumentLanguage(language.explicitLanguage, language.indexedLanguage)
+    ) {
+      warnings.push(
+        `Skipping SCIP document with language mismatch: ${filePath} (SCIP ${language.explicitLanguage}, indexed ${language.indexedLanguage})`
+      );
       continue;
     }
 
@@ -247,7 +260,7 @@ function buildDocumentContexts(
       document,
       filePath,
       fullPath,
-      language,
+      language: language.indexedLanguage ?? language.language,
       nodesInFile,
     });
   }
@@ -413,8 +426,18 @@ function createScipEdge(
 }
 
 function addEdge(edge: Edge, edgesByKey: Map<string, Edge>): void {
-  const key = `${edge.source}\0${edge.target}\0${edge.kind}\0${edge.line ?? 0}\0${edge.column ?? 0}\0${JSON.stringify(edge.metadata ?? {})}`;
+  const key = `${edge.source}\0${edge.target}\0${edge.kind}\0${edge.line ?? 0}\0${edge.column ?? 0}\0${semanticEdgeMetadataKey(edge.metadata)}`;
   edgesByKey.set(key, edge);
+}
+
+function semanticEdgeMetadataKey(metadata: Record<string, unknown> | undefined): string {
+  if (!metadata) return '';
+  return JSON.stringify({
+    scipSource: metadata.scipSource,
+    scipRelationship: metadata.scipRelationship,
+    scipSourceSymbol: metadata.scipSourceSymbol,
+    scipTargetSymbol: metadata.scipTargetSymbol,
+  });
 }
 
 function relationshipEdgeKind(relationship: ScipRelationship): EdgeKind | null {
@@ -540,15 +563,30 @@ function resolveScipDocumentLanguage(
   filePath: string,
   nodesInFile: GraphNode[],
   extensionOverrides: Record<string, Language>,
-): Language {
+): ScipLanguageResolution {
+  const indexedLanguage = nodesInFile.find((node) => node.language !== 'unknown')?.language;
   if (rawLanguage.trim()) {
-    return normalizeScipLanguage(rawLanguage);
+    const explicitLanguage = normalizeScipLanguage(rawLanguage);
+    return {
+      language: explicitLanguage,
+      explicitLanguage,
+      indexedLanguage,
+    };
   }
 
-  const indexedLanguage = nodesInFile.find((node) => node.language !== 'unknown')?.language;
-  if (indexedLanguage) return indexedLanguage;
+  if (indexedLanguage) return { language: indexedLanguage, indexedLanguage };
 
-  return detectLanguage(filePath, undefined, extensionOverrides);
+  return { language: detectLanguage(filePath, undefined, extensionOverrides) };
+}
+
+function compatibleDocumentLanguage(scipLanguage: Language, indexedLanguage: Language): boolean {
+  if (scipLanguage === indexedLanguage) return true;
+  return sameLanguageFamily(scipLanguage, indexedLanguage, 'typescript', 'tsx') ||
+    sameLanguageFamily(scipLanguage, indexedLanguage, 'javascript', 'jsx');
+}
+
+function sameLanguageFamily(a: Language, b: Language, first: Language, second: Language): boolean {
+  return (a === first || a === second) && (b === first || b === second);
 }
 
 function normalizeScipRelativePath(relativePath: string): string | null {
