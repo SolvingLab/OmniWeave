@@ -614,6 +614,7 @@ export interface ToolResult {
 
 export interface ToolExecutionOptions {
   outputSurface?: OutputSurface;
+  enforceToolAllowlist?: boolean;
 }
 
 /**
@@ -836,6 +837,22 @@ export const tools: ToolDefinition[] = [
   },
 ];
 
+function shortToolName(name: string): string {
+  return name.trim().replace(/^omniweave_/, '');
+}
+
+function parseToolAllowlist(raw = process.env.OMNIWEAVE_MCP_TOOLS): Set<string> | null {
+  if (!raw || !raw.trim()) return null;
+  const set = new Set(raw.split(',').map(shortToolName).filter(Boolean));
+  return set.size > 0 ? set : null;
+}
+
+function visibleToolsForAllowlist(allow: Set<string> | null): ToolDefinition[] {
+  return allow
+    ? tools.filter(t => allow.has(shortToolName(t.name)))
+    : tools.filter(t => DEFAULT_MCP_TOOLS.has(shortToolName(t.name)));
+}
+
 /**
  * Allowlist-filtered tool definitions WITHOUT an engine — the static surface the
  * proxy answers `tools/list` with before any project is open. Mirrors
@@ -843,12 +860,7 @@ export const tools: ToolDefinition[] = [
  * note in a description only adds once `cg` is loaded; the schemas are static).
  */
 export function getStaticTools(): ToolDefinition[] {
-  const raw = process.env.OMNIWEAVE_MCP_TOOLS;
-  if (!raw || !raw.trim()) {
-    return tools.filter(t => DEFAULT_MCP_TOOLS.has(t.name.replace(/^omniweave_/, '')));
-  }
-  const allow = new Set(raw.split(',').map(s => s.trim().replace(/^omniweave_/, '')).filter(Boolean));
-  return allow.size ? tools.filter(t => allow.has(t.name.replace(/^omniweave_/, ''))) : tools;
+  return visibleToolsForAllowlist(parseToolAllowlist());
 }
 
 /**
@@ -950,17 +962,13 @@ export class ToolHandler {
    * Matching is on the short form, so "node" and "omniweave_node" both work.
    */
   private toolAllowlist(): Set<string> | null {
-    const raw = process.env.OMNIWEAVE_MCP_TOOLS;
-    if (!raw || !raw.trim()) return null;
-    const short = (s: string) => s.trim().replace(/^omniweave_/, '');
-    const set = new Set(raw.split(',').map(short).filter(Boolean));
-    return set.size ? set : null;
+    return parseToolAllowlist();
   }
 
   /** Whether a tool name passes the OMNIWEAVE_MCP_TOOLS allowlist (if any). */
   private isToolAllowed(name: string): boolean {
     const allow = this.toolAllowlist();
-    return !allow || allow.has(name.replace(/^omniweave_/, ''));
+    return !allow || allow.has(shortToolName(name));
   }
 
   /**
@@ -974,9 +982,7 @@ export class ToolHandler {
     // No explicit allowlist → the default 5-tool surface (see
     // DEFAULT_MCP_TOOLS for the evidence). An allowlist replaces the
     // default entirely, so any defined tool can be re-enabled.
-    let visible = allow
-      ? tools.filter(t => allow.has(t.name.replace(/^omniweave_/, '')))
-      : tools.filter(t => DEFAULT_MCP_TOOLS.has(t.name.replace(/^omniweave_/, '')));
+    let visible = visibleToolsForAllowlist(allow);
     if (!this.cg) return visible;
 
     try {
@@ -1372,9 +1378,10 @@ export class ToolHandler {
         this.catchUpGate = null;
         try { await gate; } catch { /* engine already logged */ }
       }
-      // Honor the optional tool allowlist (OMNIWEAVE_MCP_TOOLS): a trimmed
-      // surface rejects ablated tools defensively even if a client cached them.
-      if (!this.isToolAllowed(toolName)) {
+      // MCP only: honor the optional tool allowlist defensively even if a
+      // client cached tools/list. CLI commands are first-class shell surfaces
+      // and must not inherit MCP experiment knobs from the environment.
+      if (options.enforceToolAllowlist !== false && !this.isToolAllowed(toolName)) {
         return this.errorResult(`Tool ${toolName} is disabled via OMNIWEAVE_MCP_TOOLS`);
       }
       // Cross-cutting input validation. All tools accept an optional

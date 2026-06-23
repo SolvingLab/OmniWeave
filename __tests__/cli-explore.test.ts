@@ -21,7 +21,11 @@ interface EdgeInserter {
   };
 }
 
-function runCli(cwd: string, args: string[]): { stdout: string; stderr: string; status: number | null } {
+function runCli(
+  cwd: string,
+  args: string[],
+  env: Record<string, string | undefined> = {},
+): { stdout: string; stderr: string; status: number | null } {
   const result = spawnSync(process.execPath, [BIN, ...args], {
     cwd,
     encoding: 'utf-8',
@@ -29,6 +33,7 @@ function runCli(cwd: string, args: string[]): { stdout: string; stderr: string; 
       ...process.env,
       OMNIWEAVE_NO_DAEMON: '1',
       OMNIWEAVE_NO_WATCH: '1',
+      ...env,
     },
   });
   return {
@@ -512,6 +517,20 @@ export function snapshotCaller(): string {
     expect(result.stdout).toContain('## Flow (call path among the symbols you queried)');
     expect(result.stdout).toMatch(/1\. entryPoint[\s\S]*2\. runPythonReport[\s\S]*3\. renderReport/);
     expect(result.stdout).toContain('dynamic: general crosslang');
+  });
+
+  it('does not let MCP tool allowlist environment disable CLI read commands', () => {
+    const env = { OMNIWEAVE_MCP_TOOLS: 'explore' };
+    const node = runCli(testDir, ['node', 'buildExploreOutput'], env);
+    const files = runCli(testDir, ['files', '--filter', './src/mcp', '--format', 'flat'], env);
+
+    expect(node.status).toBe(0);
+    expect(node.stdout).toContain('buildExploreOutput');
+    expect(node.stdout).not.toContain('disabled via OMNIWEAVE_MCP_TOOLS');
+    expect(files.status).toBe(0);
+    expect(files.stdout).toContain('## Files');
+    expect(files.stdout).toContain('src/mcp/tools.ts');
+    expect(files.stdout).not.toContain('disabled via OMNIWEAVE_MCP_TOOLS');
   });
 });
 

@@ -1116,7 +1116,10 @@ program
         query: queryParts.join(' '),
       };
       if (options.maxFiles) args.maxFiles = options.maxFiles;
-      const result = await handler.execute('omniweave_explore', args, { outputSurface: 'cli' });
+      const result = await handler.execute('omniweave_explore', args, {
+        outputSurface: 'cli',
+        enforceToolAllowlist: false,
+      });
 
       console.log(result.content[0]?.text ?? '');
       cg.destroy();
@@ -1180,7 +1183,10 @@ program
       if (options.limit) args.limit = parseCliIntOption(options.limit, 2000, 1, 2000);
       if (options.symbolsOnly) args.symbolsOnly = true;
 
-      const result = await handler.execute('omniweave_node', args, { outputSurface: 'cli' });
+      const result = await handler.execute('omniweave_node', args, {
+        outputSurface: 'cli',
+        enforceToolAllowlist: false,
+      });
 
       console.log(result.content[0]?.text ?? '');
       cg.destroy();
@@ -1235,7 +1241,10 @@ program
         if (options.pattern) args.pattern = options.pattern;
         if (options.maxDepth) args.maxDepth = parseCliIntOption(options.maxDepth, 20, 1, 20);
 
-        const result = await handler.execute('omniweave_files', args, { outputSurface: 'cli' });
+        const result = await handler.execute('omniweave_files', args, {
+          outputSurface: 'cli',
+          enforceToolAllowlist: false,
+        });
         console.log(result.content[0]?.text ?? '');
         cg.destroy();
         if (result.isError) process.exit(1);

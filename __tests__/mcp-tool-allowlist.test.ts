@@ -16,6 +16,7 @@ describe('OMNIWEAVE_MCP_TOOLS allowlist', () => {
   });
 
   const listed = () => new ToolHandler(null).getTools().map(t => t.name).sort();
+  const staticListed = () => getStaticTools().map(t => t.name).sort();
 
   it('exposes the default 5-tool surface when unset', () => {
     delete process.env[ENV];
@@ -32,6 +33,15 @@ describe('OMNIWEAVE_MCP_TOOLS allowlist', () => {
       'omniweave_node',
       'omniweave_search',
     ]);
+  });
+
+  it('keeps static and dynamic no-project tool lists identical', () => {
+    for (const value of [undefined, '   ', ',', ' , , ', 'explore,files']) {
+      if (value === undefined) delete process.env[ENV];
+      else process.env[ENV] = value;
+
+      expect(staticListed()).toEqual(listed());
+    }
   });
 
   it('re-enables an unlisted tool via the allowlist (callees)', () => {
@@ -53,6 +63,15 @@ describe('OMNIWEAVE_MCP_TOOLS allowlist', () => {
     process.env[ENV] = '   ';
     expect(listed()).toHaveLength(5);
     expect(listed()).toContain('omniweave_explore');
+  });
+
+  it('treats delimiter-only values as unset instead of exposing every tool', () => {
+    process.env[ENV] = ',,';
+
+    expect(listed()).toHaveLength(5);
+    expect(staticListed()).toEqual(listed());
+    expect(staticListed()).not.toContain('omniweave_files');
+    expect(staticListed()).not.toContain('omniweave_status');
   });
 
   it('does not advertise a stale fixed maxFiles default in the static explore schema', () => {
