@@ -319,15 +319,28 @@ function createDefinitionRecord(
   nodesById: Map<string, GraphNode>,
   warnings: string[],
 ): DefinitionRecord | null {
-  const name = sanitizeScipDisplayName(
+  const artifactName = sanitizeScipDisplayName(
     info.displayName.trim() || (context.hasVerifiedSourceText ? displayNameFromSymbol(info.symbol).trim() : '')
   );
-  if (!name) {
+  if (!artifactName) {
     warnings.push(`Skipping SCIP definition without displayName or embedded text: ${context.filePath} ${info.symbol}`);
     return null;
   }
   const kind = scipKindToNodeKind(info.kind);
-  const existing = findMatchingDefinitionNode(context.nodesInFile, name, kind, occurrence);
+  const existing = findMatchingDefinitionNode(context.nodesInFile, artifactName, kind, occurrence);
+  if (existing) {
+    return {
+      symbol: info.symbol,
+      filePath: context.filePath,
+      language: context.language,
+      nodeId: existing.id,
+      name: existing.name,
+      kind,
+      sourceTextVerified: context.hasVerifiedSourceText,
+      occurrence,
+      info,
+    };
+  }
   if (!existing && !context.hasVerifiedSourceText) {
     warnings.push(`Skipping SCIP definition without matching OmniWeave node or embedded text: ${context.filePath} ${info.symbol}`);
     return null;
@@ -336,9 +349,14 @@ function createDefinitionRecord(
     warnings.push(`Skipping SCIP definition without concrete definition range: ${context.filePath} ${info.symbol}`);
     return null;
   }
-  const nodeId = existing?.id ?? scipNodeId(info.symbol, context.filePath);
+  const name = sourceBackedScipDisplayName(context, occurrence, artifactName);
+  if (!name) {
+    warnings.push(`Skipping SCIP definition whose displayName does not match verified source text: ${context.filePath} ${info.symbol}`);
+    return null;
+  }
+  const nodeId = scipNodeId(info.symbol, context.filePath);
 
-  if (!existing && !nodesById.has(nodeId)) {
+  if (!nodesById.has(nodeId)) {
     nodesById.set(nodeId, createScipDefinitionNode(context, info, occurrence, nodeId, name, kind));
   }
 
@@ -722,6 +740,40 @@ function sanitizeScipDisplayName(value: string): string {
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, MAX_SCIP_DISPLAY_NAME_LENGTH);
+}
+
+function sourceBackedScipDisplayName(
+  context: ScipDocumentContext,
+  occurrence: ScipOccurrence | undefined,
+  artifactName: string,
+): string | null {
+  if (!context.hasVerifiedSourceText || !occurrence) return null;
+  const sourceText = occurrenceSourceText(context.document.text, occurrence);
+  if (sourceText === null) return null;
+  const sourceName = sanitizeScipDisplayName(sourceText);
+  if (!isSafeScipFallbackName(sourceName)) return null;
+  return sourceName === artifactName ? sourceName : null;
+}
+
+function occurrenceSourceText(content: string, occurrence: ScipOccurrence): string | null {
+  const range = occurrence.range;
+  const lines = content.split(/\r?\n/);
+  if (range.length === 3) {
+    const [line, startColumn, endColumn] = range as [number, number, number];
+    const text = lines[line];
+    return text === undefined ? null : text.slice(startColumn, endColumn);
+  }
+  if (range.length === 4) {
+    const [startLine, startColumn, endLine, endColumn] = range as [number, number, number, number];
+    if (startLine !== endLine) return null;
+    const text = lines[startLine];
+    return text === undefined ? null : text.slice(startColumn, endColumn);
+  }
+  return null;
+}
+
+function isSafeScipFallbackName(value: string): boolean {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*(?:[.:#$+-][A-Za-z0-9_$]+)*$/.test(value);
 }
 
 function scipNodeId(symbol: string, filePath: string): string {
