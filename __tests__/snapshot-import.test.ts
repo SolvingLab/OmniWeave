@@ -298,6 +298,29 @@ describe('snapshot import and verify', () => {
     }
   });
 
+  it('full reindex after source deletion removes imported snapshot facts and clears the warning', async () => {
+    await importSnapshot(outputDir, targetRoot);
+
+    const cg = OmniWeave.openSync(targetRoot);
+    try {
+      expect(cg.getSnapshotImportInfo()).not.toBeNull();
+      expect(cg.searchNodes('entry', { limit: 5 }).some((match) => match.node.name === 'entry')).toBe(true);
+
+      fs.rmSync(path.join(targetRoot, 'src', 'index.ts'));
+      const result = await cg.indexAll();
+
+      expect(result.success).toBe(true);
+      expect(result.filesIndexed).toBe(0);
+      expect(cg.searchNodes('entry', { limit: 5 }).some((match) => match.node.name === 'entry')).toBe(false);
+      expect(cg.getSnapshotImportInfo()).toBeNull();
+
+      const status = await new ToolHandler(cg).execute('omniweave_status', {});
+      expect(status.content[0].text).not.toContain('imported from a snapshot');
+    } finally {
+      cg.destroy();
+    }
+  });
+
   it('records the manifest hash from the verified manifest bytes', async () => {
     const manifestPath = path.join(outputDir, SNAPSHOT_MANIFEST_FILENAME);
     const expectedManifestHash = hashFileForTest(manifestPath);

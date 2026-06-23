@@ -432,7 +432,7 @@ export class OmniWeave {
         // engine produces richer extraction than the one on disk. Only on a
         // real full index — a sync touches a subset, so it must NOT advance the
         // extraction stamp (the bulk would still be stale). See extraction-version.ts.
-        if (result.success && result.filesIndexed > 0) {
+        if (result.success) {
           try {
             this.queries.setMetadata('indexed_with_version', OmniWeavePackageVersion);
             this.queries.setMetadata('indexed_with_extraction_version', String(EXTRACTION_VERSION));

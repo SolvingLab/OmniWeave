@@ -846,6 +846,17 @@ export class ExtractionOrchestrator {
     this.queries = queries;
   }
 
+  private pruneUnseenTrackedFiles(files: readonly string[]): void {
+    const currentSet = new Set(files);
+
+    for (const tracked of this.queries.getAllFiles()) {
+      const fullPath = validatePathWithinRoot(this.rootDir, tracked.path, { allowSymlinkEscape: true });
+      if (!currentSet.has(tracked.path) || !fullPath || !fs.existsSync(fullPath)) {
+        this.queries.deleteFile(tracked.path);
+      }
+    }
+  }
+
   /**
    * Build a filesystem-backed ResolutionContext sufficient for framework
    * detection. Graph-query methods (getNodesByName etc.) return empty because
@@ -952,6 +963,7 @@ export class ExtractionOrchestrator {
         currentFile: file,
       });
     });
+    this.pruneUnseenTrackedFiles(files);
 
     // Detect frameworks once per indexAll run using the scanned file list.
     // Names are passed to each parse call so framework-specific extractors
