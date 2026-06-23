@@ -145,6 +145,73 @@ function writeMalformedRangeScipIndex(filePath: string): void {
   ));
 }
 
+function writeUnmatchedNoTextScipIndex(filePath: string): void {
+  const ghost = 'scip-typescript npm demo 1.0 src/a.ts/ghost().';
+  fs.writeFileSync(filePath, msg(
+    fieldMsg(2, document('src/a.ts', 'typescript', [
+      occurrence([0, 0, 5], ghost, ROLE_DEFINITION),
+    ], [
+      symbolInfo(ghost, KIND_FUNCTION, 'ghost'),
+    ])),
+  ));
+}
+
+function writeUnmatchedVerifiedTextScipIndex(filePath: string, text: string): void {
+  const ghost = 'scip-typescript npm demo 1.0 src/a.ts/ghost().';
+  fs.writeFileSync(filePath, msg(
+    fieldMsg(2, document('src/a.ts', 'typescript', [
+      occurrence([0, 0, 6], ghost, ROLE_DEFINITION),
+    ], [
+      symbolInfo(ghost, KIND_FUNCTION, 'ghost'),
+    ], text)),
+  ));
+}
+
+function writeUnmatchedEmptyRangeWithTextScipIndex(filePath: string, text: string): void {
+  const ghost = 'scip-typescript npm demo 1.0 src/a.ts/ghost().';
+  fs.writeFileSync(filePath, msg(
+    fieldMsg(2, document('src/a.ts', 'typescript', [
+      occurrence([], ghost, ROLE_DEFINITION),
+    ], [
+      symbolInfo(ghost, KIND_FUNCTION, 'ghost'),
+    ], text)),
+  ));
+}
+
+function writeNoDisplayNameNoTextScipIndex(filePath: string): void {
+  const target = 'scip-typescript npm demo 1.0 src/a.ts/target().';
+  fs.writeFileSync(filePath, msg(
+    fieldMsg(2, document('src/a.ts', 'typescript', [
+      occurrence([0, 16, 22], target, ROLE_DEFINITION),
+    ], [
+      symbolInfo(target, KIND_FUNCTION, undefined),
+    ])),
+  ));
+}
+
+function writeWhitespaceDisplayNameNoTextScipIndex(filePath: string): void {
+  const target = 'scip-typescript npm demo 1.0 src/a.ts/target().';
+  fs.writeFileSync(filePath, msg(
+    fieldMsg(2, document('src/a.ts', 'typescript', [
+      occurrence([0, 16, 22], target, ROLE_DEFINITION),
+    ], [
+      symbolInfo(target, KIND_FUNCTION, '   '),
+    ])),
+  ));
+}
+
+function writeReferenceOutsideNodeNoTextScipIndex(filePath: string): void {
+  const target = 'scip-typescript npm demo 1.0 src/a.ts/target().';
+  fs.writeFileSync(filePath, msg(
+    fieldMsg(2, document('src/a.ts', 'typescript', [
+      occurrence([0, 16, 22], target, ROLE_DEFINITION),
+      occurrence([6, 0, 1], target, ROLE_READ),
+    ], [
+      symbolInfo(target, KIND_FUNCTION, 'target'),
+    ])),
+  ));
+}
+
 describe('SCIP importer', () => {
   let projectRoot: string;
   let indexPath: string;
@@ -285,6 +352,106 @@ describe('SCIP importer', () => {
     expect(result.referencesImported).toBe(1);
     expect(result.relationshipsImported).toBe(1);
     expect(result.warnings).toEqual([]);
+  });
+
+  it('does not create fallback SCIP nodes from documents without embedded text', async () => {
+    writeUnmatchedNoTextScipIndex(indexPath);
+
+    const result = await importScipIndex(projectRoot, indexPath);
+
+    expect(result.documentsImported).toBe(1);
+    expect(result.nodesImported).toBe(0);
+    expect(result.edgesImported).toBe(0);
+    expect(result.warnings).toEqual([
+      'Skipping SCIP definition without matching OmniWeave node or embedded text: src/a.ts scip-typescript npm demo 1.0 src/a.ts/ghost().',
+    ]);
+
+    const cg = OmniWeave.openSync(projectRoot);
+    try {
+      expect(cg.searchNodes('ghost', { limit: 5 }).map((match) => match.node.id)).not.toContainEqual(expect.stringMatching(/^scip:/));
+    } finally {
+      cg.destroy();
+    }
+  });
+
+  it('creates fallback SCIP nodes only when embedded text and concrete ranges are verified', async () => {
+    const text = fs.readFileSync(path.join(projectRoot, 'src', 'a.ts'), 'utf8');
+    writeUnmatchedVerifiedTextScipIndex(indexPath, text);
+
+    const result = await importScipIndex(projectRoot, indexPath);
+
+    expect(result.documentsImported).toBe(1);
+    expect(result.nodesImported).toBe(1);
+    expect(result.edgesImported).toBe(0);
+    expect(result.warnings).toEqual([]);
+
+    const cg = OmniWeave.openSync(projectRoot);
+    try {
+      const ghost = cg.searchNodes('ghost', { limit: 5 }).find((match) => match.node.filePath === 'src/a.ts')?.node;
+      expect(ghost).toEqual(expect.objectContaining({
+        id: expect.stringMatching(/^scip:/),
+        name: 'ghost',
+        startLine: 1,
+        startColumn: 0,
+        endColumn: 6,
+      }));
+    } finally {
+      cg.destroy();
+    }
+  });
+
+  it('does not create fallback SCIP nodes with verified text but empty definition ranges', async () => {
+    const text = fs.readFileSync(path.join(projectRoot, 'src', 'a.ts'), 'utf8');
+    writeUnmatchedEmptyRangeWithTextScipIndex(indexPath, text);
+
+    const result = await importScipIndex(projectRoot, indexPath);
+
+    expect(result.documentsImported).toBe(1);
+    expect(result.nodesImported).toBe(0);
+    expect(result.edgesImported).toBe(0);
+    expect(result.warnings).toEqual([
+      'Skipping SCIP definition without concrete definition range: src/a.ts scip-typescript npm demo 1.0 src/a.ts/ghost().',
+    ]);
+  });
+
+  it('does not derive display names from symbols when embedded text is absent', async () => {
+    writeNoDisplayNameNoTextScipIndex(indexPath);
+
+    const result = await importScipIndex(projectRoot, indexPath);
+
+    expect(result.documentsImported).toBe(1);
+    expect(result.nodesImported).toBe(0);
+    expect(result.edgesImported).toBe(0);
+    expect(result.warnings).toEqual([
+      'Skipping SCIP definition without displayName or embedded text: src/a.ts scip-typescript npm demo 1.0 src/a.ts/target().',
+    ]);
+  });
+
+  it('treats whitespace SCIP display names as absent when embedded text is absent', async () => {
+    writeWhitespaceDisplayNameNoTextScipIndex(indexPath);
+
+    const result = await importScipIndex(projectRoot, indexPath);
+
+    expect(result.documentsImported).toBe(1);
+    expect(result.nodesImported).toBe(0);
+    expect(result.edgesImported).toBe(0);
+    expect(result.warnings).toEqual([
+      'Skipping SCIP definition without displayName or embedded text: src/a.ts scip-typescript npm demo 1.0 src/a.ts/target().',
+    ]);
+  });
+
+  it('does not fall back to file nodes for no-text references outside known source nodes', async () => {
+    writeReferenceOutsideNodeNoTextScipIndex(indexPath);
+
+    const result = await importScipIndex(projectRoot, indexPath);
+
+    expect(result.documentsImported).toBe(1);
+    expect(result.referencesImported).toBe(0);
+    expect(result.skippedReferences).toBe(1);
+    expect(result.edgesImported).toBe(0);
+    expect(result.warnings).toEqual([
+      'Skipping SCIP reference without matching OmniWeave source node or embedded text: src/a.ts scip-typescript npm demo 1.0 src/a.ts/target().',
+    ]);
   });
 
   it('skips SCIP documents whose embedded text is stale', async () => {
@@ -455,12 +622,12 @@ function occurrence(range: number[], symbol: string, roles: number): Buffer {
   );
 }
 
-function symbolInfo(symbol: string, kind: number, displayName: string, relationships: Buffer[] = []): Buffer {
+function symbolInfo(symbol: string, kind: number, displayName: string | undefined, relationships: Buffer[] = []): Buffer {
   return msg(
     fieldString(1, symbol),
     ...relationships.map((rel) => fieldMsg(4, rel)),
     fieldVarint(5, kind),
-    fieldString(6, displayName),
+    displayName === undefined ? Buffer.alloc(0) : fieldString(6, displayName),
   );
 }
 

@@ -42,6 +42,7 @@ interface ScipDocumentContext {
   document: ScipDocument;
   filePath: string;
   fullPath: string;
+  hasVerifiedSourceText: boolean;
   language: Language;
   nodesInFile: GraphNode[];
 }
@@ -53,6 +54,7 @@ interface DefinitionRecord {
   nodeId: string;
   name: string;
   kind: NodeKind;
+  sourceTextVerified: boolean;
   occurrence?: ScipOccurrence;
   info: ScipSymbolInformation;
 }
@@ -151,7 +153,8 @@ function buildScipImportPlan(
         warnings.push(malformedRangeWarning(context.filePath, 'definition', occurrence));
         continue;
       }
-      const record = createDefinitionRecord(context, info, occurrence, nodesById);
+      const record = createDefinitionRecord(context, info, occurrence, nodesById, warnings);
+      if (!record) continue;
       const records = definitions.get(info.symbol) ?? [];
       records.push(record);
       definitions.set(info.symbol, records);
@@ -172,10 +175,17 @@ function buildScipImportPlan(
         continue;
       }
       const sourceNode = findEnclosingNode(context.nodesInFile, occurrence, target.nodeId)
-        ?? ensureFileNode(context, nodesById);
+        ?? (context.hasVerifiedSourceText ? ensureFileNode(context, nodesById) : null);
+      if (!sourceNode) {
+        skippedReferences++;
+        warnings.push(`Skipping SCIP reference without matching OmniWeave source node or embedded text: ${context.filePath} ${occurrence.symbol}`);
+        continue;
+      }
       const edge = createScipEdge(sourceNode.id, target.nodeId, 'references', occurrence, {
         scipSource: 'occurrence',
         scipTargetSymbol: occurrence.symbol,
+        scipSourceTextVerified: context.hasVerifiedSourceText,
+        scipTargetTextVerified: target.sourceTextVerified,
       });
       addEdge(edge, edgesByKey);
       referencesImported++;
@@ -200,6 +210,8 @@ function buildScipImportPlan(
           scipRelationship: relationshipMetadata(relationship),
           scipSourceSymbol: info.symbol,
           scipTargetSymbol: relationship.symbol,
+          scipSourceTextVerified: source.sourceTextVerified,
+          scipTargetTextVerified: target.sourceTextVerified,
         });
         addEdge(edge, edgesByKey);
         relationshipsImported++;
@@ -250,7 +262,8 @@ function buildDocumentContexts(
       warnings.push(`Skipping SCIP document outside OmniWeave index: ${filePath}`);
       continue;
     }
-    if (document.text && fs.readFileSync(fullPath, 'utf8') !== document.text) {
+    const hasVerifiedSourceText = document.text.length > 0;
+    if (hasVerifiedSourceText && fs.readFileSync(fullPath, 'utf8') !== document.text) {
       warnings.push(`Skipping SCIP document with stale embedded text: ${filePath}`);
       continue;
     }
@@ -275,6 +288,7 @@ function buildDocumentContexts(
       document,
       filePath,
       fullPath,
+      hasVerifiedSourceText,
       language: language.indexedLanguage ?? language.language,
       nodesInFile,
     });
@@ -288,10 +302,23 @@ function createDefinitionRecord(
   info: ScipSymbolInformation,
   occurrence: ScipOccurrence | undefined,
   nodesById: Map<string, GraphNode>,
-): DefinitionRecord {
-  const name = info.displayName || displayNameFromSymbol(info.symbol);
+  warnings: string[],
+): DefinitionRecord | null {
+  const name = info.displayName.trim() || (context.hasVerifiedSourceText ? displayNameFromSymbol(info.symbol).trim() : '');
+  if (!name) {
+    warnings.push(`Skipping SCIP definition without displayName or embedded text: ${context.filePath} ${info.symbol}`);
+    return null;
+  }
   const kind = scipKindToNodeKind(info.kind);
   const existing = findMatchingDefinitionNode(context.nodesInFile, name, kind, occurrence);
+  if (!existing && !context.hasVerifiedSourceText) {
+    warnings.push(`Skipping SCIP definition without matching OmniWeave node or embedded text: ${context.filePath} ${info.symbol}`);
+    return null;
+  }
+  if (!existing && !hasConcreteOccurrenceRange(occurrence)) {
+    warnings.push(`Skipping SCIP definition without concrete definition range: ${context.filePath} ${info.symbol}`);
+    return null;
+  }
   const nodeId = existing?.id ?? scipNodeId(info.symbol, context.filePath);
 
   if (!existing && !nodesById.has(nodeId)) {
@@ -305,6 +332,7 @@ function createDefinitionRecord(
     nodeId,
     name,
     kind,
+    sourceTextVerified: context.hasVerifiedSourceText,
     occurrence,
     info,
   };
@@ -426,6 +454,10 @@ function hasSupportedOccurrenceRange(occurrence: ScipOccurrence | undefined): bo
   return occurrence.range.length === 0 || occurrence.range.length === 3 || occurrence.range.length === 4;
 }
 
+function hasConcreteOccurrenceRange(occurrence: ScipOccurrence | undefined): boolean {
+  return occurrence !== undefined && (occurrence.range.length === 3 || occurrence.range.length === 4);
+}
+
 function malformedRangeWarning(filePath: string, role: 'definition' | 'reference', occurrence: ScipOccurrence): string {
   return `Skipping SCIP ${role} with malformed range (${occurrence.range.length} values): ${filePath} ${occurrence.symbol}`;
 }
@@ -461,6 +493,8 @@ function semanticEdgeMetadataKey(metadata: Record<string, unknown> | undefined):
     scipRelationship: metadata.scipRelationship,
     scipSourceSymbol: metadata.scipSourceSymbol,
     scipTargetSymbol: metadata.scipTargetSymbol,
+    scipSourceTextVerified: metadata.scipSourceTextVerified,
+    scipTargetTextVerified: metadata.scipTargetTextVerified,
   });
 }
 
