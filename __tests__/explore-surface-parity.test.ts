@@ -76,7 +76,11 @@ function waitForMessage(
   });
 }
 
-async function runMcpExplore(projectRoot: string, args: Record<string, unknown>): Promise<string> {
+async function runMcpExploreWithHook(
+  projectRoot: string,
+  args: Record<string, unknown>,
+  beforeCall?: () => void | Promise<void>,
+): Promise<string> {
   const child = spawnServer(projectRoot);
   const messages = collectMessages(child);
   try {
@@ -92,6 +96,11 @@ async function runMcpExplore(projectRoot: string, args: Record<string, unknown>)
     });
     await waitForMessage(messages, (message) => message.id === 0 && !!message.result);
     send(child, { method: 'notifications/initialized' });
+    if (beforeCall) {
+      send(child, { id: 99, method: 'tools/list' });
+      await waitForMessage(messages, (message) => message.id === 99 && !!message.result);
+      await beforeCall();
+    }
     send(child, {
       id: 1,
       method: 'tools/call',
@@ -103,6 +112,10 @@ async function runMcpExplore(projectRoot: string, args: Record<string, unknown>)
   } finally {
     if (!child.killed) child.kill('SIGKILL');
   }
+}
+
+async function runMcpExplore(projectRoot: string, args: Record<string, unknown>): Promise<string> {
+  return runMcpExploreWithHook(projectRoot, args);
 }
 
 function runCliExplore(projectRoot: string, query: string, maxFiles?: number): string {
@@ -334,5 +347,46 @@ describe('explore surface parity', () => {
     expect(cliText).toContain('omniweave explore "<names>"');
     expect(cliText).not.toContain('omniweave_explore');
     expect(cliText).not.toContain('omniweave_node');
+  }, 40000);
+
+  it('keeps stale-wrapped hard-ceiling output aligned across MCP and CLI', async () => {
+    for (let i = 0; i < 505; i++) {
+      writeProjectFile(projectRoot, `noise/noise${i}.ts`, `export const noise${i} = ${i};\n`);
+    }
+    for (let fileIndex = 0; fileIndex < 8; fileIndex++) {
+      const body: string[] = [`export function staleBudget${fileIndex}(): string {`];
+      body.push('  const values = [');
+      for (let line = 0; line < 240; line++) {
+        body.push(`    "staleBudget${fileIndex}-payload-${line.toString().padStart(3, '0')}-abcdefghijklmnopqrstuvwxyz",`);
+      }
+      body.push('  ];');
+      body.push("  return values.join('\\n');");
+      body.push('}');
+      writeProjectFile(projectRoot, `src/stale-target${fileIndex}.ts`, body.join('\n'));
+    }
+    await indexProject(projectRoot);
+
+    const query = Array.from({ length: 8 }, (_, i) => `staleBudget${i}`).join(' ');
+    const targetPath = path.join(projectRoot, 'src', 'stale-target0.ts');
+    const original = fs.readFileSync(targetPath, 'utf-8');
+    const markModified = () => fs.writeFileSync(targetPath, `${original}\n// stale edit\n`);
+    const mcpText = await runMcpExploreWithHook(projectRoot, { query, maxFiles: 8 }, markModified);
+    const cliText = runCliExplore(projectRoot, query, 8);
+
+    for (const text of [mcpText, cliText]) {
+      expect(text.startsWith('⚠️')).toBe(true);
+      expect(text).toContain('src/stale-target0.ts (modified)');
+      expect(text).toMatch(/output truncated to (?:budget|final inline budget after freshness\/worktree notices)/);
+      expect(text.length).toBeLessThanOrEqual(25000);
+      expect(text).toContain('Treat only complete source blocks shown above as already Read');
+      expect((text.match(/```/g) ?? []).length % 2).toBe(0);
+    }
+    expect(mcpText).toContain('omniweave_node <path>');
+    expect(mcpText).toContain('run another omniweave_explore with the specific names');
+    expect(mcpText).not.toContain('omniweave node <path>');
+    expect(cliText).toContain('omniweave node <path>');
+    expect(cliText).toContain('omniweave explore "<names>"');
+    expect(cliText).not.toContain('omniweave_node');
+    expect(cliText).not.toContain('omniweave_explore');
   }, 40000);
 });
