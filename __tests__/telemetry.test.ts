@@ -11,7 +11,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { Telemetry, getTelemetry, TELEMETRY_ENDPOINT } from '../src/telemetry';
+import { Telemetry, getTelemetry, TELEMETRY_DOCS, TELEMETRY_ENDPOINT } from '../src/telemetry';
 
 type FetchCall = { url: string; body: Record<string, unknown> };
 
@@ -49,6 +49,10 @@ describe('Telemetry', () => {
 
   afterEach(() => {
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('points users at the OmniWeave telemetry contract, not the upstream fork source', () => {
+    expect(TELEMETRY_DOCS).toBe('https://github.com/SolvingLab/OmniWeave/blob/main/TELEMETRY.md');
   });
 
   describe('consent precedence', () => {

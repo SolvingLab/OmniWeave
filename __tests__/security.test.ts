@@ -232,6 +232,22 @@ describe('Symlink escape prevention (#527)', () => {
     expect(validatePathWithinRoot(root, 'src/inlink.ts')).not.toBeNull();
   });
 
+  it('allowSymlinkEscape follows an in-repo symlink to an out-of-root file for indexing reads', () => {
+    if (!link(path.join(root, 'escape'), path.join(outside, 'pkg', 'secret.txt'))) return;
+    expect(validatePathWithinRoot(root, 'escape', { allowSymlinkEscape: true })).not.toBeNull();
+  });
+
+  it('allowSymlinkEscape follows an in-repo out-of-root dir symlink for indexing reads', () => {
+    if (!link(path.join(root, 'escapedir'), path.join(outside, 'pkg'))) return;
+    expect(validatePathWithinRoot(root, 'escapedir/secret.txt', { allowSymlinkEscape: true })).not.toBeNull();
+  });
+
+  it('allowSymlinkEscape still rejects lexical traversal', () => {
+    expect(
+      validatePathWithinRoot(root, `../${path.basename(outside)}/pkg/secret.txt`, { allowSymlinkEscape: true })
+    ).toBeNull();
+  });
+
   it('end-to-end: getCode never serves an out-of-root file reached via a dir symlink', async () => {
     fs.writeFileSync(path.join(outside, 'pkg', 'leak.ts'),
       'export function leaked() { return "LEAKED-ZZZ-9"; }\n');
@@ -245,6 +261,23 @@ describe('Symlink escape prevention (#527)', () => {
       for (const n of cg.getNodesByKind('function')) {
         const code = await cg.getCode(n.id);
         expect(code ?? '').not.toContain('LEAKED-ZZZ-9');
+      }
+    } finally {
+      cg.close();
+    }
+  });
+
+  it('end-to-end: indexes source reached through an in-root dir symlink to outside', async () => {
+    fs.writeFileSync(path.join(outside, 'pkg', 'vendored.ts'),
+      'export function vendoredHelper() { return "LEAKED-ZZZ-9"; }\n');
+    if (!link(path.join(root, 'game'), path.join(outside, 'pkg'))) return;
+
+    const cg = OmniWeave.initSync(root, { config: { include: ['**/*.ts'], exclude: [] } });
+    try {
+      await cg.indexAll();
+      expect(cg.getNodesByKind('function').map((n) => n.name)).toContain('vendoredHelper');
+      for (const node of cg.getNodesByKind('function')) {
+        expect((await cg.getCode(node.id)) ?? '').not.toContain('LEAKED-ZZZ-9');
       }
     } finally {
       cg.close();
@@ -325,6 +358,9 @@ describe('MCP Input Validation', () => {
   it('should accept valid query in omniweave_search', async () => {
     const result = await handler.execute('omniweave_search', { query: 'example' });
     expect(result.isError).toBeFalsy();
+    expect(result.content[0].text).toContain(
+      'key: `omniweave_node symbol="exampleFunc" file="src/example.ts" line=1`'
+    );
   });
 
   it('should clamp limit to valid range in omniweave_search', async () => {

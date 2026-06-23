@@ -201,6 +201,28 @@ describe('omniweave_explore output respects the adaptive budget', () => {
     expect(text).not.toContain('Explore budget:');
   });
 
+  it('honors numeric-string maxFiles from loose MCP clients', async () => {
+    const result = await handler.execute('omniweave_explore', { query: 'callSession', maxFiles: '2' });
+    const text = result.content?.[0]?.text ?? '';
+    expect((text.match(/^#### /gm) ?? []).length).toBe(2);
+  });
+
+  it('separates candidate graph breadth from source sections shown', async () => {
+    const result = await handler.execute('omniweave_explore', { query: 'callSession', maxFiles: 2 });
+    const text = result.content?.[0]?.text ?? '';
+
+    expect(text).toMatch(
+      /Candidate graph: \d+ symbols across \d+ source-candidate files\. Source shown below covers 2 files; \d+ candidate files? not shown in this call\./
+    );
+    expect(text).not.toMatch(/^Found \d+ symbols across \d+ files\.$/m);
+  });
+
+  it('does not let invalid maxFiles strings bypass the default file cap', async () => {
+    const result = await handler.execute('omniweave_explore', { query: 'callSession', maxFiles: 'banana' });
+    const text = result.content?.[0]?.text ?? '';
+    expect((text.match(/^#### /gm) ?? []).length).toBeLessThanOrEqual(getExploreOutputBudget(6).defaultMaxFiles);
+  });
+
   it('still includes the Relationships section — it is the cheapest structural signal', async () => {
     const result = await handler.execute('omniweave_explore', { query: 'Session method helper' });
     const text = result.content?.[0]?.text ?? '';
@@ -252,5 +274,107 @@ describe('omniweave_explore output respects the adaptive budget', () => {
     // the `export class Session {` opener.
     const hasMethodBody = /method\d+\(arg: string\)/.test(text);
     expect(hasMethodBody).toBe(true);
+  });
+});
+
+describe('omniweave_explore hard-ceiling truncation', () => {
+  let testDir: string;
+  let cg: OmniWeave;
+  let handler: ToolHandler;
+
+  beforeAll(async () => {
+    testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omniweave-explore-ceiling-'));
+    const srcDir = path.join(testDir, 'src');
+    const noiseDir = path.join(testDir, 'noise');
+    fs.mkdirSync(srcDir, { recursive: true });
+    fs.mkdirSync(noiseDir, { recursive: true });
+
+    // Push the fixture into the medium tier so the hard inline ceiling is 25K.
+    for (let i = 0; i < 505; i++) {
+      fs.writeFileSync(path.join(noiseDir, `noise${i}.ts`), `export const noise${i} = ${i};\n`);
+    }
+
+    for (let fileIndex = 0; fileIndex < 8; fileIndex++) {
+      const body: string[] = [`export function targetBudget${fileIndex}(): string {`];
+      body.push('  const values = [');
+      for (let line = 0; line < 240; line++) {
+        body.push(`    "targetBudget${fileIndex}-payload-${line.toString().padStart(3, '0')}-abcdefghijklmnopqrstuvwxyz",`);
+      }
+      body.push('  ];');
+      body.push("  return values.join('\\n');");
+      body.push('}');
+      fs.writeFileSync(path.join(srcDir, `target${fileIndex}.ts`), body.join('\n'));
+    }
+
+    cg = OmniWeave.initSync(testDir, {
+      config: { include: ['**/*.ts'], exclude: [] },
+    });
+    await cg.indexAll();
+    handler = new ToolHandler(cg);
+  });
+
+  afterAll(() => {
+    if (cg) cg.destroy();
+    if (testDir && fs.existsSync(testDir)) {
+      fs.rmSync(testDir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the final truncation honest and inside the inline ceiling', async () => {
+    const query = Array.from({ length: 8 }, (_, i) => `targetBudget${i}`).join(' ');
+    const result = await handler.execute('omniweave_explore', { query, maxFiles: 8 });
+    const text = result.content?.[0]?.text ?? '';
+
+    expect(text).toContain('output truncated to budget');
+    expect(text.length).toBeLessThanOrEqual(25000);
+    expect(text).toContain('Treat only complete source blocks shown above as already Read');
+    expect(text).toContain('#### src/target');
+    expect(text).toContain('```typescript');
+    expect(text).not.toContain('the source above is complete and verbatim');
+    expect((text.match(/```/g) ?? []).length % 2).toBe(0);
+  });
+
+  it('keeps stale-wrapped hard-ceiling output inside the inline ceiling', async () => {
+    const query = Array.from({ length: 8 }, (_, i) => `targetBudget${i}`).join(' ');
+    const targetPath = path.join(testDir, 'src', 'target0.ts');
+    const original = fs.readFileSync(targetPath, 'utf-8');
+    try {
+      fs.writeFileSync(targetPath, `${original}\n// stale edit\n`);
+
+      const result = await handler.execute('omniweave_explore', { query, maxFiles: 8 });
+      const text = result.content?.[0]?.text ?? '';
+
+      expect(text.startsWith('⚠️')).toBe(true);
+      expect(text).toContain('src/target0.ts (modified)');
+      expect(text).toMatch(/output truncated to (?:budget|final inline budget after freshness\/worktree notices)/);
+      expect(text).toContain('Treat only complete source blocks shown above as already Read');
+      expect(text.length).toBeLessThanOrEqual(25000);
+      expect((text.match(/```/g) ?? []).length % 2).toBe(0);
+    } finally {
+      fs.writeFileSync(targetPath, original);
+    }
+  });
+
+  it('does not describe sectioned source ranges as complete whole files', async () => {
+    const result = await handler.execute('omniweave_explore', { query: 'targetBudget0', maxFiles: 1 });
+    const text = result.content?.[0]?.text ?? '';
+
+    expect(text).not.toContain('output truncated to budget');
+    expect(text).not.toContain('Complete source for 1 files is included above');
+    expect(text).toContain('Source shown above is complete only for the displayed blocks/ranges');
+  });
+
+  it('does not repeat displayed source files in the not-shown list', async () => {
+    const query = Array.from({ length: 8 }, (_, i) => `targetBudget${i}`).join(' ');
+    const result = await handler.execute('omniweave_explore', { query, maxFiles: 2 });
+    const text = result.content?.[0]?.text ?? '';
+    const notShown = text.split('### Not shown above — explore these names for their source')[1] ?? '';
+    const shownFiles = [...text.matchAll(/^#### ([^—\n]+?) —/gm)].map((m) => m[1]!.trim());
+
+    expect(shownFiles.length).toBeGreaterThan(0);
+    expect(notShown).toBeTruthy();
+    for (const filePath of shownFiles) {
+      expect(notShown).not.toContain(`- ${filePath}:`);
+    }
   });
 });

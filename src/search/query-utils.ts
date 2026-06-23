@@ -264,11 +264,17 @@ export function scorePathRelevance(
     else if (subtokens.some((t) => pathLower.includes(t))) score += 3;
   }
 
-  // Deprioritize test files unless the query is explicitly about tests
+  // Deprioritize test/support files unless the query is explicitly about tests.
+  // Repository snapshots under research/*/repos are even weaker as default
+  // production-code candidates: they are external evidence corpora, not the
+  // project being edited. Keep them searchable when the user asks for snapshots.
   const queryLower = query.toLowerCase();
   const isTestQuery = queryLower.includes('test') || queryLower.includes('spec');
   if (!isTestQuery && isTestFile(filePath)) {
     score -= 15;
+  }
+  if (!isRepositorySnapshotQuery(query) && isRepositorySnapshotFile(filePath)) {
+    score -= 25;
   }
 
   return score;
@@ -316,6 +322,29 @@ export function isTestFile(filePath: string): boolean {
   // Check both mid-path (/integration/) and start-of-path (integration/) since
   // file paths may be stored as relative paths without a leading slash.
   return matchesNonProductionDir(lower);
+}
+
+/**
+ * Check if a path points at an external repository snapshot kept inside this repo
+ * for research/evaluation. These files are useful evidence, but they should not
+ * outrank first-party source for default architecture/code-change questions.
+ */
+export function isRepositorySnapshotFile(filePath: string): boolean {
+  const normalized = filePath.replace(/\\/g, '/').toLowerCase();
+  return /(?:^|\/)research\/[^/]+\/repos\//.test(normalized);
+}
+
+export function isLowSignalSourceFile(filePath: string): boolean {
+  return isTestFile(filePath) || isRepositorySnapshotFile(filePath);
+}
+
+export function isRepositorySnapshotQuery(query: string): boolean {
+  return /\b(research|snapshot|snapshots|external|upstream|vendor|vendored|third[-_ ]?party)\b/i.test(query);
+}
+
+export function isLowSignalSourceQuery(query: string): boolean {
+  return /\b(test|tests|testing|spec|verify|verifies)\b/i.test(query)
+    || isRepositorySnapshotQuery(query);
 }
 
 /**

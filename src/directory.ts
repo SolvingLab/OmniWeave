@@ -5,6 +5,7 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 /** The default per-project data directory name. */
@@ -104,6 +105,35 @@ export function isInitialized(projectRoot: string): boolean {
   // Must have omniweave.db, not just .omniweave folder
   const dbPath = path.join(omniweaveDir, 'omniweave.db');
   return fs.existsSync(dbPath);
+}
+
+export function unsafeIndexRootReason(projectRoot: string): string | null {
+  const resolveReal = (p: string): string => {
+    try {
+      return fs.realpathSync(path.resolve(p));
+    } catch {
+      return path.resolve(p);
+    }
+  };
+
+  const resolved = resolveReal(projectRoot);
+  if (path.parse(resolved).root === resolved) {
+    return 'the filesystem root';
+  }
+
+  const home = resolveReal(os.homedir());
+  const normalize = (p: string): string =>
+    process.platform === 'darwin' || process.platform === 'win32' ? p.toLowerCase() : p;
+  const root = normalize(resolved);
+  const homeRoot = normalize(home);
+
+  if (root === homeRoot) {
+    return 'your home directory';
+  }
+  if (homeRoot.startsWith(root + path.sep)) {
+    return 'a parent of your home directory';
+  }
+  return null;
 }
 
 /**

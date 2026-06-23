@@ -1,0 +1,397 @@
+repo	keyword	count
+aider	tree-sitter	401
+aider	mcp	7
+aider	sqlite	13
+aider	tantivy	0
+aider	vector	6
+aider	embedding	41
+aider	lsp	16
+aider	language server	1
+aider	call graph	2
+aider	caller	6
+aider	callees	1
+aider	subprocess	368
+aider	child_process	0
+aider	exec.Command	0
+aider	Snakemake	0
+aider	Nextflow	0
+aider	Snakefile	0
+aider	setMethod	0
+aider	SCIP	37
+aider	provenance	0
+aider	confidence	0
+aider	watcher	85
+aider	PageRank	81
+aider	repo map	217
+blarify	tree-sitter	85
+blarify	mcp	338
+blarify	sqlite	2
+blarify	tantivy	0
+blarify	vector	197
+blarify	embedding	551
+blarify	lsp	391
+blarify	language server	55
+blarify	call graph	11
+blarify	caller	162
+blarify	callees	1
+blarify	subprocess	12
+blarify	child_process	0
+blarify	exec.Command	0
+blarify	Snakemake	0
+blarify	Nextflow	0
+blarify	Snakefile	0
+blarify	setMethod	0
+blarify	SCIP	452
+blarify	provenance	0
+blarify	confidence	11
+blarify	watcher	0
+blarify	PageRank	0
+blarify	repo map	0
+cgc	tree-sitter	265
+cgc	mcp	2107
+cgc	sqlite	7
+cgc	tantivy	0
+cgc	vector	275
+cgc	embedding	136
+cgc	lsp	18
+cgc	language server	0
+cgc	call graph	27
+cgc	caller	1383
+cgc	callees	110
+cgc	subprocess	70
+cgc	child_process	3
+cgc	exec.Command	0
+cgc	Snakemake	0
+cgc	Nextflow	0
+cgc	Snakefile	0
+cgc	setMethod	0
+cgc	SCIP	613
+cgc	provenance	0
+cgc	confidence	3808
+cgc	watcher	246
+cgc	PageRank	0
+cgc	repo map	0
+claude-context	tree-sitter	129
+claude-context	mcp	575
+claude-context	sqlite	3
+claude-context	tantivy	0
+claude-context	vector	617
+claude-context	embedding	908
+claude-context	lsp	4
+claude-context	language server	1
+claude-context	call graph	0
+claude-context	caller	12
+claude-context	callees	0
+claude-context	subprocess	17
+claude-context	child_process	3
+claude-context	exec.Command	0
+claude-context	Snakemake	0
+claude-context	Nextflow	0
+claude-context	Snakefile	0
+claude-context	setMethod	0
+claude-context	SCIP	2
+claude-context	provenance	0
+claude-context	confidence	0
+claude-context	watcher	42
+claude-context	PageRank	0
+claude-context	repo map	0
+codanna	tree-sitter	337
+codanna	mcp	89
+codanna	sqlite	4
+codanna	tantivy	46
+codanna	vector	110
+codanna	embedding	35
+codanna	lsp	29
+codanna	language server	2
+codanna	call graph	4
+codanna	caller	40
+codanna	callees	1
+codanna	subprocess	0
+codanna	child_process	0
+codanna	exec.Command	0
+codanna	Snakemake	0
+codanna	Nextflow	0
+codanna	Snakefile	0
+codanna	setMethod	0
+codanna	SCIP	1
+codanna	provenance	0
+codanna	confidence	1
+codanna	watcher	23
+codanna	PageRank	0
+codanna	repo map	0
+codanna-clean	tree-sitter	458
+codanna-clean	mcp	583
+codanna-clean	sqlite	4
+codanna-clean	tantivy	282
+codanna-clean	vector	1289
+codanna-clean	embedding	1186
+codanna-clean	lsp	39
+codanna-clean	language server	2
+codanna-clean	call graph	4
+codanna-clean	caller	962
+codanna-clean	callees	3
+codanna-clean	subprocess	2
+codanna-clean	child_process	0
+codanna-clean	exec.Command	0
+codanna-clean	Snakemake	0
+codanna-clean	Nextflow	0
+codanna-clean	Snakefile	0
+codanna-clean	setMethod	0
+codanna-clean	SCIP	1
+codanna-clean	provenance	0
+codanna-clean	confidence	8
+codanna-clean	watcher	211
+codanna-clean	PageRank	0
+codanna-clean	repo map	0
+code-graph-mcp	tree-sitter	0
+code-graph-mcp	mcp	242
+code-graph-mcp	sqlite	0
+code-graph-mcp	tantivy	0
+code-graph-mcp	vector	28
+code-graph-mcp	embedding	0
+code-graph-mcp	lsp	0
+code-graph-mcp	language server	0
+code-graph-mcp	call graph	4
+code-graph-mcp	caller	75
+code-graph-mcp	callees	45
+code-graph-mcp	subprocess	7
+code-graph-mcp	child_process	0
+code-graph-mcp	exec.Command	0
+code-graph-mcp	Snakemake	0
+code-graph-mcp	Nextflow	0
+code-graph-mcp	Snakefile	0
+code-graph-mcp	setMethod	1
+code-graph-mcp	SCIP	0
+code-graph-mcp	provenance	0
+code-graph-mcp	confidence	3
+code-graph-mcp	watcher	80
+code-graph-mcp	PageRank	59
+code-graph-mcp	repo map	0
+code-graph-mcp-2	tree-sitter	129
+code-graph-mcp-2	mcp	1633
+code-graph-mcp-2	sqlite	334
+code-graph-mcp-2	tantivy	0
+code-graph-mcp-2	vector	250
+code-graph-mcp-2	embedding	519
+code-graph-mcp-2	lsp	12
+code-graph-mcp-2	language server	0
+code-graph-mcp-2	call graph	50
+code-graph-mcp-2	caller	1269
+code-graph-mcp-2	callees	123
+code-graph-mcp-2	subprocess	13
+code-graph-mcp-2	child_process	36
+code-graph-mcp-2	exec.Command	0
+code-graph-mcp-2	Snakemake	0
+code-graph-mcp-2	Nextflow	0
+code-graph-mcp-2	Snakefile	0
+code-graph-mcp-2	setMethod	0
+code-graph-mcp-2	SCIP	2
+code-graph-mcp-2	provenance	6
+code-graph-mcp-2	confidence	201
+code-graph-mcp-2	watcher	136
+code-graph-mcp-2	PageRank	0
+code-graph-mcp-2	repo map	0
+code-review-graph	tree-sitter	136
+code-review-graph	mcp	560
+code-review-graph	sqlite	322
+code-review-graph	tantivy	0
+code-review-graph	vector	104
+code-review-graph	embedding	548
+code-review-graph	lsp	28
+code-review-graph	language server	7
+code-review-graph	call graph	0
+code-review-graph	caller	381
+code-review-graph	callees	79
+code-review-graph	subprocess	156
+code-review-graph	child_process	4
+code-review-graph	exec.Command	0
+code-review-graph	Snakemake	0
+code-review-graph	Nextflow	0
+code-review-graph	Snakefile	0
+code-review-graph	setMethod	0
+code-review-graph	SCIP	113
+code-review-graph	provenance	0
+code-review-graph	confidence	54
+code-review-graph	watcher	74
+code-review-graph	PageRank	0
+code-review-graph	repo map	0
+codebase-memory	tree-sitter	1094
+codebase-memory	mcp	4054
+codebase-memory	sqlite	63827
+codebase-memory	tantivy	0
+codebase-memory	vector	28377
+codebase-memory	embedding	66
+codebase-memory	lsp	25667
+codebase-memory	language server	12
+codebase-memory	call graph	49
+codebase-memory	caller	2831
+codebase-memory	callees	148
+codebase-memory	subprocess	219
+codebase-memory	child_process	2
+codebase-memory	exec.Command	5
+codebase-memory	Snakemake	0
+codebase-memory	Nextflow	0
+codebase-memory	Snakefile	0
+codebase-memory	setMethod	0
+codebase-memory	SCIP	22
+codebase-memory	provenance	25
+codebase-memory	confidence	360
+codebase-memory	watcher	858
+codebase-memory	PageRank	0
+codebase-memory	repo map	1
+codegraph	tree-sitter	349
+codegraph	mcp	1389
+codegraph	sqlite	269
+codegraph	tantivy	0
+codegraph	vector	22
+codegraph	embedding	9
+codegraph	lsp	10
+codegraph	language server	0
+codegraph	call graph	14
+codegraph	caller	740
+codegraph	callees	169
+codegraph	subprocess	5
+codegraph	child_process	39
+codegraph	exec.Command	0
+codegraph	Snakemake	0
+codegraph	Nextflow	0
+codegraph	Snakefile	0
+codegraph	setMethod	7
+codegraph	SCIP	5
+codegraph	provenance	93
+codegraph	confidence	184
+codegraph	watcher	402
+codegraph	PageRank	1
+codegraph	repo map	0
+coderag-bench	tree-sitter	0
+coderag-bench	mcp	9981
+coderag-bench	sqlite	10796
+coderag-bench	tantivy	0
+coderag-bench	vector	33266
+coderag-bench	embedding	14726
+coderag-bench	lsp	50507
+coderag-bench	language server	11
+coderag-bench	call graph	27
+coderag-bench	caller	2842
+coderag-bench	callees	22
+coderag-bench	subprocess	5805
+coderag-bench	child_process	23
+coderag-bench	exec.Command	8
+coderag-bench	Snakemake	12
+coderag-bench	Nextflow	0
+coderag-bench	Snakefile	2
+coderag-bench	setMethod	8
+coderag-bench	SCIP	8547
+coderag-bench	provenance	7
+coderag-bench	confidence	1165
+coderag-bench	watcher	751
+coderag-bench	PageRank	80
+coderag-bench	repo map	0
+graphify	tree-sitter	319
+graphify	mcp	779
+graphify	sqlite	96
+graphify	tantivy	0
+graphify	vector	20
+graphify	embedding	29
+graphify	lsp	8
+graphify	language server	0
+graphify	call graph	3
+graphify	caller	447
+graphify	callees	11
+graphify	subprocess	141
+graphify	child_process	0
+graphify	exec.Command	0
+graphify	Snakemake	0
+graphify	Nextflow	0
+graphify	Snakefile	0
+graphify	setMethod	0
+graphify	SCIP	371
+graphify	provenance	3
+graphify	confidence	13283
+graphify	watcher	39
+graphify	PageRank	2
+graphify	repo map	0
+repograph	tree-sitter	8
+repograph	mcp	6
+repograph	sqlite	0
+repograph	tantivy	0
+repograph	vector	9
+repograph	embedding	0
+repograph	lsp	6
+repograph	language server	0
+repograph	call graph	0
+repograph	caller	8
+repograph	callees	0
+repograph	subprocess	66
+repograph	child_process	0
+repograph	exec.Command	0
+repograph	Snakemake	0
+repograph	Nextflow	0
+repograph	Snakefile	0
+repograph	setMethod	0
+repograph	SCIP	0
+repograph	provenance	0
+repograph	confidence	0
+repograph	watcher	16
+repograph	PageRank	6
+repograph	repo map	2
+scip	tree-sitter	76
+scip	mcp	4
+scip	sqlite	62
+scip	tantivy	0
+scip	vector	169
+scip	embedding	0
+scip	lsp	90
+scip	language server	0
+scip	call graph	0
+scip	caller	2
+scip	callees	0
+scip	subprocess	0
+scip	child_process	0
+scip	exec.Command	0
+scip	Snakemake	0
+scip	Nextflow	0
+scip	Snakefile	0
+scip	setMethod	0
+scip	SCIP	6072
+scip	provenance	0
+scip	confidence	0
+scip	watcher	0
+scip	PageRank	0
+scip	repo map	0
+semantic-search-mcp	tree-sitter	26
+semantic-search-mcp	mcp	315
+semantic-search-mcp	sqlite	31
+semantic-search-mcp	tantivy	0
+semantic-search-mcp	vector	33
+semantic-search-mcp	embedding	255
+semantic-search-mcp	lsp	0
+semantic-search-mcp	language server	0
+semantic-search-mcp	call graph	0
+semantic-search-mcp	caller	0
+semantic-search-mcp	callees	0
+semantic-search-mcp	subprocess	0
+semantic-search-mcp	child_process	0
+semantic-search-mcp	exec.Command	0
+semantic-search-mcp	Snakemake	0
+semantic-search-mcp	Nextflow	0
+semantic-search-mcp	Snakefile	0
+semantic-search-mcp	setMethod	0
+semantic-search-mcp	SCIP	0
+semantic-search-mcp	provenance	0
+semantic-search-mcp	confidence	0
+semantic-search-mcp	watcher	349
+semantic-search-mcp	PageRank	0
+semantic-search-mcp	repo map	0
+serena	tree-sitter	0
+serena	mcp	388
+serena	sqlite	9
+serena	tantivy	0
+serena	vector	15
+serena	embedding	1
+serena	lsp	3590
+serena	language server	1164
+serena	call graph	0
+serena	caller	47
+serena	callees	0
+serena	subprocess	247

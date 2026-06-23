@@ -7,7 +7,16 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { buildNode25BlockBanner, buildNodeTooOldBanner, MIN_NODE_MAJOR } from '../src/bin/node-version-check';
+import * as fs from 'fs';
+import * as path from 'path';
+import {
+  buildNode25BlockBanner,
+  buildNodeTooOldBanner,
+  isNodeTooOld,
+  MIN_NODE_MAJOR,
+  MIN_NODE_MINOR,
+  MIN_NODE_VERSION,
+} from '../src/bin/node-version-check';
 
 describe('buildNode25BlockBanner', () => {
   it('embeds the reported Node version in the header', () => {
@@ -50,10 +59,28 @@ describe('buildNodeTooOldBanner', () => {
   });
 
   it('states the supported floor matching MIN_NODE_MAJOR', () => {
-    expect(MIN_NODE_MAJOR).toBe(20);
+    expect(MIN_NODE_MAJOR).toBe(22);
+    expect(MIN_NODE_MINOR).toBe(5);
     expect(buildNodeTooOldBanner('18.0.0')).toContain(
-      `requires Node.js ${MIN_NODE_MAJOR} or newer`
+      `requires Node.js ${MIN_NODE_VERSION} or newer`
     );
+  });
+
+  it('matches the package.json engines floor', () => {
+    const packageJson = JSON.parse(
+      fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')
+    );
+    expect(packageJson.engines.node).toContain(`>=${MIN_NODE_VERSION}.0`);
+  });
+
+  it('blocks Node 22 before node:sqlite and allows the first supported release', () => {
+    expect(isNodeTooOld('22.4.1')).toBe(true);
+    expect(isNodeTooOld('22.5.0')).toBe(false);
+    expect(isNodeTooOld('24.16.0')).toBe(false);
+  });
+
+  it('names node:sqlite as the source-run floor', () => {
+    expect(buildNodeTooOldBanner('22.4.1')).toContain('node:sqlite');
   });
 
   it('points users to Node 22 LTS via nvm and Homebrew', () => {

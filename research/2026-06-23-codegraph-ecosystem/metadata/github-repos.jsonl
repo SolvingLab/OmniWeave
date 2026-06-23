@@ -1,0 +1,1008 @@
+{
+  "description": "Pre-indexed code knowledge graph, auto syncs on code changes, for Claude Code, Codex, Gemini, Cursor, OpenCode, AntiGravity, Kiro, and Hermes Agent — fewer tokens, fewer tool calls, 100% local",
+  "forkCount": 3250,
+  "licenseInfo": {
+    "key": "mit",
+    "name": "MIT License",
+    "nickname": ""
+  },
+  "nameWithOwner": "colbymchenry/codegraph",
+  "primaryLanguage": {
+    "name": "TypeScript"
+  },
+  "repositoryTopics": null,
+  "stargazerCount": 53246,
+  "updatedAt": "2026-06-23T03:10:56Z",
+  "url": "https://github.com/colbymchenry/codegraph",
+  "id": "codegraph",
+  "evidence": "source-clone"
+}
+{
+  "description": "High-performance code intelligence MCP server. Indexes codebases into a persistent knowledge graph — average repo in milliseconds. 158 languages, sub-ms queries, 99% fewer tokens. Single static binary, zero dependencies.",
+  "forkCount": 862,
+  "licenseInfo": {
+    "key": "mit",
+    "name": "MIT License",
+    "nickname": ""
+  },
+  "nameWithOwner": "DeusData/codebase-memory-mcp",
+  "primaryLanguage": {
+    "name": "C"
+  },
+  "repositoryTopics": [
+    {
+      "name": "claude-code"
+    },
+    {
+      "name": "code-analysis"
+    },
+    {
+      "name": "code-intelligence"
+    },
+    {
+      "name": "developer-tools"
+    },
+    {
+      "name": "knowledge-graph"
+    },
+    {
+      "name": "mcp"
+    },
+    {
+      "name": "mcp-server"
+    },
+    {
+      "name": "model-context-protocol"
+    },
+    {
+      "name": "sqlite"
+    },
+    {
+      "name": "tree-sitter"
+    },
+    {
+      "name": "codex"
+    },
+    {
+      "name": "cursor"
+    },
+    {
+      "name": "windsurf"
+    },
+    {
+      "name": "aider"
+    },
+    {
+      "name": "gemini-cli"
+    },
+    {
+      "name": "graph-visualization"
+    },
+    {
+      "name": "kilocode"
+    },
+    {
+      "name": "opencode"
+    },
+    {
+      "name": "ast"
+    },
+    {
+      "name": "cypher"
+    }
+  ],
+  "stargazerCount": 11755,
+  "updatedAt": "2026-06-23T03:10:41Z",
+  "url": "https://github.com/DeusData/codebase-memory-mcp",
+  "id": "codebase-memory",
+  "evidence": "source-clone"
+}
+{
+  "description": "An MCP server plus a CLI tool that indexes local code into a graph database to provide context to AI assistants.",
+  "forkCount": 750,
+  "licenseInfo": {
+    "key": "mit",
+    "name": "MIT License",
+    "nickname": ""
+  },
+  "nameWithOwner": "CodeGraphContext/CodeGraphContext",
+  "primaryLanguage": {
+    "name": "Python"
+  },
+  "repositoryTopics": [
+    {
+      "name": "hacktoberfest2025"
+    },
+    {
+      "name": "social-winter-of-code"
+    }
+  ],
+  "stargazerCount": 3795,
+  "updatedAt": "2026-06-23T02:35:05Z",
+  "url": "https://github.com/CodeGraphContext/CodeGraphContext",
+  "id": "cgc",
+  "evidence": "source-clone"
+}
+{
+  "description": "A powerful MCP toolkit for coding, providing semantic retrieval and editing capabilities  - the IDE for your agent",
+  "forkCount": 1713,
+  "licenseInfo": {
+    "key": "mit",
+    "name": "MIT License",
+    "nickname": ""
+  },
+  "nameWithOwner": "oraios/serena",
+  "primaryLanguage": {
+    "name": "Python"
+  },
+  "repositoryTopics": [
+    {
+      "name": "agent"
+    },
+    {
+      "name": "ai"
+    },
+    {
+      "name": "vibe-coding"
+    },
+    {
+      "name": "mcp-server"
+    },
+    {
+      "name": "ai-coding"
+    },
+    {
+      "name": "language-server"
+    },
+    {
+      "name": "programming"
+    },
+    {
+      "name": "claude"
+    },
+    {
+      "name": "claude-code"
+    },
+    {
+      "name": "codex"
+    },
+    {
+      "name": "ide"
+    },
+    {
+      "name": "jetbrains"
+    }
+  ],
+  "stargazerCount": 25662,
+  "updatedAt": "2026-06-23T02:50:57Z",
+  "url": "https://github.com/oraios/serena",
+  "id": "serena",
+  "evidence": "source-clone"
+}
+{
+  "description": "aider is AI pair programming in your terminal",
+  "forkCount": 4641,
+  "licenseInfo": {
+    "key": "apache-2.0",
+    "name": "Apache License 2.0",
+    "nickname": ""
+  },
+  "nameWithOwner": "Aider-AI/aider",
+  "primaryLanguage": {
+    "name": "Python"
+  },
+  "repositoryTopics": [
+    {
+      "name": "chatgpt"
+    },
+    {
+      "name": "cli"
+    },
+    {
+      "name": "command-line"
+    },
+    {
+      "name": "gpt-4"
+    },
+    {
+      "name": "openai"
+    },
+    {
+      "name": "gpt-3"
+    },
+    {
+      "name": "gpt-35-turbo"
+    },
+    {
+      "name": "claude-3"
+    },
+    {
+      "name": "gpt-4o"
+    },
+    {
+      "name": "anthropic"
+    },
+    {
+      "name": "gemini"
+    },
+    {
+      "name": "llama"
+    },
+    {
+      "name": "sonnet"
+    }
+  ],
+  "stargazerCount": 46585,
+  "updatedAt": "2026-06-23T02:07:31Z",
+  "url": "https://github.com/Aider-AI/aider",
+  "id": "aider",
+  "evidence": "source-clone"
+}
+{
+  "description": "Local code intelligence MCP server and CLI for AI coding agents",
+  "forkCount": 62,
+  "licenseInfo": {
+    "key": "apache-2.0",
+    "name": "Apache License 2.0",
+    "nickname": ""
+  },
+  "nameWithOwner": "bartolli/codanna",
+  "primaryLanguage": {
+    "name": "Rust"
+  },
+  "repositoryTopics": [
+    {
+      "name": "ai-agents"
+    },
+    {
+      "name": "call-graph-analysis"
+    },
+    {
+      "name": "code-indexing"
+    },
+    {
+      "name": "code-intelligence"
+    },
+    {
+      "name": "code-search"
+    },
+    {
+      "name": "coding-agents"
+    },
+    {
+      "name": "developer-tools-ai-agent"
+    },
+    {
+      "name": "local-first"
+    },
+    {
+      "name": "mcp"
+    },
+    {
+      "name": "mcp-server"
+    },
+    {
+      "name": "mcp-tools"
+    },
+    {
+      "name": "rag"
+    },
+    {
+      "name": "rust-cli"
+    },
+    {
+      "name": "semantic-code-search"
+    },
+    {
+      "name": "static-analysis"
+    },
+    {
+      "name": "symbol-search"
+    }
+  ],
+  "stargazerCount": 696,
+  "updatedAt": "2026-06-19T07:26:12Z",
+  "url": "https://github.com/bartolli/codanna",
+  "id": "codanna",
+  "evidence": "source-clone"
+}
+{
+  "description": "AI coding assistant skill (Claude Code, Codex, OpenCode, Cursor, Gemini CLI, and more). Turn any folder of code, SQL schemas, R scripts, shell scripts, docs, papers, images, or videos into a queryable knowledge graph. App code + database schema + infrastructure in one graph.",
+  "forkCount": 7105,
+  "licenseInfo": {
+    "key": "mit",
+    "name": "MIT License",
+    "nickname": ""
+  },
+  "nameWithOwner": "safishamsi/graphify",
+  "primaryLanguage": {
+    "name": "Python"
+  },
+  "repositoryTopics": [
+    {
+      "name": "claude-code"
+    },
+    {
+      "name": "graphrag"
+    },
+    {
+      "name": "knowledge-graph"
+    },
+    {
+      "name": "codex"
+    },
+    {
+      "name": "openclaw"
+    },
+    {
+      "name": "skills"
+    },
+    {
+      "name": "antigravity"
+    },
+    {
+      "name": "gemini"
+    },
+    {
+      "name": "leiden"
+    },
+    {
+      "name": "rag"
+    },
+    {
+      "name": "tree-sitter"
+    }
+  ],
+  "stargazerCount": 70765,
+  "updatedAt": "2026-06-23T03:05:05Z",
+  "url": "https://github.com/safishamsi/graphify",
+  "id": "graphify",
+  "evidence": "source-clone"
+}
+{
+  "description": "Graphs that teach > graphs that impress. Turn any code into an interactive knowledge graph you can explore, search, and ask questions about. Works with Claude Code, Codex, Cursor, Copilot, Gemini CLI, and more.",
+  "forkCount": 5498,
+  "licenseInfo": {
+    "key": "mit",
+    "name": "MIT License",
+    "nickname": ""
+  },
+  "nameWithOwner": "Egonex-AI/Understand-Anything",
+  "primaryLanguage": {
+    "name": "TypeScript"
+  },
+  "repositoryTopics": [
+    {
+      "name": "claude-code"
+    },
+    {
+      "name": "claude-skills"
+    },
+    {
+      "name": "understandcode"
+    },
+    {
+      "name": "codex"
+    },
+    {
+      "name": "codex-skills"
+    },
+    {
+      "name": "knowledge-graph"
+    },
+    {
+      "name": "opencode-skills"
+    },
+    {
+      "name": "antigravity-skills"
+    },
+    {
+      "name": "gemini-cli-skills"
+    },
+    {
+      "name": "pi-agent"
+    },
+    {
+      "name": "business-knowledge"
+    },
+    {
+      "name": "knowledge-base"
+    },
+    {
+      "name": "memory"
+    },
+    {
+      "name": "karpathy-llm-wiki"
+    },
+    {
+      "name": "codebase-analysis"
+    },
+    {
+      "name": "developer-tools-ai-agent"
+    },
+    {
+      "name": "vibe-coding"
+    }
+  ],
+  "stargazerCount": 66227,
+  "updatedAt": "2026-06-23T03:10:46Z",
+  "url": "https://github.com/Egonex-AI/Understand-Anything",
+  "id": "understand-anything",
+  "evidence": "source-clone"
+}
+{
+  "description": "Code search MCP for Claude Code. Make entire codebase the context for any coding agent.",
+  "forkCount": 887,
+  "licenseInfo": {
+    "key": "mit",
+    "name": "MIT License",
+    "nickname": ""
+  },
+  "nameWithOwner": "zilliztech/claude-context",
+  "primaryLanguage": {
+    "name": "TypeScript"
+  },
+  "repositoryTopics": [
+    {
+      "name": "agent"
+    },
+    {
+      "name": "agentic-rag"
+    },
+    {
+      "name": "ai-coding"
+    },
+    {
+      "name": "code-search"
+    },
+    {
+      "name": "cursor"
+    },
+    {
+      "name": "embedding"
+    },
+    {
+      "name": "mcp"
+    },
+    {
+      "name": "nodejs"
+    },
+    {
+      "name": "openai"
+    },
+    {
+      "name": "rag"
+    },
+    {
+      "name": "semantic-search"
+    },
+    {
+      "name": "typescript"
+    },
+    {
+      "name": "vector-database"
+    },
+    {
+      "name": "vibe-coding"
+    },
+    {
+      "name": "voyage-ai"
+    },
+    {
+      "name": "vscode-extension"
+    },
+    {
+      "name": "merkle-tree"
+    },
+    {
+      "name": "code-generation"
+    },
+    {
+      "name": "claude-code"
+    },
+    {
+      "name": "gemini-cli"
+    }
+  ],
+  "stargazerCount": 11928,
+  "updatedAt": "2026-06-23T02:15:48Z",
+  "url": "https://github.com/zilliztech/claude-context",
+  "id": "claude-context",
+  "evidence": "source-clone"
+}
+{
+  "description": "A tool to build a graph from a codebase",
+  "forkCount": 43,
+  "licenseInfo": {
+    "key": "mit",
+    "name": "MIT License",
+    "nickname": ""
+  },
+  "nameWithOwner": "blarApp/blarify",
+  "primaryLanguage": {
+    "name": "Python"
+  },
+  "repositoryTopics": [
+    {
+      "name": "agents"
+    },
+    {
+      "name": "neo4j"
+    },
+    {
+      "name": "knowledge-graph"
+    },
+    {
+      "name": "falkordb"
+    }
+  ],
+  "stargazerCount": 230,
+  "updatedAt": "2026-06-19T10:11:28Z",
+  "url": "https://github.com/blarApp/blarify",
+  "id": "blarify",
+  "evidence": "source-clone"
+}
+{
+  "description": "Local-first code intelligence graph for MCP and CLI. Builds a persistent map of your codebase so AI coding tools read only what matters, with benchmarked context reductions on reviews and large-repo workflows.",
+  "forkCount": 2010,
+  "licenseInfo": {
+    "key": "mit",
+    "name": "MIT License",
+    "nickname": ""
+  },
+  "nameWithOwner": "tirth8205/code-review-graph",
+  "primaryLanguage": {
+    "name": "Python"
+  },
+  "repositoryTopics": [
+    {
+      "name": "ai-coding"
+    },
+    {
+      "name": "claude"
+    },
+    {
+      "name": "claude-code"
+    },
+    {
+      "name": "code-review"
+    },
+    {
+      "name": "graphrag"
+    },
+    {
+      "name": "incremental"
+    },
+    {
+      "name": "knowledge-graph"
+    },
+    {
+      "name": "llm"
+    },
+    {
+      "name": "mcp"
+    },
+    {
+      "name": "python"
+    },
+    {
+      "name": "static-analysis"
+    },
+    {
+      "name": "tree-sitter"
+    }
+  ],
+  "stargazerCount": 18800,
+  "updatedAt": "2026-06-23T03:07:19Z",
+  "url": "https://github.com/tirth8205/code-review-graph",
+  "id": "code-review-graph",
+  "evidence": "source-clone"
+}
+{
+  "description": "MCP Server for code intelligence",
+  "forkCount": 7,
+  "licenseInfo": {
+    "key": "mit",
+    "name": "MIT License",
+    "nickname": ""
+  },
+  "nameWithOwner": "entrepeneur4lyf/code-graph-mcp",
+  "primaryLanguage": {
+    "name": "Python"
+  },
+  "repositoryTopics": null,
+  "stargazerCount": 87,
+  "updatedAt": "2026-05-18T17:07:10Z",
+  "url": "https://github.com/entrepeneur4lyf/code-graph-mcp",
+  "id": "code-graph-mcp",
+  "evidence": "source-clone"
+}
+{
+  "description": "AST knowledge graph MCP server for Claude Code — semantic search, call graph traversal, HTTP route tracing, impact analysis. Auto-indexes 10 languages via Tree-sitter.",
+  "forkCount": 6,
+  "licenseInfo": null,
+  "nameWithOwner": "sdsrss/code-graph-mcp",
+  "primaryLanguage": {
+    "name": "Rust"
+  },
+  "repositoryTopics": [
+    {
+      "name": "ast"
+    },
+    {
+      "name": "call-graph"
+    },
+    {
+      "name": "claude-code"
+    },
+    {
+      "name": "claude-code-plugin"
+    },
+    {
+      "name": "code-navigation"
+    },
+    {
+      "name": "knowledge-graph"
+    },
+    {
+      "name": "mcp"
+    },
+    {
+      "name": "rust"
+    },
+    {
+      "name": "semantic-search"
+    },
+    {
+      "name": "tree-sitter"
+    }
+  ],
+  "stargazerCount": 45,
+  "updatedAt": "2026-06-23T02:26:38Z",
+  "url": "https://github.com/sdsrss/code-graph-mcp",
+  "id": "code-graph-mcp-2",
+  "evidence": "source-clone"
+}
+{
+  "description": "Give claude code RAG on your codebase",
+  "forkCount": 2,
+  "licenseInfo": {
+    "key": "mit",
+    "name": "MIT License",
+    "nickname": ""
+  },
+  "nameWithOwner": "adam-hanna/semantic-search-mcp",
+  "primaryLanguage": {
+    "name": "Python"
+  },
+  "repositoryTopics": null,
+  "stargazerCount": 5,
+  "updatedAt": "2026-06-12T23:24:28Z",
+  "url": "https://github.com/adam-hanna/semantic-search-mcp",
+  "id": "semantic-search-mcp",
+  "evidence": "source-clone"
+}
+{
+  "description": "SCIP Code Intelligence Protocol",
+  "forkCount": 61,
+  "licenseInfo": {
+    "key": "apache-2.0",
+    "name": "Apache License 2.0",
+    "nickname": ""
+  },
+  "nameWithOwner": "scip-code/scip",
+  "primaryLanguage": {
+    "name": "Go"
+  },
+  "repositoryTopics": null,
+  "stargazerCount": 662,
+  "updatedAt": "2026-06-22T20:24:07Z",
+  "url": "https://github.com/scip-code/scip",
+  "id": "scip",
+  "evidence": "source-clone"
+}
+{
+  "description": "Kythe is a pluggable, (mostly) language-agnostic ecosystem for building tools that work with code.",
+  "forkCount": 270,
+  "licenseInfo": {
+    "key": "apache-2.0",
+    "name": "Apache License 2.0",
+    "nickname": ""
+  },
+  "nameWithOwner": "kythe/kythe",
+  "primaryLanguage": {
+    "name": "Go"
+  },
+  "repositoryTopics": null,
+  "stargazerCount": 2135,
+  "updatedAt": "2026-06-22T07:06:03Z",
+  "url": "https://github.com/kythe/kythe",
+  "id": "kythe",
+  "evidence": "source-sampled"
+}
+{
+  "description": "System for collecting, deriving and working with facts about source code.",
+  "forkCount": 88,
+  "licenseInfo": {
+    "key": "other",
+    "name": "Other",
+    "nickname": ""
+  },
+  "nameWithOwner": "facebookincubator/Glean",
+  "primaryLanguage": {
+    "name": "Hack"
+  },
+  "repositoryTopics": null,
+  "stargazerCount": 1355,
+  "updatedAt": "2026-06-22T21:40:07Z",
+  "url": "https://github.com/facebookincubator/Glean",
+  "id": "glean",
+  "evidence": "source-sampled"
+}
+{
+  "description": "CodeQL: the libraries and queries that power security researchers around the world, as well as code scanning in GitHub Advanced Security",
+  "forkCount": 1993,
+  "licenseInfo": {
+    "key": "mit",
+    "name": "MIT License",
+    "nickname": ""
+  },
+  "nameWithOwner": "github/codeql",
+  "primaryLanguage": {
+    "name": "CodeQL"
+  },
+  "repositoryTopics": [
+    {
+      "name": "semmle-ql"
+    },
+    {
+      "name": "codeql"
+    },
+    {
+      "name": "github-advanced-security"
+    },
+    {
+      "name": "github-security-lab"
+    },
+    {
+      "name": "works-with-codespaces"
+    }
+  ],
+  "stargazerCount": 9742,
+  "updatedAt": "2026-06-23T02:52:41Z",
+  "url": "https://github.com/github/codeql",
+  "id": "codeql",
+  "evidence": "source-sampled"
+}
+{
+  "description": "Open-source code analysis platform for C/C++/Java/Binary/Javascript/Python/Kotlin based on code property graphs. Discord https://discord.gg/vv4MH284Hc",
+  "forkCount": 418,
+  "licenseInfo": {
+    "key": "apache-2.0",
+    "name": "Apache License 2.0",
+    "nickname": ""
+  },
+  "nameWithOwner": "joernio/joern",
+  "primaryLanguage": {
+    "name": "Scala"
+  },
+  "repositoryTopics": [
+    {
+      "name": "code-analysis"
+    },
+    {
+      "name": "query-language"
+    },
+    {
+      "name": "code-browser"
+    },
+    {
+      "name": "fuzzy-parsing"
+    },
+    {
+      "name": "syntax-tree"
+    },
+    {
+      "name": "dataflow"
+    },
+    {
+      "name": "controlflow"
+    },
+    {
+      "name": "cpg"
+    },
+    {
+      "name": "java"
+    },
+    {
+      "name": "cpp"
+    },
+    {
+      "name": "code-property-graph"
+    },
+    {
+      "name": "c"
+    },
+    {
+      "name": "graph"
+    },
+    {
+      "name": "llvm"
+    },
+    {
+      "name": "javascript"
+    },
+    {
+      "name": "javabytecode"
+    },
+    {
+      "name": "binary"
+    },
+    {
+      "name": "ghidra"
+    },
+    {
+      "name": "scala"
+    }
+  ],
+  "stargazerCount": 3275,
+  "updatedAt": "2026-06-22T15:04:16Z",
+  "url": "https://github.com/joernio/joern",
+  "id": "joern",
+  "evidence": "source-sampled"
+}
+{
+  "description": "🔎 Static code analysis engine to find security issues in code.",
+  "forkCount": 223,
+  "licenseInfo": {
+    "key": "lgpl-2.1",
+    "name": "GNU Lesser General Public License v2.1",
+    "nickname": "GNU LGPLv2.1"
+  },
+  "nameWithOwner": "opengrep/opengrep",
+  "primaryLanguage": {
+    "name": "OCaml"
+  },
+  "repositoryTopics": null,
+  "stargazerCount": 2705,
+  "updatedAt": "2026-06-22T14:12:59Z",
+  "url": "https://github.com/opengrep/opengrep",
+  "id": "opengrep",
+  "evidence": "source-sampled"
+}
+{
+  "description": "Enhancing AI Software Engineering with Repository-level Code Graph",
+  "forkCount": 43,
+  "licenseInfo": {
+    "key": "apache-2.0",
+    "name": "Apache License 2.0",
+    "nickname": ""
+  },
+  "nameWithOwner": "ozyyshr/RepoGraph",
+  "primaryLanguage": {
+    "name": "Python"
+  },
+  "repositoryTopics": null,
+  "stargazerCount": 283,
+  "updatedAt": "2026-06-21T18:07:32Z",
+  "url": "https://github.com/ozyyshr/RepoGraph",
+  "id": "repograph",
+  "evidence": "paper+source-clone"
+}
+{
+  "description": "CodeRAG-Bench: Can Retrieval Augment Code Generation?",
+  "forkCount": 19,
+  "licenseInfo": null,
+  "nameWithOwner": "code-rag-bench/code-rag-bench",
+  "primaryLanguage": {
+    "name": "HTML"
+  },
+  "repositoryTopics": [
+    {
+      "name": "code-generation"
+    },
+    {
+      "name": "retrieval-augmented-generation"
+    },
+    {
+      "name": "execution-based-evaluation"
+    }
+  ],
+  "stargazerCount": 171,
+  "updatedAt": "2026-06-20T14:39:39Z",
+  "url": "https://github.com/code-rag-bench/code-rag-bench",
+  "id": "coderag-bench",
+  "evidence": "paper+source-clone"
+}
+{
+  "description": "MS-Agent: a lightweight framework to empower agentic execution of complex tasks",
+  "forkCount": 507,
+  "licenseInfo": {
+    "key": "apache-2.0",
+    "name": "Apache License 2.0",
+    "nickname": ""
+  },
+  "nameWithOwner": "modelscope/ms-agent",
+  "primaryLanguage": {
+    "name": "Python"
+  },
+  "repositoryTopics": [
+    {
+      "name": "deep-research"
+    },
+    {
+      "name": "agentic-insight"
+    },
+    {
+      "name": "agentic-search"
+    },
+    {
+      "name": "chat-bot"
+    },
+    {
+      "name": "code-generation"
+    },
+    {
+      "name": "memory"
+    }
+  ],
+  "stargazerCount": 4318,
+  "updatedAt": "2026-06-23T02:39:47Z",
+  "url": "https://github.com/modelscope/ms-agent",
+  "id": "modelscope-agent",
+  "evidence": "source-sampled"
+}
+{
+  "description": "Lightweight coding agent that runs in your terminal",
+  "forkCount": 13732,
+  "licenseInfo": {
+    "key": "apache-2.0",
+    "name": "Apache License 2.0",
+    "nickname": ""
+  },
+  "nameWithOwner": "openai/codex",
+  "primaryLanguage": {
+    "name": "Rust"
+  },
+  "repositoryTopics": null,
+  "stargazerCount": 92793,
+  "updatedAt": "2026-06-23T03:09:27Z",
+  "url": "https://github.com/openai/codex",
+  "id": "openai-codex",
+  "evidence": "source-sampled"
+}
+{
+  "description": "open-source coding agent",
+  "forkCount": 4775,
+  "licenseInfo": {
+    "key": "apache-2.0",
+    "name": "Apache License 2.0",
+    "nickname": ""
+  },
+  "nameWithOwner": "continuedev/continue",
+  "primaryLanguage": {
+    "name": "TypeScript"
+  },
+  "repositoryTopics": [
+    {
+      "name": "open-source"
+    },
+    {
+      "name": "developer-tools"
+    },
+    {
+      "name": "ai"
+    },
+    {
+      "name": "agent"
+    },
+    {
+      "name": "cli"
+    }
+  ],
+  "stargazerCount": 34268,
+  "updatedAt": "2026-06-23T02:37:59Z",
+  "url": "https://github.com/continuedev/continue",
+  "id": "continue",
+  "evidence": "source-sampled"
+}

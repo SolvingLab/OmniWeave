@@ -166,6 +166,7 @@ describe.skipIf(!HAS_SQLITE)('matchesSymbol — module-qualified lookups (#173)'
     const text = res.content?.[0]?.text ?? '';
     expect(text).toMatch(/stage_detect\.rs/);
     expect(text).not.toMatch(/stage_apply\.rs/);
+    expect(text).toContain('**Key:** `omniweave_node symbol="run" file="src/configurator/stage_detect.rs" line=1`');
   });
 });
 
@@ -218,5 +219,125 @@ describe.skipIf(!HAS_SQLITE)('matchesSymbol — dotted lookups (regression for #
     expect(text).toMatch(/\(method\)/);
     expect(text).toMatch(/\(function\)/);
     expect((text.match(/\*\*Location:\*\*/g) || []).length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe.skipIf(!HAS_SQLITE)('omniweave_node file hint — repository snapshot collisions', () => {
+  let projectRoot: string;
+  let cg: any;
+  let handler: any;
+
+  beforeEach(async () => {
+    projectRoot = tmpRoot();
+    const firstParty = path.join(projectRoot, 'src', 'mcp');
+    const snapshot = path.join(
+      projectRoot,
+      'research',
+      '2026-06-23-codegraph-ecosystem',
+      'repos',
+      'codegraph',
+      'src',
+      'mcp'
+    );
+    fs.mkdirSync(firstParty, { recursive: true });
+    fs.mkdirSync(snapshot, { recursive: true });
+    fs.writeFileSync(
+      path.join(firstParty, 'tools.ts'),
+      `export function targetSymbol(): string {\n  return 'first-party';\n}\n`
+    );
+    fs.writeFileSync(
+      path.join(firstParty, 'flow.ts'),
+      `export interface FlowResult {\n  value: string;\n}\n\nexport function entryPoint(): FlowResult {\n  return { value: localStep() + snapshotOnly() };\n}\n\nexport function localStep(): string {\n  return 'local';\n}\n`
+    );
+    fs.writeFileSync(
+      path.join(snapshot, 'tools.ts'),
+      `export function targetSymbol(): string {\n  return 'snapshot';\n}\n`
+    );
+    fs.writeFileSync(
+      path.join(snapshot, 'noise.ts'),
+      `export function snapshotOnly(): string {\n  return 'snapshot-only';\n}\n\nexport function snapshotCaller(): string {\n  return localStep();\n}\n`
+    );
+
+    const OmniWeave = (await import('../src/index')).default;
+    const { ToolHandler } = await import('../src/mcp/tools');
+    cg = OmniWeave.initSync(projectRoot, {
+      config: { include: ['**/*.ts'], exclude: [] },
+    });
+    await cg.indexAll();
+    handler = new ToolHandler(cg);
+  });
+
+  afterEach(() => {
+    handler?.closeAll();
+    cg?.destroy();
+    rmTree(projectRoot);
+  });
+
+  it('prefers the first-party file over a same-suffix research snapshot', async () => {
+    for (const file of ['src/mcp/tools.ts', path.join(projectRoot, 'src', 'mcp', 'tools.ts')]) {
+      const res = await handler.execute('omniweave_node', {
+        symbol: 'targetSymbol',
+        includeCode: true,
+        file,
+      });
+      const text = res.content?.[0]?.text ?? '';
+      expect(text).toContain('src/mcp/tools.ts');
+      expect(text).toContain("return 'first-party'");
+      expect(text).not.toContain("return 'snapshot'");
+    }
+  });
+
+  it('does not surface low-signal snapshot callees in a first-party node trail', async () => {
+    const res = await handler.execute('omniweave_node', {
+      symbol: 'entryPoint',
+      includeCode: true,
+      file: 'src/mcp/flow.ts',
+    });
+    const text = res.content?.[0]?.text ?? '';
+
+    expect(text).toContain('entryPoint');
+    expect(text).toContain('localStep (src/mcp/flow.ts');
+    expect(text).not.toContain('FlowResult (src/mcp/flow.ts');
+    expect(text).not.toContain('research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/noise.ts');
+    expect(text).toContain('Omitted 1 low-signal trail hop');
+  });
+
+  it('callees: keeps the flat list to execution edges and omits snapshot noise', async () => {
+    const res = await handler.execute('omniweave_callees', {
+      symbol: 'entryPoint',
+      file: 'src/mcp/flow.ts',
+    });
+    const text = res.content?.[0]?.text ?? '';
+
+    expect(text).toContain('Callees of entryPoint');
+    expect(text).toContain('localStep');
+    expect(text).not.toContain('FlowResult');
+    expect(text).not.toContain('research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/noise.ts');
+    expect(text).toContain('Omitted 1 low-signal relationship');
+    expect(text).toMatch(/Omitted \d+ non-execution reference\/type\/import relationships?/);
+  });
+
+  it('callers: does not present return-type references as callers', async () => {
+    const res = await handler.execute('omniweave_callers', {
+      symbol: 'FlowResult',
+      file: 'src/mcp/flow.ts',
+    });
+    const text = res.content?.[0]?.text ?? '';
+
+    expect(text).toContain('No callers found for "FlowResult"');
+    expect(text).not.toContain('entryPoint');
+  });
+
+  it('callers: omits low-signal snapshot callers for a first-party symbol', async () => {
+    const res = await handler.execute('omniweave_callers', {
+      symbol: 'localStep',
+      file: 'src/mcp/flow.ts',
+    });
+    const text = res.content?.[0]?.text ?? '';
+
+    expect(text).toContain('Callers of localStep');
+    expect(text).toContain('entryPoint');
+    expect(text).not.toContain('snapshotCaller');
+    expect(text).toContain('Omitted 1 low-signal relationship');
   });
 });

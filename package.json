@@ -1,6 +1,7 @@
 {
   "name": "@solvinglab/omniweave",
-  "version": "0.1.0",
+  "version": "1.0.0",
+  "private": true,
   "description": "A high-performance, polyglot code-analysis graph for coding agents — cross-language, cross-process, and dynamic-dispatch edges that grep and LSP can't follow. 100% local, MCP-native.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -14,11 +15,14 @@
   ],
   "scripts": {
     "build": "tsc && npm run copy-assets && node -e \"require('fs').chmodSync('dist/bin/omniweave.js', 0o755)\"",
+    "prepublishOnly": "node scripts/guard-root-publish.mjs",
     "preuninstall": "node dist/bin/uninstall.js",
     "copy-assets": "node -e \"const fs=require('fs');fs.mkdirSync('dist/db',{recursive:true});fs.copyFileSync('src/db/schema.sql','dist/db/schema.sql');fs.mkdirSync('dist/extraction/wasm',{recursive:true});fs.readdirSync('src/extraction/wasm').filter(f=>f.endsWith('.wasm')).forEach(f=>fs.copyFileSync('src/extraction/wasm/'+f,'dist/extraction/wasm/'+f))\"",
     "dev": "tsc --watch",
     "cli": "npm run build && node dist/bin/omniweave.js",
-    "test": "vitest run",
+    "test": "npm run test:unit && npm run test:mcp-daemon",
+    "test:unit": "vitest run --exclude __tests__/mcp-daemon.test.ts",
+    "test:mcp-daemon": "vitest run __tests__/mcp-daemon.test.ts",
     "test:watch": "vitest",
     "test:eval": "vitest run __tests__/evaluation/",
     "eval": "npm run build && npx tsx __tests__/evaluation/runner.ts",
@@ -59,9 +63,9 @@
     "@types/node": "^20.19.30",
     "@types/picomatch": "^4.0.2",
     "typescript": "^5.0.0",
-    "vitest": "^2.1.9"
+    "vitest": "^4.1.9"
   },
   "engines": {
-    "node": ">=20.0.0 <25.0.0"
+    "node": ">=22.5.0 <25.0.0"
   }
 }

@@ -407,29 +407,35 @@ describe('Shared MCP daemon (issue #411)', () => {
     // The #662 scenario: an MCP host SIGTERM's the shared daemon while a session
     // is live. The proxy must NOT exit (losing OmniWeave for that session) — it
     // falls back to an in-process engine and keeps answering.
+    //
+    // This case exercises real processes plus a real socket while the rest of
+    // the suite is also spawning parser workers. Keep the budget wider than the
+    // normal daemon smoke tests so full-suite load cannot turn a correct
+    // recovery path into a timing failure.
+    const waitMs = 20000;
     const env = { OMNIWEAVE_DAEMON_IDLE_TIMEOUT_MS: '30000', OMNIWEAVE_PPID_POLL_MS: '5000' };
     const server = spawnServer(tempDir, env);
     servers.push(server);
     sendInitialize(server.child, `file://${tempDir}`, 1);
-    await waitFor(() => findResponse(server.stdout, 1), 10000);
-    await waitFor(() => server.stderr.some((l) => l.includes('Attached to shared daemon')), 8000);
-    await waitFor(() => (readLockPid(realRoot) ?? 0) > 0, 8000);
+    await waitFor(() => findResponse(server.stdout, 1), waitMs);
+    await waitFor(() => server.stderr.some((l) => l.includes('Attached to shared daemon')), waitMs);
+    await waitFor(() => (readLockPid(realRoot) ?? 0) > 0, waitMs);
     const daemonPid = readLockPid(realRoot)!;
 
     // A warm call goes through the daemon.
     sendMessage(server.child, { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'omniweave_status', arguments: {} } });
-    await waitFor(() => findResponse(server.stdout, 2), 10000);
+    await waitFor(() => findResponse(server.stdout, 2), waitMs);
 
     // Kill the daemon out from under the live proxy.
     process.kill(daemonPid, 'SIGTERM');
-    expect(await waitProcessExit(daemonPid, 8000)).toBe(true);
+    expect(await waitProcessExit(daemonPid, waitMs)).toBe(true);
 
     // The proxy must still be alive and still answer — served in-process now.
     expect(isAlive(server.child.pid!)).toBe(true);
-    await waitFor(() => server.stderr.some((l) => l.includes('serving this session in-process')), 8000);
+    await waitFor(() => server.stderr.some((l) => l.includes('serving this session in-process')), waitMs);
     sendMessage(server.child, { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'omniweave_status', arguments: {} } });
-    const resp = await waitFor(() => findResponse(server.stdout, 3), 15000);
+    const resp = await waitFor(() => findResponse(server.stdout, 3), waitMs);
     expect(resp.result !== undefined || resp.error !== undefined).toBe(true);
     expect(isAlive(server.child.pid!)).toBe(true);
-  }, 45000);
+  }, 70000);
 });

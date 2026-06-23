@@ -39,18 +39,26 @@ export function buildNode25BlockBanner(nodeVersion: string): string {
 }
 
 /**
- * Lowest supported Node.js major version. Matches the `engines` floor in
- * package.json. Below this, OmniWeave relies on language features / native APIs
- * that aren't present, and the combination is untested. `engines` alone only
- * *warns* on install (unless the user set `engine-strict`), so the CLI bootstrap
- * also hard-blocks here to actually enforce the floor.
+ * Lowest supported Node.js version. Matches the `engines` floor in
+ * package.json. `node:sqlite` landed in Node 22.5, so a major-only check is not
+ * precise enough: Node 22.0-22.4 must fail before the CLI reaches SQLite.
  */
-export const MIN_NODE_MAJOR = 20;
+export const MIN_NODE_MAJOR = 22;
+export const MIN_NODE_MINOR = 5;
+export const MIN_NODE_VERSION = `${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}`;
+
+export function isNodeTooOld(nodeVersion: string): boolean {
+  const [majorRaw, minorRaw = '0'] = nodeVersion.split('.');
+  const major = Number.parseInt(majorRaw ?? '0', 10);
+  const minor = Number.parseInt(minorRaw, 10);
+  if (!Number.isFinite(major) || !Number.isFinite(minor)) return true;
+  return major < MIN_NODE_MAJOR || (major === MIN_NODE_MAJOR && minor < MIN_NODE_MINOR);
+}
 
 /**
- * Build the bordered banner shown when OmniWeave detects a Node.js major below
- * {@link MIN_NODE_MAJOR}. Pinned via unit test so the recovery commands and the
- * override env var can't be silently stripped by future edits.
+ * Build the bordered banner shown when OmniWeave detects a Node.js version below
+ * {@link MIN_NODE_VERSION}. Pinned via unit test so the recovery commands and
+ * the override env var can't be silently stripped by future edits.
  *
  * Uses ASCII glyphs to stay readable on Windows OEM-codepage consoles
  * (see ../ui/glyphs.ts for the rationale).
@@ -61,9 +69,9 @@ export function buildNodeTooOldBanner(nodeVersion: string): string {
     sep,
     `[OmniWeave] Unsupported Node.js version: ${nodeVersion}`,
     sep,
-    `OmniWeave requires Node.js ${MIN_NODE_MAJOR} or newer. Older versions lack`,
-    'language features and native APIs OmniWeave depends on, and are not',
-    'tested or supported.',
+    `OmniWeave requires Node.js ${MIN_NODE_VERSION} or newer. Older versions lack`,
+    'node:sqlite, which OmniWeave uses for its local graph database, and are',
+    'not tested or supported.',
     '',
     'Fix: install Node.js 22 LTS:',
     '  nvm install 22 && nvm use 22                          # nvm',

@@ -196,6 +196,7 @@ export class QueryBuilder {
     getNodesByFile?: SqliteStatement;
     getNodesByKind?: SqliteStatement;
     insertEdge?: SqliteStatement;
+    getExactScipEdge?: SqliteStatement;
     upsertFile?: SqliteStatement;
     deleteEdgesBySource?: SqliteStatement;
     deleteEdgesByTarget?: SqliteStatement;
@@ -243,7 +244,7 @@ export class QueryBuilder {
   /**
    * Insert a new node
    */
-  insertNode(node: Node): void {
+  insertNode(node: Node): number {
     if (!this.stmts.insertNode) {
       this.stmts.insertNode = this.db.prepare(`
         INSERT OR REPLACE INTO nodes (
@@ -271,7 +272,7 @@ export class QueryBuilder {
         filePath: node.filePath,
         language: node.language,
       });
-      return;
+      return 0;
     }
 
     // INSERT OR REPLACE may overwrite a node we have cached. Drop the
@@ -280,7 +281,7 @@ export class QueryBuilder {
     // deleteNode below).
     this.nodeCache.delete(node.id);
 
-    this.stmts.insertNode.run({
+    return this.stmts.insertNode.run({
       id: node.id,
       kind: node.kind,
       name: node.name,
@@ -302,7 +303,7 @@ export class QueryBuilder {
       typeParameters: node.typeParameters ? JSON.stringify(node.typeParameters) : null,
       returnType: node.returnType ?? null,
       updatedAt: node.updatedAt ?? Date.now(),
-    });
+    }).changes;
   }
 
   /**
@@ -1255,7 +1256,7 @@ export class QueryBuilder {
   /**
    * Insert a new edge
    */
-  insertEdge(edge: Edge): void {
+  insertEdge(edge: Edge): number {
     if (!this.stmts.insertEdge) {
       this.stmts.insertEdge = this.db.prepare(`
         INSERT OR IGNORE INTO edges (source, target, kind, metadata, line, col, provenance)
@@ -1263,15 +1264,16 @@ export class QueryBuilder {
       `);
     }
 
-    this.stmts.insertEdge.run({
+    const metadata = edge.metadata ? JSON.stringify(edge.metadata) : null;
+    return this.stmts.insertEdge.run({
       source: edge.source,
       target: edge.target,
       kind: edge.kind,
-      metadata: edge.metadata ? JSON.stringify(edge.metadata) : null,
+      metadata,
       line: edge.line ?? null,
       col: edge.column ?? null,
       provenance: edge.provenance ?? null,
-    });
+    }).changes;
   }
 
   /**
@@ -1295,6 +1297,103 @@ export class QueryBuilder {
         this.insertEdge(edge);
       }
     })();
+  }
+
+  insertScipFacts(nodes: Node[], edges: Edge[]): { deletedNodes: number; deletedEdges: number; insertedNodes: number; insertedEdges: number } {
+    let insertedNodes = 0;
+    let insertedEdges = 0;
+
+    this.db.transaction(() => {
+      const inserted = this.insertScipFactRows(nodes, edges, true);
+      insertedNodes = inserted.insertedNodes;
+      insertedEdges = inserted.insertedEdges;
+    })();
+
+    return {
+      deletedNodes: 0,
+      deletedEdges: 0,
+      insertedNodes,
+      insertedEdges,
+    };
+  }
+
+  /**
+   * Replace optional SCIP-derived facts without touching tree-sitter graph facts.
+   * SCIP importer nodes use the reserved `scip:` ID prefix, while edges carry
+   * `provenance='scip'`; deleting exactly those rows keeps re-import idempotent.
+   */
+  replaceScipFacts(nodes: Node[], edges: Edge[]): { deletedNodes: number; deletedEdges: number; insertedNodes: number; insertedEdges: number } {
+    let deletedNodes = 0;
+    let deletedEdges = 0;
+    let insertedNodes = 0;
+    let insertedEdges = 0;
+
+    this.db.transaction(() => {
+      deletedEdges = this.db.prepare(`DELETE FROM edges WHERE provenance = 'scip'`).run().changes;
+      const scipNodeRows = this.db.prepare(`SELECT id FROM nodes WHERE id LIKE 'scip:%'`).all() as Array<{ id: string }>;
+      for (const row of scipNodeRows) this.nodeCache.delete(row.id);
+      deletedNodes = this.db.prepare(`DELETE FROM nodes WHERE id LIKE 'scip:%'`).run().changes;
+
+      const inserted = this.insertScipFactRows(nodes, edges, false);
+      insertedNodes = inserted.insertedNodes;
+      insertedEdges = inserted.insertedEdges;
+    })();
+
+    return {
+      deletedNodes,
+      deletedEdges,
+      insertedNodes,
+      insertedEdges,
+    };
+  }
+
+  private insertScipFactRows(nodes: Node[], edges: Edge[], dedupeExistingEdges: boolean): { insertedNodes: number; insertedEdges: number } {
+    let insertedNodes = 0;
+    let insertedEdges = 0;
+
+    for (const node of nodes) {
+      insertedNodes += this.insertNode(node);
+    }
+
+    const endpointIds = new Set<string>();
+    for (const edge of edges) {
+      endpointIds.add(edge.source);
+      endpointIds.add(edge.target);
+    }
+    const existingNodeIds = this.getExistingNodeIds([...endpointIds]);
+    for (const edge of edges) {
+      if (!existingNodeIds.has(edge.source) || !existingNodeIds.has(edge.target)) continue;
+      if (dedupeExistingEdges && this.hasExactScipEdge(edge)) continue;
+      insertedEdges += this.insertEdge(edge);
+    }
+
+    return { insertedNodes, insertedEdges };
+  }
+
+  private hasExactScipEdge(edge: Edge): boolean {
+    if (!this.stmts.getExactScipEdge) {
+      this.stmts.getExactScipEdge = this.db.prepare(`
+        SELECT 1 AS found FROM edges
+        WHERE source = @source
+          AND target = @target
+          AND kind = @kind
+          AND COALESCE(metadata, '') = COALESCE(@metadata, '')
+          AND COALESCE(line, -1) = COALESCE(@line, -1)
+          AND COALESCE(col, -1) = COALESCE(@col, -1)
+          AND provenance = 'scip'
+        LIMIT 1
+      `);
+    }
+
+    const row = this.stmts.getExactScipEdge.get({
+      source: edge.source,
+      target: edge.target,
+      kind: edge.kind,
+      metadata: edge.metadata ? JSON.stringify(edge.metadata) : null,
+      line: edge.line ?? null,
+      col: edge.column ?? null,
+    }) as { found: number } | undefined;
+    return row !== undefined;
   }
 
   /**
@@ -1399,6 +1498,30 @@ export class QueryBuilder {
         AND src.file_path != ?`;
     const rows = this.db.prepare(sql).all(filePath, filePath) as Array<{ fp: string }>;
     return rows.map((r) => r.fp);
+  }
+
+  /**
+   * Cross-file edges whose target is a node in `filePath`, paired with the
+   * target node's stable `(name, kind)` identity. Incremental re-index deletes
+   * this file's nodes first, which cascades incoming edges from unchanged files.
+   * Replaying by old target id is unsafe because ids include source line; replay
+   * by `(filePath, kind, name)` preserves doc/comment-only line shifts while
+   * still dropping edges to symbols that were renamed or removed.
+   */
+  getCrossFileIncomingEdgesWithTarget(filePath: string): Array<Edge & { targetName: string; targetKind: NodeKind }> {
+    const sql = `SELECT e.*, tgt.name AS target_name, tgt.kind AS target_kind
+      FROM edges e
+      JOIN nodes tgt ON tgt.id = e.target
+      JOIN nodes src ON src.id = e.source
+      WHERE tgt.file_path = ?
+        AND e.kind != 'contains'
+        AND src.file_path != ?`;
+    const rows = this.db.prepare(sql).all(filePath, filePath) as Array<EdgeRow & { target_name: string; target_kind: NodeKind }>;
+    return rows.map((row) => ({
+      ...rowToEdge(row),
+      targetName: row.target_name,
+      targetKind: row.target_kind,
+    }));
   }
 
   /**

@@ -1,8 +1,8 @@
 /**
  * OmniWeave
  *
- * A local-first code intelligence system that builds a semantic
- * knowledge graph from any codebase.
+ * A local-first code intelligence system that builds a structural
+ * code graph from any codebase.
  */
 
 import * as path from 'path';
@@ -132,11 +132,11 @@ export class OmniWeave {
   private db: DatabaseConnection;
   private queries: QueryBuilder;
   private projectRoot: string;
-  private orchestrator: ExtractionOrchestrator;
-  private resolver: ReferenceResolver;
-  private graphManager: GraphQueryManager;
-  private traverser: GraphTraverser;
-  private contextBuilder: ContextBuilder;
+  private orchestrator!: ExtractionOrchestrator;
+  private resolver!: ReferenceResolver;
+  private graphManager!: GraphQueryManager;
+  private traverser!: GraphTraverser;
+  private contextBuilder!: ContextBuilder;
 
   // Mutex for preventing concurrent indexing operations (in-process)
   private indexMutex = new Mutex();
@@ -155,23 +155,27 @@ export class OmniWeave {
     this.db = db;
     this.queries = queries;
     this.projectRoot = projectRoot;
-    // Down-weight the project name as a query term in search ranking — it names
-    // the whole repo, not a symbol, so it has no discriminative value (#720).
-    try {
-      this.queries.setProjectNameTokens(deriveProjectNameTokens(projectRoot));
-    } catch {
-      // Best-effort: ranking still works without it.
-    }
     this.fileLock = new FileLock(
       path.join(getOmniWeaveDir(projectRoot), 'omniweave.lock')
     );
-    this.orchestrator = new ExtractionOrchestrator(projectRoot, queries);
-    this.resolver = createResolver(projectRoot, queries);
-    this.graphManager = new GraphQueryManager(queries);
-    this.traverser = new GraphTraverser(queries);
+    this.wireLayers();
+  }
+
+  private wireLayers(): void {
+    // Down-weight the project name as a query term in search ranking — it names
+    // the whole repo, not a symbol, so it has no discriminative value (#720).
+    try {
+      this.queries.setProjectNameTokens(deriveProjectNameTokens(this.projectRoot));
+    } catch {
+      // Best-effort: ranking still works without it.
+    }
+    this.orchestrator = new ExtractionOrchestrator(this.projectRoot, this.queries);
+    this.resolver = createResolver(this.projectRoot, this.queries);
+    this.graphManager = new GraphQueryManager(this.queries);
+    this.traverser = new GraphTraverser(this.queries);
     this.contextBuilder = createContextBuilder(
-      projectRoot,
-      queries,
+      this.projectRoot,
+      this.queries,
       this.traverser
     );
   }
@@ -322,6 +326,22 @@ export class OmniWeave {
    */
   getProjectRoot(): string {
     return this.projectRoot;
+  }
+
+  reopenIfReplaced(): boolean {
+    if (!this.db.isReplacedOnDisk()) return false;
+    const dbPath = this.db.getPath();
+    const fresh = DatabaseConnection.open(dbPath);
+    const stale = this.db;
+    this.db = fresh;
+    this.queries = new QueryBuilder(fresh.getDb());
+    this.wireLayers();
+    try {
+      stale.close();
+    } catch {
+      // Closing is best-effort; the new live connection is already installed.
+    }
+    return true;
   }
 
   // ===========================================================================
@@ -1064,7 +1084,7 @@ export class OmniWeave {
   /**
    * Find relevant subgraph for a query
    *
-   * Combines semantic search with graph traversal to find the most
+   * Combines lexical/structural seed search with graph traversal to find
    * relevant nodes and their relationships for a given query.
    *
    * @param query - Natural language query describing the task

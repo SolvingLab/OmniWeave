@@ -28,7 +28,7 @@ import { getGlyphs } from '../ui/glyphs';
 // installer must stay importable even when native modules can't load).
 import { watchDisabledReason } from '../sync/watch-policy';
 import { isGitRepo, isSyncHookInstalled, installGitSyncHook } from '../sync/git-hooks';
-import { getOmniWeaveDir, omniWeaveDirName } from '../directory';
+import { getOmniWeaveDir, omniWeaveDirName, unsafeIndexRootReason } from '../directory';
 import { getTelemetry, recordIndexEvent, TELEMETRY_DOCS } from '../telemetry';
 
 // Backwards-compat: keep these named exports — downstream code may
@@ -500,6 +500,13 @@ async function initializeLocalProject(
   useDefaults = false,
 ): Promise<void> {
   const projectPath = process.cwd();
+
+  const unsafe = unsafeIndexRootReason(projectPath);
+  if (unsafe) {
+    clack.log.warn(`Skipping automatic indexing — ${projectPath} looks like ${unsafe}.`);
+    clack.log.info('Run "omniweave init" inside a specific project directory when you are ready to index it.');
+    return;
+  }
 
   let OmniWeave: typeof import('../index').default;
   try {

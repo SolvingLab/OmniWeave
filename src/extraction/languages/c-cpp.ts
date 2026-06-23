@@ -141,6 +141,15 @@ export const cExtractor: LanguageExtractor = {
   },
 };
 
+function isMacroMisparsedTypeDecl(node: SyntaxNode): boolean {
+  const typeNode = getChildByField(node, 'type');
+  if (!typeNode) return false;
+  if (typeNode.type !== 'class_specifier' && typeNode.type !== 'struct_specifier') return false;
+  if (typeNode.namedChildren.some((child: SyntaxNode) => child.type === 'field_declaration_list')) return false;
+  const declarator = getChildByField(node, 'declarator');
+  return declarator?.type !== 'function_declarator';
+}
+
 export const cppExtractor: LanguageExtractor = {
   functionTypes: ['function_definition'],
   classTypes: ['class_specifier'],
@@ -185,14 +194,15 @@ export const cppExtractor: LanguageExtractor = {
     }
     return undefined;
   },
-  isMisparsedFunction: (name) => {
+  isMisparsedFunction: (name, node) => {
     // C++ macros like NLOHMANN_JSON_NAMESPACE_BEGIN cause tree-sitter to misparse
     // namespace blocks as function_definitions (e.g. name = "namespace detail").
     // Also filter C++ keywords that tree-sitter occasionally misinterprets as
     // function/method names (e.g. switch statements inside macro-confused scopes).
     if (name.startsWith('namespace')) return true;
     const cppKeywords = ['switch', 'if', 'for', 'while', 'do', 'case', 'return'];
-    return cppKeywords.includes(name);
+    if (cppKeywords.includes(name)) return true;
+    return isMacroMisparsedTypeDecl(node);
   },
   extractImport: (node, source) => {
     const importText = source.substring(node.startIndex, node.endIndex).trim();

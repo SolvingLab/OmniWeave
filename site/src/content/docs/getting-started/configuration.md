@@ -1,9 +1,22 @@
 ---
 title: Configuration
-description: OmniWeave is zero-config — there are no config files.
+description: OmniWeave is zero-config by default, with one optional project config for custom file extensions.
 ---
 
-There isn't any — OmniWeave is **zero-config**, with **no config file** to write or keep in sync. Language support is automatic from the file extension; there's nothing to wire up per language.
+OmniWeave is **zero-config by default**. Language support is automatic from the file extension, and `.gitignore` remains the source of truth for what gets excluded.
+
+The only project config is an optional `omniweave.json` for repositories that use a non-standard extension for an already-supported language.
+
+```json
+{
+  "extensions": {
+    ".dota_lua": "lua",
+    ".tpl": "php"
+  }
+}
+```
+
+Custom mappings apply to indexing, incremental sync, and file watching. They override built-in extension mappings when needed, so a project can force `.h` to parse as `cpp`. Invalid entries are ignored with a warning; a bad config never blocks indexing.
 
 ## What it skips out of the box
 

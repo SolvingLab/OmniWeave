@@ -14,6 +14,13 @@ import * as os from 'os';
 import OmniWeave from '../src/index';
 import { ToolHandler } from '../src/mcp/tools';
 
+function blastSection(text: string): string {
+  const start = text.indexOf('### Blast radius');
+  if (start < 0) return '';
+  const end = text.indexOf('###', start + 1);
+  return text.slice(start, end > start ? end : undefined);
+}
+
 describe('omniweave_explore — blast radius', () => {
   let testDir: string;
   let cg: OmniWeave;
@@ -22,13 +29,24 @@ describe('omniweave_explore — blast radius', () => {
   beforeEach(async () => {
     testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omniweave-blast-'));
     const src = path.join(testDir, 'src');
+    const snapshot = path.join(
+      testDir,
+      'research',
+      '2026-06-23-codegraph-ecosystem',
+      'repos',
+      'codegraph',
+      'src'
+    );
     fs.mkdirSync(src, { recursive: true });
+    fs.mkdirSync(snapshot, { recursive: true });
 
     // `target` is depended on by a sibling (caller) and a test file.
     fs.writeFileSync(
       path.join(src, 'feature.ts'),
       `export function target() { return 1; }\n` +
-      `export function caller() { return target(); }\n`,
+      `export function caller() { return target(); }\n` +
+      `export interface TargetResult { value: number; }\n` +
+      `export function typedTarget(): TargetResult { return { value: 1 }; }\n`,
     );
     fs.writeFileSync(
       path.join(src, 'feature.test.ts'),
@@ -39,6 +57,10 @@ describe('omniweave_explore — blast radius', () => {
     fs.writeFileSync(
       path.join(src, 'leaf.ts'),
       `export function lonelyLeaf() { return 42; }\n`,
+    );
+    fs.writeFileSync(
+      path.join(snapshot, 'noise.ts'),
+      `export function snapshotCaller() { return target(); }\n`,
     );
 
     cg = OmniWeave.initSync(testDir, { config: { include: ['**/*.ts'], exclude: [] } });
@@ -69,5 +91,24 @@ describe('omniweave_explore — blast radius', () => {
     const text = res.content[0].text;
     // lonelyLeaf has zero callers — it must never appear under a blast-radius bullet.
     expect(text).not.toMatch(/Blast radius[\s\S]*`lonelyLeaf`/);
+  });
+
+  it('does not count low-signal snapshot callers in blast radius', async () => {
+    const res = await handler.execute('omniweave_explore', { query: 'target' });
+    const text = res.content[0].text;
+    const blast = blastSection(text);
+
+    expect(blast).toContain('`target`');
+    expect(blast).not.toContain('research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/noise.ts');
+    expect(blast).not.toContain('snapshotCaller');
+  });
+
+  it('does not count return-type references as blast-radius callers', async () => {
+    const res = await handler.execute('omniweave_explore', { query: 'TargetResult' });
+    const text = res.content[0].text;
+    const blast = blastSection(text);
+
+    expect(blast).not.toContain('`TargetResult`');
+    expect(blast).not.toContain('typedTarget');
   });
 });

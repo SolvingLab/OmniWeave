@@ -14,6 +14,7 @@ import {
   FileRecord,
   ExtractionResult,
   ExtractionError,
+  Edge,
 } from '../types';
 import { QueryBuilder } from '../db/queries';
 import { extractFromSource } from './tree-sitter';
@@ -21,6 +22,7 @@ import { detectLanguage, isSourceFile, isLanguageSupported, isFileLevelOnlyLangu
 import { isOmniWeaveDataDir } from '../directory';
 import { logDebug, logWarn } from '../errors';
 import { validatePathWithinRoot, normalizePath } from '../utils';
+import { loadExtensionOverrides } from '../project-config';
 import ignore, { Ignore } from 'ignore';
 import { detectFrameworks } from '../resolution/frameworks';
 import type { ResolutionContext } from '../resolution/types';
@@ -255,6 +257,10 @@ function defaultsOnlyIgnore(): Ignore {
   return ignore().add(DEFAULT_IGNORE_PATTERNS);
 }
 
+function isWholeCwdEntry(entry: string): boolean {
+  return entry === './' || entry === '.' || entry === '';
+}
+
 /**
  * List the gitignored DIRECTORIES of a repo (collapsed, trailing-slash form),
  * relative to `repoDir`. These are invisible to every other `git ls-files` /
@@ -269,9 +275,22 @@ function listIgnoredDirs(repoDir: string): string[] {
       ['ls-files', '-z', '-o', '-i', '--exclude-standard', '--directory'],
       { cwd: repoDir, encoding: 'utf-8' as const, timeout: 30000, maxBuffer: 50 * 1024 * 1024, stdio: ['pipe', 'pipe', 'pipe'] as ['pipe', 'pipe', 'pipe'], windowsHide: true }
     );
-    return out.split('\0').filter((e) => e.endsWith('/'));
+    return out.split('\0').filter((e) => e.endsWith('/') && !isWholeCwdEntry(e));
   } catch {
     return [];
+  }
+}
+
+function isWorktreeGitPointer(absDir: string): boolean {
+  const gitPath = path.join(absDir, '.git');
+  if (!fs.existsSync(gitPath)) return false;
+  const stat = fs.statSync(gitPath);
+  if (!stat.isFile()) return false;
+  try {
+    const gitdir = fs.readFileSync(gitPath, 'utf8').match(/^gitdir:\s*(.+)$/m)?.[1]?.trim();
+    return !!gitdir && /(^|[\\/])\.git[\\/](modules[\\/][^\\/]+[\\/])?worktrees[\\/]/.test(gitdir);
+  } catch {
+    return false;
   }
 }
 
@@ -301,6 +320,7 @@ function findNestedGitRepos(absDir: string, relPrefix: string): string[] {
       break;
     }
     if (fs.existsSync(path.join(abs, '.git'))) {
+      if (isWorktreeGitPointer(abs)) continue;
       found.push(rel);
       continue; // its own git handles everything below
     }
@@ -396,7 +416,7 @@ export function discoverEmbeddedRepoRoots(rootDir: string): string[] {
         { cwd: repoAbs, encoding: 'utf-8', timeout: 30000, maxBuffer: 50 * 1024 * 1024, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true }
       );
       for (const e of o.split('\0')) {
-        if (e.endsWith('/') && !defaults.ignores(e)) {
+        if (e.endsWith('/') && !isWholeCwdEntry(e) && !defaults.ignores(e)) {
           candidates.push(...findNestedGitRepos(path.join(repoAbs, e), e));
         }
       }
@@ -473,7 +493,7 @@ function collectGitFiles(repoDir: string, prefix: string, files: Set<string>, em
       // descend into default-ignored locations — an embedded repo inside
       // node_modules is an npm git-dependency, not project code.
       const childDir = path.join(repoDir, rel);
-      if (fs.existsSync(path.join(childDir, '.git')) && !defaultsOnlyIgnore().ignores(rel)) {
+      if (fs.existsSync(path.join(childDir, '.git')) && !isWorktreeGitPointer(childDir) && !defaultsOnlyIgnore().ignores(rel)) {
         embeddedRoots?.add(normalizePath(prefix + rel));
         collectGitFiles(childDir, prefix + rel, files, embeddedRoots);
       }
@@ -565,20 +585,22 @@ interface GitChanges {
 function getGitChangedFiles(rootDir: string): GitChanges | null {
   try {
     const changes: GitChanges = { modified: [], added: [], deleted: [] };
-    collectGitStatus(rootDir, '', changes);
+    const overrides = loadExtensionOverrides(rootDir);
+    collectGitStatus(rootDir, '', changes, overrides);
     return changes;
   } catch {
     return null;
   }
 }
 
-function collectGitStatus(repoDir: string, prefix: string, out: GitChanges): void {
+function collectGitStatus(repoDir: string, prefix: string, out: GitChanges, overrides?: Record<string, Language>): void {
   const output = execFileSync(
     'git',
     ['status', '--porcelain', '--no-renames'],
     { cwd: repoDir, encoding: 'utf-8', timeout: 10000, maxBuffer: 50 * 1024 * 1024, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true }
   );
 
+  const ig = buildDefaultIgnore(repoDir);
   const untrackedDirs: string[] = [];
   for (const line of output.split('\n')) {
     if (line.length < 4) continue; // Minimum: "XY file"
@@ -594,13 +616,19 @@ function collectGitStatus(repoDir: string, prefix: string, out: GitChanges): voi
     }
 
     const filePath = normalizePath(prefix + rel);
-    // Skip non-source files (git status already omits .gitignored paths).
-    if (!isSourceFile(filePath)) continue;
+    if (!isSourceFile(filePath, overrides)) continue;
+
+    if (statusCode.includes('D')) {
+      if (!fs.existsSync(path.join(repoDir, rel))) {
+        out.deleted.push(filePath);
+      }
+      continue;
+    }
+
+    if (ig.ignores(rel)) continue;
 
     if (statusCode === '??') {
       out.added.push(filePath);
-    } else if (statusCode.includes('D')) {
-      out.deleted.push(filePath);
     } else {
       // M, MM, AM, A (staged), etc. — treat as modified
       out.modified.push(filePath);
@@ -611,11 +639,11 @@ function collectGitStatus(repoDir: string, prefix: string, out: GitChanges): voi
   // nested deeper) and under this repo's gitignored dirs.
   for (const rel of untrackedDirs) {
     for (const repoRel of findNestedGitRepos(path.join(repoDir, rel), rel)) {
-      collectGitStatus(path.join(repoDir, repoRel), prefix + repoRel, out);
+      collectGitStatus(path.join(repoDir, repoRel), prefix + repoRel, out, overrides);
     }
   }
   for (const rel of findIgnoredEmbeddedRepos(repoDir)) {
-    collectGitStatus(path.join(repoDir, rel), prefix + rel, out);
+    collectGitStatus(path.join(repoDir, rel), prefix + rel, out, overrides);
   }
 }
 
@@ -630,13 +658,14 @@ export function scanDirectory(
   rootDir: string,
   onProgress?: (current: number, file: string) => void
 ): string[] {
+  const overrides = loadExtensionOverrides(rootDir);
   // Fast path: use git to get all visible files (respects .gitignore everywhere)
   const gitFiles = getGitVisibleFiles(rootDir);
   if (gitFiles) {
     const files: string[] = [];
     let count = 0;
     for (const filePath of gitFiles) {
-      if (isSourceFile(filePath)) {
+      if (isSourceFile(filePath, overrides)) {
         files.push(filePath);
         count++;
         onProgress?.(count, filePath);
@@ -657,12 +686,13 @@ export async function scanDirectoryAsync(
   rootDir: string,
   onProgress?: (current: number, file: string) => void
 ): Promise<string[]> {
+  const overrides = loadExtensionOverrides(rootDir);
   const gitFiles = getGitVisibleFiles(rootDir);
   if (gitFiles) {
     const files: string[] = [];
     let count = 0;
     for (const filePath of gitFiles) {
-      if (isSourceFile(filePath)) {
+      if (isSourceFile(filePath, overrides)) {
         files.push(filePath);
         count++;
         onProgress?.(count, filePath);
@@ -688,6 +718,7 @@ function scanDirectoryWalk(
   const files: string[] = [];
   let count = 0;
   const visitedDirs = new Set<string>();
+  const overrides = loadExtensionOverrides(rootDir);
 
   // A .gitignore matcher scoped to the directory that declared it. Patterns in
   // a nested .gitignore are relative to that directory, so we keep the dir
@@ -764,7 +795,7 @@ function scanDirectoryWalk(
               walk(fullPath, active);
             }
           } else if (stat.isFile()) {
-            if (!isIgnored(fullPath, false, active) && isSourceFile(relativePath)) {
+            if (!isIgnored(fullPath, false, active) && isSourceFile(relativePath, overrides)) {
               files.push(relativePath);
               count++;
               onProgress?.(count, relativePath);
@@ -781,7 +812,7 @@ function scanDirectoryWalk(
           walk(fullPath, active);
         }
       } else if (entry.isFile()) {
-        if (!isIgnored(fullPath, false, active) && isSourceFile(relativePath)) {
+        if (!isIgnored(fullPath, false, active) && isSourceFile(relativePath, overrides)) {
           files.push(relativePath);
           count++;
           onProgress?.(count, relativePath);
@@ -900,6 +931,7 @@ export class ExtractionOrchestrator {
     let filesErrored = 0;
     let totalNodes = 0;
     let totalEdges = 0;
+    const extensionOverrides = loadExtensionOverrides(this.rootDir);
 
     const log = verbose
       ? (msg: string) => { console.log(`[worker] ${msg}`); }
@@ -957,7 +989,7 @@ export class ExtractionOrchestrator {
     await new Promise(resolve => setImmediate(resolve));
 
     // Detect needed languages and load grammars in the parse worker
-    const neededLanguages = [...new Set(files.map((f) => detectLanguage(f)))];
+    const neededLanguages = [...new Set(files.map((f) => detectLanguage(f, undefined, extensionOverrides)))];
     // .h files default to 'c' but may be C++ — ensure cpp grammar is loaded when c is needed
     if (neededLanguages.includes('c') && !neededLanguages.includes('cpp')) {
       neededLanguages.push('cpp');
@@ -1068,12 +1100,13 @@ export class ExtractionOrchestrator {
     }
 
     async function requestParse(filePath: string, content: string): Promise<ExtractionResult> {
+      const language = detectLanguage(filePath, content, extensionOverrides);
       if (!WorkerClass) {
         // In-process fallback
         return extractFromSource(
           filePath,
           content,
-          detectLanguage(filePath, content),
+          language,
           frameworkNames
         );
       }
@@ -1105,7 +1138,7 @@ export class ExtractionOrchestrator {
         }, timeoutMs);
 
         pendingParses.set(id, { resolve, reject, timer });
-        worker.postMessage({ type: 'parse', id, filePath, content, frameworkNames });
+        worker.postMessage({ type: 'parse', id, filePath, content, frameworkNames, language });
       });
     }
 
@@ -1130,7 +1163,7 @@ export class ExtractionOrchestrator {
       const fileContents = await Promise.all(
         batch.map(async (fp) => {
           try {
-            const fullPath = validatePathWithinRoot(this.rootDir, fp);
+            const fullPath = validatePathWithinRoot(this.rootDir, fp, { allowSymlinkEscape: true });
             if (!fullPath) {
               logWarn('Path traversal blocked in batch reader', { filePath: fp });
               return { filePath: fp, content: null as string | null, stats: null as fs.Stats | null, error: new Error('Path traversal blocked') };
@@ -1219,7 +1252,7 @@ export class ExtractionOrchestrator {
 
         // Store in database on main thread (SQLite is not thread-safe)
         if (result.nodes.length > 0 || result.errors.length === 0) {
-          const language = detectLanguage(filePath, content);
+          const language = detectLanguage(filePath, content, extensionOverrides);
           this.storeExtractionResult(filePath, content, language, stats, result);
         }
 
@@ -1240,7 +1273,7 @@ export class ExtractionOrchestrator {
           // Files with no symbols but no errors (yaml, twig, properties) are
           // tracked at the file level — count them as indexed so the CLI
           // doesn't misleadingly report "No files found to index".
-          const lang = detectLanguage(filePath, content);
+          const lang = detectLanguage(filePath, content, extensionOverrides);
           if (isFileLevelOnlyLanguage(lang)) {
             filesIndexed++;
           } else {
@@ -1284,7 +1317,7 @@ export class ExtractionOrchestrator {
 
         let content: string;
         try {
-          const fullPath = validatePathWithinRoot(this.rootDir, filePath);
+          const fullPath = validatePathWithinRoot(this.rootDir, filePath, { allowSymlinkEscape: true });
           if (!fullPath) continue;
           content = await fsp.readFile(fullPath, 'utf-8');
         } catch {
@@ -1300,7 +1333,7 @@ export class ExtractionOrchestrator {
         }
 
         if (result.nodes.length > 0 || result.errors.length === 0) {
-          const language = detectLanguage(filePath, content);
+          const language = detectLanguage(filePath, content, extensionOverrides);
           const stats = await fsp.stat(path.join(this.rootDir, filePath));
           this.storeExtractionResult(filePath, content, language, stats, result);
 
@@ -1329,7 +1362,7 @@ export class ExtractionOrchestrator {
 
           let fullContent: string;
           try {
-            const fullPath = validatePathWithinRoot(this.rootDir, filePath);
+            const fullPath = validatePathWithinRoot(this.rootDir, filePath, { allowSymlinkEscape: true });
             if (!fullPath) continue;
             fullContent = await fsp.readFile(fullPath, 'utf-8');
           } catch {
@@ -1351,7 +1384,7 @@ export class ExtractionOrchestrator {
           }
 
           if (result.nodes.length > 0 || result.errors.length === 0) {
-            const language = detectLanguage(filePath, fullContent);
+            const language = detectLanguage(filePath, fullContent, extensionOverrides);
             const stats = await fsp.stat(path.join(this.rootDir, filePath));
             this.storeExtractionResult(filePath, fullContent, language, stats, result);
 
@@ -1436,7 +1469,7 @@ export class ExtractionOrchestrator {
    * Index a single file
    */
   async indexFile(relativePath: string): Promise<ExtractionResult> {
-    const fullPath = validatePathWithinRoot(this.rootDir, relativePath);
+    const fullPath = validatePathWithinRoot(this.rootDir, relativePath, { allowSymlinkEscape: true });
 
     if (!fullPath) {
       return {
@@ -1483,8 +1516,7 @@ export class ExtractionOrchestrator {
     content: string,
     stats: fs.Stats
   ): Promise<ExtractionResult> {
-    // Prevent path traversal
-    const fullPath = validatePathWithinRoot(this.rootDir, relativePath);
+    const fullPath = validatePathWithinRoot(this.rootDir, relativePath, { allowSymlinkEscape: true });
     if (!fullPath) {
       logWarn('Path traversal blocked in indexFileWithContent', { relativePath });
       return {
@@ -1514,8 +1546,7 @@ export class ExtractionOrchestrator {
       };
     }
 
-    // Detect language
-    const language = detectLanguage(relativePath, content);
+    const language = detectLanguage(relativePath, content, loadExtensionOverrides(this.rootDir));
     if (!isLanguageSupported(language)) {
       return {
         nodes: [],
@@ -1558,6 +1589,10 @@ export class ExtractionOrchestrator {
       return; // No changes
     }
 
+    const crossFileIncomingEdges = existingFile
+      ? this.queries.getCrossFileIncomingEdgesWithTarget(filePath)
+      : [];
+
     // Delete existing data for this file
     if (existingFile) {
       this.queries.deleteFile(filePath);
@@ -1581,6 +1616,32 @@ export class ExtractionOrchestrator {
       );
       if (validEdges.length > 0) {
         this.queries.insertEdges(validEdges);
+      }
+    }
+
+    if (crossFileIncomingEdges.length > 0) {
+      const newNodesByKindName = new Map<string, string>();
+      for (const n of validNodes) {
+        newNodesByKindName.set(`${n.kind}\0${n.name}`, n.id);
+      }
+
+      const reinserted: Edge[] = [];
+      for (const edge of crossFileIncomingEdges) {
+        const target = newNodesByKindName.get(`${edge.targetKind}\0${edge.targetName}`);
+        if (!target) continue;
+        reinserted.push({
+          source: edge.source,
+          target,
+          kind: edge.kind,
+          metadata: edge.metadata,
+          line: edge.line,
+          column: edge.column,
+          provenance: edge.provenance,
+        });
+      }
+
+      if (reinserted.length > 0) {
+        this.queries.insertEdges(reinserted);
       }
     }
 
@@ -1712,7 +1773,8 @@ export class ExtractionOrchestrator {
 
     // Load only grammars needed for changed files
     if (filesToIndex.length > 0) {
-      const neededLanguages = [...new Set(filesToIndex.map((f) => detectLanguage(f)))];
+      const overrides = loadExtensionOverrides(this.rootDir);
+      const neededLanguages = [...new Set(filesToIndex.map((f) => detectLanguage(f, undefined, overrides)))];
       // .h files default to 'c' but may be C++ — ensure cpp grammar is loaded
       if (neededLanguages.includes('c') && !neededLanguages.includes('cpp')) {
         neededLanguages.push('cpp');

@@ -20,8 +20,16 @@ import {
   type WorktreeIndexMismatch,
 } from '../sync/worktree';
 import type { PendingFile } from '../sync';
-import type { Node, Edge, SearchResult, Subgraph, NodeKind } from '../types';
-import { isTestFile, normalizeNameToken } from '../search/query-utils';
+import type { Node, Edge, SearchResult, Subgraph, NodeKind, EdgeKind } from '../types';
+import {
+  isDistinctiveIdentifier,
+  isLowSignalSourceFile,
+  isLowSignalSourceQuery,
+  isRepositorySnapshotFile,
+  isRepositorySnapshotQuery,
+  isTestFile,
+  normalizeNameToken,
+} from '../search/query-utils';
 import {
   existsSync,
   readFileSync,
@@ -52,6 +60,9 @@ import { resolve as resolvePath } from 'path';
 
 /** Maximum output length to prevent context bloat (characters) */
 const MAX_OUTPUT_LENGTH = 15000;
+
+/** Hard inline ceiling for omniweave_explore after every wrapper is applied. */
+const EXPLORE_INLINE_HARD_CEILING = 25_000;
 
 /**
  * Maximum length for free-form string inputs (query, task, symbol).
@@ -88,10 +99,69 @@ const CONTAINER_NODE_KINDS = new Set<NodeKind>([
   'class', 'struct', 'interface', 'trait', 'protocol', 'enum', 'namespace', 'module',
 ]);
 
+const CALL_SURFACE_EDGE_KINDS = new Set<EdgeKind>(['calls', 'crossLang', 'invokes', 'instantiates']);
+
+interface AmbiguousExploreToken {
+  token: string;
+  total: number;
+  selected: Node[];
+  alternatives: Node[];
+}
+
+const EXPLORE_RELATIONSHIP_KIND_RANK: Record<EdgeKind, number> = {
+  calls: 0,
+  crossLang: 1,
+  produces: 2,
+  consumes: 2,
+  invokes: 2,
+  overrides: 3,
+  implements: 4,
+  extends: 4,
+  instantiates: 5,
+  returns: 6,
+  type_of: 7,
+  decorates: 8,
+  references: 9,
+  imports: 10,
+  exports: 11,
+  contains: 99,
+};
+
 /** Last `::` / `.` / `/`-separated segment of a qualified symbol. */
 function lastQualifierPart(symbol: string): string {
   const parts = symbol.split(/::|[./]/).filter((p) => p.length > 0);
   return parts[parts.length - 1] ?? symbol;
+}
+
+function extractExploreNameTokens(query: string, options: { includePrecedingPlainTokens?: boolean } = {}): string[] {
+  const fileExt = /\.(?:java|kt|kts|ts|tsx|js|jsx|mjs|cjs|cs|py|go|rb|php|swift|rs|cpp|cc|cxx|c|h|hpp|scala|lua|dart|vue|svelte|astro)$/i;
+  const tokens = [...new Set(
+    query.split(/[\s,()[\]]+/)
+      .map((t) => t.replace(fileExt, '').trim())
+      .filter((t) => t.length >= 3 && /^[A-Za-z_$][\w$]*(?:(?:::|\.)[\w$]+)*$/.test(t))
+  )].slice(0, 16);
+  if (tokens.length <= 3) return tokens;
+
+  const isSpecific = (token: string): boolean => /[.\/]|::/.test(token) || isDistinctiveIdentifier(token);
+  const specificIndexes = tokens
+    .map((token, index) => ({ token, index }))
+    .filter(({ token }) => isSpecific(token))
+    .map(({ index }) => index);
+  if (specificIndexes.length === 0) return [];
+
+  const keep = new Set(specificIndexes);
+  if (options.includePrecedingPlainTokens) {
+    for (const index of specificIndexes) {
+      let added = 0;
+      for (let i = index - 1; i >= 0 && !isSpecific(tokens[i]!); i--) {
+        keep.add(i);
+        added++;
+        if (added >= 2) break;
+      }
+    }
+  }
+
+  return tokens.filter((_, index) => keep.has(index));
 }
 
 /**
@@ -257,6 +327,47 @@ export function getExploreOutputBudget(fileCount: number): ExploreOutputBudget {
   };
 }
 
+function parseExploreMaxFiles(value: unknown, defaultMaxFiles: number): number {
+  if (value === undefined || value === null) return defaultMaxFiles;
+  if (typeof value === 'string' && value.trim() === '') return defaultMaxFiles;
+
+  const numeric = typeof value === 'number'
+    ? value
+    : typeof value === 'string'
+      ? Number(value.trim())
+      : Number.NaN;
+
+  if (!Number.isFinite(numeric)) return defaultMaxFiles;
+  return clamp(Math.floor(numeric), 1, 20);
+}
+
+function truncateExploreAtCompleteBoundary(output: string, hardCeiling: number, suffix: string): string {
+  const cutLimit = Math.max(0, hardCeiling - suffix.length);
+  const cut = output.slice(0, cutLimit);
+  const sourceHeader = cut.lastIndexOf('\n### Source Code');
+  const closeFenceMatches = [...cut.matchAll(/\n```\n/g)];
+  const lastCompleteSourceEnd = closeFenceMatches.length > 0
+    ? (closeFenceMatches[closeFenceMatches.length - 1]!.index ?? -1) + '\n```\n'.length
+    : -1;
+
+  if (lastCompleteSourceEnd > sourceHeader) {
+    return cut.slice(0, lastCompleteSourceEnd).trimEnd() + suffix;
+  }
+
+  const lastSection = cut.lastIndexOf('\n#### ');
+  const boundary = lastSection > sourceHeader
+    ? lastSection
+    : (sourceHeader > 0 ? sourceHeader : cut.lastIndexOf('\n'));
+  const safe = boundary > 0 ? cut.slice(0, boundary) : cut;
+  return safe.trimEnd() + suffix;
+}
+
+function capExploreFinalText(text: string): string {
+  if (text.length <= EXPLORE_INLINE_HARD_CEILING) return text;
+  const suffix = '\n\n... (output truncated to final inline budget after freshness/worktree notices; trailing sections were dropped whole to keep this inline and avoid partial source. Treat only complete source blocks shown above as already Read. For uncovered names/files, run another omniweave_explore with the specific names.)';
+  return truncateExploreAtCompleteBoundary(text, EXPLORE_INLINE_HARD_CEILING, suffix);
+}
+
 /**
  * Whether `omniweave_explore` should prefix source lines with their line
  * numbers (cat -n style: `<num>\t<code>`).
@@ -308,8 +419,8 @@ function numberSourceLines(slice: string, firstLineNumber: number): string {
 /**
  * Per-file staleness banner emitted at the top of a tool response when the
  * file watcher has pending events for files referenced by the response.
- * The agent uses this to fall back to Read for those specific files
- * without waiting for the debounced sync (issue #403).
+ * The agent uses this to verify the listed files or refresh the graph before
+ * trusting relationships/line ranges, without blocking on debounce (issue #403).
  */
 export function formatStaleBanner(stale: PendingFile[]): string {
   const now = Date.now();
@@ -320,9 +431,11 @@ export function formatStaleBanner(stale: PendingFile[]): string {
   });
   return (
     '⚠️ Some files referenced below were edited since the last index sync — ' +
-    'their omniweave entries may be stale:\n' +
+    'their omniweave symbols, edges, or line ranges may be stale:\n' +
     lines.join('\n') +
-    '\nFor accurate content of those specific files, Read them directly. ' +
+    '\nIf source blocks are shown below, their bytes were re-read from disk, ' +
+    'but the graph context for those files may still be stale. Use `omniweave_node <path>` ' +
+    'for a focused current file read, or run `omniweave sync` before trusting relationships. ' +
     'The rest of this response is fresh.'
   );
 }
@@ -345,6 +458,100 @@ export function formatStaleFooter(stale: PendingFile[]): string {
     `(Note: ${stale.length} file(s) elsewhere in this project are pending index ` +
     `sync but were not referenced above:\n${lines.join('\n')}${more})`
   );
+}
+
+type ChangedFileKind = 'added' | 'modified' | 'removed';
+
+interface ChangedFileEntry {
+  path: string;
+  kind: ChangedFileKind;
+}
+
+function changedFileEntries(changes: { added: string[]; modified: string[]; removed: string[] }): ChangedFileEntry[] {
+  return [
+    ...changes.added.map((path) => ({ path, kind: 'added' as const })),
+    ...changes.modified.map((path) => ({ path, kind: 'modified' as const })),
+    ...changes.removed.map((path) => ({ path, kind: 'removed' as const })),
+  ];
+}
+
+/**
+ * Whole-response freshness banner for watcher-less reads (CLI, cross-project
+ * MCP, disabled watcher policy). `getPendingFiles()` is empty there by design,
+ * so we fall back to the same changed-file signal that powers status.
+ */
+export function formatChangedIndexBanner(changed: ChangedFileEntry[]): string {
+  const lines = changed.map((p) => `  - ${p.path} (${p.kind})`);
+  return (
+    '⚠️ The OmniWeave index is behind the worktree — files referenced below changed or were removed since the last index:\n' +
+    lines.join('\n') +
+    '\nSource blocks below are re-read from disk when shown, but symbols, edges, ranking, and line ranges may still come from the old index. ' +
+    'Run `omniweave sync` before trusting relationships, or use `omniweave_node <path>` for focused current reads.'
+  );
+}
+
+/**
+ * Compact footer for watcher-less reads when changed files exist elsewhere in
+ * the project but are not referenced by this response.
+ */
+export function formatChangedIndexFooter(changed: ChangedFileEntry[]): string {
+  const MAX = 5;
+  const shown = changed.slice(0, MAX);
+  const lines = shown.map((p) => `  - ${p.path} (${p.kind})`);
+  const more = changed.length > MAX ? `\n  - …and ${changed.length - MAX} more` : '';
+  return (
+    `(Note: ${changed.length} file(s) elsewhere in this project changed since ` +
+    `the last index but were not referenced above:\n${lines.join('\n')}${more})`
+  );
+}
+
+function formatStaleNoResultNotice(stale: PendingFile[]): string {
+  const MAX = 5;
+  const now = Date.now();
+  const shown = stale.slice(0, MAX);
+  const lines = shown.map((p) => {
+    const ageMs = Math.max(0, now - p.lastSeenMs);
+    const label = p.indexing ? 'indexing in progress' : 'pending sync';
+    return `  - ${p.path} (edited ${ageMs}ms ago, ${label})`;
+  });
+  const more = stale.length > MAX ? `\n  - …and ${stale.length - MAX} more` : '';
+  return (
+    '⚠️ This empty explore result may be stale — files changed since the last index sync are not represented in the graph yet:\n' +
+    lines.join('\n') +
+    more +
+    '\nIf your query targets one of these files, wait for sync or run `omniweave sync` before trusting structural results. For immediate work on a newly created file, use normal file tools for that path.'
+  );
+}
+
+function formatChangedIndexNoResultNotice(changed: ChangedFileEntry[]): string {
+  const MAX = 5;
+  const shown = changed.slice(0, MAX);
+  const lines = shown.map((p) => `  - ${p.path} (${p.kind})`);
+  const more = changed.length > MAX ? `\n  - …and ${changed.length - MAX} more` : '';
+  return (
+    '⚠️ This empty explore result may be stale — files changed since the last index are not represented in the graph yet:\n' +
+    lines.join('\n') +
+    more +
+    '\nIf your query targets one of these files, run `omniweave sync` before trusting structural results. For immediate work on a newly created file, use normal file tools for that path.'
+  );
+}
+
+function isExploreNoResultText(text: string): boolean {
+  return text.startsWith('No relevant code found for ');
+}
+
+function responseMentionsPath(text: string, filePath: string): boolean {
+  const isPathChar = (char: string | undefined): boolean =>
+    char !== undefined && /[A-Za-z0-9._~+%/-]/.test(char);
+
+  let index = text.indexOf(filePath);
+  while (index !== -1) {
+    const before = index > 0 ? text[index - 1] : undefined;
+    const after = text[index + filePath.length];
+    if (!isPathChar(before) && !isPathChar(after)) return true;
+    index = text.indexOf(filePath, index + filePath.length);
+  }
+  return false;
 }
 
 /**
@@ -413,7 +620,7 @@ export const tools: ToolDefinition[] = [
         },
         limit: {
           type: 'number',
-          description: 'Maximum results (default: 10)',
+          description: 'Maximum results (default: 10; clamped to 1-100)',
           default: 10,
         },
         projectPath: projectPathProperty,
@@ -437,7 +644,7 @@ export const tools: ToolDefinition[] = [
         },
         limit: {
           type: 'number',
-          description: 'Maximum number of callers to return (default: 20)',
+          description: 'Maximum number of callers to return (default: 20; clamped to 1-100)',
           default: 20,
         },
         projectPath: projectPathProperty,
@@ -461,7 +668,7 @@ export const tools: ToolDefinition[] = [
         },
         limit: {
           type: 'number',
-          description: 'Maximum number of callees to return (default: 20)',
+          description: 'Maximum number of callees to return (default: 20; clamped to 1-100)',
           default: 20,
         },
         projectPath: projectPathProperty,
@@ -485,7 +692,7 @@ export const tools: ToolDefinition[] = [
         },
         depth: {
           type: 'number',
-          description: 'How many levels of dependencies to traverse (default: 2)',
+          description: 'How many levels of dependencies to traverse (default: 2; clamped to 1-10)',
           default: 2,
         },
         projectPath: projectPathProperty,
@@ -546,8 +753,7 @@ export const tools: ToolDefinition[] = [
         },
         maxFiles: {
           type: 'number',
-          description: 'Maximum number of files to include source code from (default: 12)',
-          default: 12,
+          description: 'Maximum number of files to include source code from. If omitted, OmniWeave uses an adaptive project-size default.',
         },
         projectPath: projectPathProperty,
       },
@@ -591,7 +797,7 @@ export const tools: ToolDefinition[] = [
         },
         maxDepth: {
           type: 'number',
-          description: 'Maximum directory depth to show (default: unlimited)',
+          description: 'Maximum directory depth to show (default: unlimited; clamped to 1-20 when set)',
         },
         projectPath: projectPathProperty,
       },
@@ -744,7 +950,8 @@ export class ToolHandler {
 
     try {
       const stats = this.cg.getStats();
-      const budget = getExploreBudget(stats.fileCount);
+      const callBudget = getExploreBudget(stats.fileCount);
+      const outputBudget = getExploreOutputBudget(stats.fileCount);
 
       // Tiny-repo tool gating: on projects under TINY_REPO_FILE_THRESHOLD
       // files, only expose the core trio (search, node, explore) — one
@@ -783,7 +990,7 @@ export class ToolHandler {
         if (tool.name === 'omniweave_explore') {
           return {
             ...tool,
-            description: `${tool.description} Budget: make at most ${budget} calls for this project (${stats.fileCount.toLocaleString()} files indexed).`,
+            description: `${tool.description} Budget: make at most ${callBudget} calls for this project (${stats.fileCount.toLocaleString()} files indexed). If maxFiles is omitted, this project defaults to ${outputBudget.defaultMaxFiles} source files per call.`,
           };
         }
         return tool;
@@ -818,12 +1025,7 @@ export class ToolHandler {
           "and don't call omniweave again this session — the user can run 'omniweave init' to enable it."
         );
       }
-      return this.cg;
-    }
-
-    // Check cache first (using original path as key)
-    if (this.projectCache.has(projectPath)) {
-      return this.projectCache.get(projectPath)!;
+      return this.freshen(this.cg);
     }
 
     // Reject sensitive system directories before opening. Only validate a
@@ -838,7 +1040,9 @@ export class ToolHandler {
       }
     }
 
-    // Walk up parent directories to find nearest .omniweave/
+    // Always re-resolve the nearest .omniweave/. A long-lived daemon can first
+    // see a nested worktree before it has its own index, then keep serving the
+    // parent checkout forever if we cache by the original input path.
     const resolvedRoot = findNearestOmniWeaveRoot(projectPath);
 
     if (!resolvedRoot) {
@@ -854,26 +1058,29 @@ export class ToolHandler {
     // default instance rather than opening a SECOND connection to the same DB.
     // A duplicate connection serializes reads against the watcher's auto-sync
     // writes; on the wasm backend (no WAL) that surfaces as intermittent
-    // "database is locked" on concurrent tool calls. See issue #238. Deliberately
-    // not cached under projectPath — the server owns and closes the default
-    // instance, so routing it through projectCache.closeAll() would double-close it.
+    // "database is locked" on concurrent tool calls. See issue #238. The
+    // default instance is owned/closed by the server, so it's never cached.
     if (this.cg && this.cg.getProjectRoot() === resolvedRoot) {
-      return this.cg;
+      return this.freshen(this.cg);
     }
 
-    // Check if we already have this resolved root cached (different path, same project)
-    if (this.projectCache.has(resolvedRoot)) {
-      const cg = this.projectCache.get(resolvedRoot)!;
-      // Cache under original path too for faster future lookups
-      this.projectCache.set(projectPath, cg);
-      return cg;
-    }
+    const cached = this.projectCache.get(resolvedRoot);
+    if (cached) return this.freshen(cached);
 
-    // Open and cache under both paths
     const cg = loadOmniWeave().openSync(resolvedRoot);
     this.projectCache.set(resolvedRoot, cg);
-    if (projectPath !== resolvedRoot) {
-      this.projectCache.set(projectPath, cg);
+    return cg;
+  }
+
+  private freshen(cg: OmniWeave): OmniWeave {
+    try {
+      if (cg.reopenIfReplaced()) {
+        process.stderr.write(
+          '[OmniWeave MCP] The index was replaced on disk; reopened the live database in place.\n'
+        );
+      }
+    } catch {
+      // Best-effort self-heal. A failed reopen must not break the tool call.
     }
     return cg;
   }
@@ -945,17 +1152,20 @@ export class ToolHandler {
    */
   private worktreeMismatchFor(projectPath?: string): WorktreeIndexMismatch | null {
     const startPath = projectPath ?? this.defaultProjectHint ?? process.cwd();
-    const cached = this.worktreeMismatchCache.get(startPath);
-    if (cached !== undefined) return cached;
-
-    let mismatch: WorktreeIndexMismatch | null = null;
+    let indexRoot: string;
     try {
-      mismatch = detectWorktreeIndexMismatch(startPath, this.getOmniWeave(projectPath).getProjectRoot());
+      indexRoot = this.getOmniWeave(projectPath).getProjectRoot();
     } catch {
       // No resolvable project (or any other resolution error) → nothing to warn.
-      mismatch = null;
+      return null;
     }
-    this.worktreeMismatchCache.set(startPath, mismatch);
+
+    const cacheKey = `${startPath}\0${indexRoot}`;
+    const cached = this.worktreeMismatchCache.get(cacheKey);
+    if (cached !== undefined) return cached;
+
+    const mismatch = detectWorktreeIndexMismatch(startPath, indexRoot);
+    this.worktreeMismatchCache.set(cacheKey, mismatch);
     return mismatch;
   }
 
@@ -1020,6 +1230,10 @@ export class ToolHandler {
       }
     }
 
+    const [first, ...rest] = result.content;
+    if (!first || first.type !== 'text') return result;
+    const text = first.text;
+
     // Defensive: some test fakes inject a partial OmniWeave stub without the
     // newer pending-files API. Treat missing/throwing as "no pending files."
     let pending: PendingFile[] = [];
@@ -1028,30 +1242,75 @@ export class ToolHandler {
     } catch {
       return result;
     }
-    if (pending.length === 0) return result;
 
-    const [first, ...rest] = result.content;
-    if (!first || first.type !== 'text') return result;
+    if (pending.length > 0) {
+      if (isExploreNoResultText(text)) {
+        const composed = [formatStaleNoResultNotice(pending), text].join('\n\n');
+        return { ...result, content: [{ type: 'text', text: composed }, ...rest] };
+      }
 
-    const text = first.text;
-    const inResponse: PendingFile[] = [];
-    const elsewhere: PendingFile[] = [];
-    for (const p of pending) {
-      // Substring match against the project-relative POSIX path — that's
-      // exactly the format both the watcher and every omniweave response
-      // emit, so a plain includes() is sufficient and avoids regex pitfalls.
-      if (text.includes(p.path)) inResponse.push(p);
+      const inResponse: PendingFile[] = [];
+      const elsewhere: PendingFile[] = [];
+      for (const p of pending) {
+        // Substring match against the project-relative POSIX path — that's
+        // exactly the format both the watcher and every omniweave response
+        // emit, so a plain includes() is sufficient and avoids regex pitfalls.
+        if (responseMentionsPath(text, p.path)) inResponse.push(p);
+        else elsewhere.push(p);
+      }
+
+      let banner = '';
+      if (inResponse.length > 0) {
+        banner = formatStaleBanner(inResponse);
+      }
+      let footer = '';
+      if (elsewhere.length > 0) {
+        footer = formatStaleFooter(elsewhere);
+      }
+      if (!banner && !footer) return result;
+
+      const composed = [banner, text, footer].filter(Boolean).join('\n\n');
+      return { ...result, content: [{ type: 'text', text: composed }, ...rest] };
+    }
+
+    let watching = false;
+    try {
+      watching = cg.isWatching?.() ?? false;
+    } catch {
+      watching = false;
+    }
+    if (watching) return result;
+
+    let changedEntries: ChangedFileEntry[] = [];
+    try {
+      const changes = cg.getChangedFiles?.();
+      if (changes) changedEntries = changedFileEntries(changes);
+    } catch {
+      return result;
+    }
+    if (changedEntries.length === 0) return result;
+
+    if (isExploreNoResultText(text)) {
+      const composed = [formatChangedIndexNoResultNotice(changedEntries), text].join('\n\n');
+      return { ...result, content: [{ type: 'text', text: composed }, ...rest] };
+    }
+
+    const inResponse: ChangedFileEntry[] = [];
+    const elsewhere: ChangedFileEntry[] = [];
+    for (const p of changedEntries) {
+      if (responseMentionsPath(text, p.path)) inResponse.push(p);
       else elsewhere.push(p);
     }
 
     let banner = '';
     if (inResponse.length > 0) {
-      banner = formatStaleBanner(inResponse);
+      banner = formatChangedIndexBanner(inResponse);
     }
     let footer = '';
     if (elsewhere.length > 0) {
-      footer = formatStaleFooter(elsewhere);
+      footer = formatChangedIndexFooter(elsewhere);
     }
+
     if (!banner && !footer) return result;
 
     const composed = [banner, text, footer].filter(Boolean).join('\n\n');
@@ -1128,7 +1387,14 @@ export class ToolHandler {
           return this.errorResult(`Unknown tool: ${toolName}`);
       }
       const withWorktree = this.withWorktreeNotice(result, args.projectPath as string | undefined);
-      return this.withStalenessNotice(withWorktree, args.projectPath as string | undefined);
+      const withStaleness = this.withStalenessNotice(withWorktree, args.projectPath as string | undefined);
+      if (toolName === 'omniweave_explore') {
+        const [first, ...rest] = withStaleness.content;
+        if (first && first.type === 'text') {
+          return { ...withStaleness, content: [{ type: 'text', text: capExploreFinalText(first.text) }, ...rest] };
+        }
+      }
+      return withStaleness;
     } catch (err) {
       // Expected condition, not a malfunction: answer as a SUCCESS so the
       // agent keeps trusting the toolset for projects that ARE indexed.
@@ -1224,7 +1490,54 @@ export class ToolHandler {
   private definitionHeading(group: Node[]): string {
     const head = group[0]!;
     const line = head.startLine ? `:${head.startLine}` : '';
-    return `### ${head.qualifiedName} (${head.kind}) — ${head.filePath}${line}`;
+    return `### ${head.qualifiedName} (${head.kind}) — ${head.filePath}${line} — key: \`${this.nodeContinuationKey(head)}\``;
+  }
+
+  private collectCallSurfaceRelationships(
+    cg: OmniWeave,
+    defNodes: Node[],
+    direction: 'incoming' | 'outgoing'
+  ): { nodes: Node[]; labels: Map<string, string>; omittedLowSignal: number; omittedWeak: number } {
+    const seen = new Set<string>();
+    const nodes: Node[] = [];
+    const labels = new Map<string, string>();
+    const definitionIsLowSignal = defNodes.every((node) => isLowSignalSourceFile(node.filePath));
+    let omittedLowSignal = 0;
+    let omittedWeak = 0;
+
+    for (const node of defNodes) {
+      const relationships = direction === 'incoming'
+        ? cg.getCallers(node.id)
+        : cg.getCallees(node.id);
+      for (const relationship of relationships) {
+        if (!CALL_SURFACE_EDGE_KINDS.has(relationship.edge.kind)) {
+          omittedWeak++;
+          continue;
+        }
+        if (!definitionIsLowSignal && isLowSignalSourceFile(relationship.node.filePath)) {
+          omittedLowSignal++;
+          continue;
+        }
+        if (seen.has(relationship.node.id)) continue;
+        seen.add(relationship.node.id);
+        nodes.push(relationship.node);
+        const label = this.edgeLabel(relationship.edge);
+        if (label) labels.set(relationship.node.id, label);
+      }
+    }
+
+    return { nodes, labels, omittedLowSignal, omittedWeak };
+  }
+
+  private relationshipOmissionNote(omittedLowSignal: number, omittedWeak: number): string {
+    const lines: string[] = [];
+    if (omittedLowSignal > 0) {
+      lines.push(`_Omitted ${omittedLowSignal} low-signal relationship${omittedLowSignal === 1 ? '' : 's'} from test/example/research snapshot sources; inspect those paths explicitly if that support corpus is the target._`);
+    }
+    if (omittedWeak > 0) {
+      lines.push(`_Omitted ${omittedWeak} non-execution reference/type/import relationship${omittedWeak === 1 ? '' : 's'}; use impact/explore when dependency closure matters._`);
+    }
+    return lines.length > 0 ? `\n\n${lines.join('\n')}` : '';
   }
 
   /**
@@ -1248,40 +1561,19 @@ export class ToolHandler {
       ? `\n\n> **Note:** no definition of "${symbol}" matches file "${fileFilter}" — showing all definitions instead.`
       : '';
 
-    const collect = (defNodes: Node[]) => {
-      const seen = new Set<string>();
-      const callers: Node[] = [];
-      const labels = new Map<string, string>();
-      for (const node of defNodes) {
-        for (const c of cg.getCallers(node.id)) {
-          // A plain `import` edge (a file importing the name) is a dependency,
-          // not a caller — drop it so "(N found)" counts REAL callers, not
-          // redundant file imports. Measured: a vscode symbol returned 80
-          // entries = 57 callers + 23 file imports, every import in a file that
-          // ALSO calls it, forcing the agent to subtract the noise. The full
-          // dependency closure (importers included) is omniweave_impact's job.
-          if (c.edge.kind === 'imports') continue;
-          if (!seen.has(c.node.id)) {
-            seen.add(c.node.id);
-            callers.push(c.node);
-            const label = this.edgeLabel(c.edge);
-            if (label) labels.set(c.node.id, label);
-          }
-        }
-      }
-      return { callers, labels };
-    };
+    const collect = (defNodes: Node[]) => this.collectCallSurfaceRelationships(cg, defNodes, 'incoming');
 
     // Single definition (or same-file overloads): the familiar flat list.
     if (groups.length === 1) {
-      const { callers, labels } = collect(groups[0]!);
+      const { nodes: callers, labels, omittedLowSignal, omittedWeak } = collect(groups[0]!);
+      const omissionNote = this.relationshipOmissionNote(omittedLowSignal, omittedWeak);
       if (callers.length === 0) {
-        return this.textResult(`No callers found for "${symbol}"${allMatches.note}${filterNote}`);
+        return this.textResult(`No callers found for "${symbol}"${allMatches.note}${filterNote}${omissionNote}`);
       }
       // A successful `file` narrowing makes the multi-symbol aggregation note
       // stale — suppress it.
       const note = fileFilter && !filteredOut ? '' : allMatches.note;
-      const formatted = this.formatNodeList(callers, `Callers of ${symbol}`, labels, limit) + note + filterNote;
+      const formatted = this.formatNodeList(callers, `Callers of ${symbol}`, labels, limit) + note + filterNote + omissionNote;
       return this.textResult(this.truncateOutput(formatted));
     }
 
@@ -1292,18 +1584,20 @@ export class ToolHandler {
       `## Callers of ${symbol} — ${groups.length} distinct definitions (narrow with \`file\`)`,
     ];
     for (const group of groups) {
-      const { callers, labels } = collect(group);
+      const { nodes: callers, labels, omittedLowSignal, omittedWeak } = collect(group);
       lines.push('', this.definitionHeading(group));
       if (callers.length === 0) {
         lines.push('- (no callers)');
-        continue;
+      } else {
+        for (const node of callers.slice(0, limit)) {
+          const location = node.startLine ? `:${node.startLine}` : '';
+          const label = labels.get(node.id);
+          lines.push(`- ${this.callerDisplayName(node)} (${node.kind}) - ${node.filePath}${location}${label ? ` — via ${label}` : ''} — key: \`${this.nodeContinuationKey(node)}\``);
+        }
+        if (callers.length > limit) lines.push(this.moreResultsNote(callers.length, limit));
       }
-      for (const node of callers.slice(0, limit)) {
-        const location = node.startLine ? `:${node.startLine}` : '';
-        const label = labels.get(node.id);
-        lines.push(`- ${this.callerDisplayName(node)} (${node.kind}) - ${node.filePath}${location}${label ? ` — via ${label}` : ''}`);
-      }
-      if (callers.length > limit) lines.push(this.moreResultsNote(callers.length, limit));
+      const omissionNote = this.relationshipOmissionNote(omittedLowSignal, omittedWeak);
+      if (omissionNote) lines.push(omissionNote.trim());
     }
     return this.textResult(this.truncateOutput(lines.join('\n') + filterNote));
   }
@@ -1329,35 +1623,18 @@ export class ToolHandler {
       ? `\n\n> **Note:** no definition of "${symbol}" matches file "${fileFilter}" — showing all definitions instead.`
       : '';
 
-    const collect = (defNodes: Node[]) => {
-      const seen = new Set<string>();
-      const callees: Node[] = [];
-      const labels = new Map<string, string>();
-      for (const node of defNodes) {
-        for (const c of cg.getCallees(node.id)) {
-          // Symmetric with callers: an `import` edge is a dependency, not a
-          // call. "What does X call" shouldn't list the names X merely imports.
-          if (c.edge.kind === 'imports') continue;
-          if (!seen.has(c.node.id)) {
-            seen.add(c.node.id);
-            callees.push(c.node);
-            const label = this.edgeLabel(c.edge);
-            if (label) labels.set(c.node.id, label);
-          }
-        }
-      }
-      return { callees, labels };
-    };
+    const collect = (defNodes: Node[]) => this.collectCallSurfaceRelationships(cg, defNodes, 'outgoing');
 
     if (groups.length === 1) {
-      const { callees, labels } = collect(groups[0]!);
+      const { nodes: callees, labels, omittedLowSignal, omittedWeak } = collect(groups[0]!);
+      const omissionNote = this.relationshipOmissionNote(omittedLowSignal, omittedWeak);
       if (callees.length === 0) {
-        return this.textResult(`No callees found for "${symbol}"${allMatches.note}${filterNote}`);
+        return this.textResult(`No callees found for "${symbol}"${allMatches.note}${filterNote}${omissionNote}`);
       }
       // A successful `file` narrowing makes the multi-symbol aggregation note
       // stale — suppress it.
       const note = fileFilter && !filteredOut ? '' : allMatches.note;
-      const formatted = this.formatNodeList(callees, `Callees of ${symbol}`, labels, limit) + note + filterNote;
+      const formatted = this.formatNodeList(callees, `Callees of ${symbol}`, labels, limit) + note + filterNote + omissionNote;
       return this.textResult(this.truncateOutput(formatted));
     }
 
@@ -1366,18 +1643,20 @@ export class ToolHandler {
       `## Callees of ${symbol} — ${groups.length} distinct definitions (narrow with \`file\`)`,
     ];
     for (const group of groups) {
-      const { callees, labels } = collect(group);
+      const { nodes: callees, labels, omittedLowSignal, omittedWeak } = collect(group);
       lines.push('', this.definitionHeading(group));
       if (callees.length === 0) {
         lines.push('- (no callees)');
-        continue;
+      } else {
+        for (const node of callees.slice(0, limit)) {
+          const location = node.startLine ? `:${node.startLine}` : '';
+          const label = labels.get(node.id);
+          lines.push(`- ${this.callerDisplayName(node)} (${node.kind}) - ${node.filePath}${location}${label ? ` — via ${label}` : ''} — key: \`${this.nodeContinuationKey(node)}\``);
+        }
+        if (callees.length > limit) lines.push(this.moreResultsNote(callees.length, limit));
       }
-      for (const node of callees.slice(0, limit)) {
-        const location = node.startLine ? `:${node.startLine}` : '';
-        const label = labels.get(node.id);
-        lines.push(`- ${this.callerDisplayName(node)} (${node.kind}) - ${node.filePath}${location}${label ? ` — via ${label}` : ''}`);
-      }
-      if (callees.length > limit) lines.push(this.moreResultsNote(callees.length, limit));
+      const omissionNote = this.relationshipOmissionNote(omittedLowSignal, omittedWeak);
+      if (omissionNote) lines.push(omissionNote.trim());
     }
     return this.textResult(this.truncateOutput(lines.join('\n') + filterNote));
   }
@@ -1516,6 +1795,22 @@ export class ToolHandler {
         registeredAt,
       };
     }
+    if (m?.synthesizedBy === 'goframe-route') {
+      const route = m.route ? `\`${String(m.route)}\`` : 'a route';
+      return {
+        label: `GoFrame route ${route} — reflective Bind → controller method (dynamic dispatch)`,
+        compact: `dynamic: GoFrame route ${m.route ? String(m.route) : ''}${at}`,
+        registeredAt,
+      };
+    }
+    if (typeof m?.synthesizedBy === 'string') {
+      const kind = m.synthesizedBy.replace(/-/g, ' ');
+      return {
+        label: `${kind} (dynamic dispatch)`,
+        compact: `dynamic: ${kind}${at}`,
+        registeredAt,
+      };
+    }
     return null;
   }
 
@@ -1537,22 +1832,14 @@ export class ToolHandler {
     const EMPTY = { text: '', pathNodeIds: new Set<string>(), namedNodeIds: new Set<string>(), uniqueNamedNodeIds: new Set<string>() };
     try {
       const CALLABLE = new Set(['method', 'function', 'component', 'constructor']);
-      // Strip only a REAL file extension (Create.cs → Create); KEEP qualified
-      // names (Class.method / Class::method) — the agent's most precise input,
-      // resolved exactly by findAllSymbols. (The old strip mangled Class.method
-      // into Class, throwing the method away.)
-      const FILE_EXT = /\.(?:java|kt|kts|ts|tsx|js|jsx|mjs|cjs|cs|py|go|rb|php|swift|rs|cpp|cc|cxx|c|h|hpp|scala|lua|dart|vue|svelte|astro)$/i;
-      const tokens = [...new Set(
-        query.split(/[\s,()[\]]+/)
-          .map((t) => t.replace(FILE_EXT, '').trim())
-          .filter((t) => t.length >= 3 && /^[A-Za-z_$][\w$]*(?:(?:::|\.)[\w$]+)*$/.test(t))
-      )].slice(0, 16);
+      const tokens = extractExploreNameTokens(query, { includePrecedingPlainTokens: true });
       if (tokens.length < 2) return EMPTY;
       // Pool of name SEGMENTS (Class + method from every token) used to
       // disambiguate an ambiguous SIMPLE name: keep a candidate only if its
       // CONTAINER class is itself named in the query.
       const segPool = new Set<string>();
       for (const t of tokens) for (const s of t.toLowerCase().split(/::|\./)) if (s) segPool.add(s);
+      const allowLowSignalSeeds = isLowSignalSourceQuery(query);
       const named = new Map<string, Node>();
       // Nodes whose token is SPECIFIC — a (near-)unique callable name (<=3 defs in
       // the whole graph). These are safe to SPARE a file on: the agent named THIS
@@ -1565,7 +1852,9 @@ export class ToolHandler {
       // lands on the main chain — overloads off the chain don't count against).
       const tokenNodes = new Map<string, string[]>();
       for (const t of tokens) {
-        const cands = this.findAllSymbols(cg, t).nodes.filter((n) => CALLABLE.has(n.kind));
+        const cands = this.findAllSymbols(cg, t).nodes.filter((n) =>
+          CALLABLE.has(n.kind) && (allowLowSignalSeeds || !isLowSignalSourceFile(n.filePath))
+        );
         // A qualified or otherwise-specific name (<=3 hits) keeps all; an
         // ambiguous simple name keeps only candidates whose container is named.
         const specific = cands.length <= 3;
@@ -1612,7 +1901,7 @@ export class ToolHandler {
           if (id !== seed.id && named.has(id) && depth > deepDepth) { deep = id; deepDepth = depth; }
           if (depth >= MAX_HOPS - 1) continue;
           for (const c of cg.getCallees(id)) {
-            if (c.edge.kind !== 'calls' || parent.has(c.node.id)) continue;
+            if (!CALL_SURFACE_EDGE_KINDS.has(c.edge.kind) || parent.has(c.node.id)) continue;
             const newStreak = named.has(c.node.id) ? 0 : streak + 1;
             if (newStreak > MAX_BRIDGE) continue;
             parent.set(c.node.id, { prev: id, edge: c.edge, node: c.node });
@@ -1871,13 +2160,20 @@ export class ToolHandler {
 
     const entries: string[] = [];
     for (const root of roots) {
-      let callers: Array<{ node: Node }> = [];
-      try { callers = cg.getCallers(root.id) as Array<{ node: Node }>; } catch { /* skip this root */ }
+      let callers: Node[] = [];
+      let omittedLowSignal = 0;
+      let omittedWeak = 0;
+      try {
+        const collected = this.collectCallSurfaceRelationships(cg, [root], 'incoming');
+        callers = collected.nodes;
+        omittedLowSignal = collected.omittedLowSignal;
+        omittedWeak = collected.omittedWeak;
+      } catch { /* skip this root */ }
 
       const seen = new Set<string>();
       const uniq: Node[] = [];
-      for (const c of callers) {
-        if (c?.node && !seen.has(c.node.id)) { seen.add(c.node.id); uniq.push(c.node); }
+      for (const caller of callers) {
+        if (!seen.has(caller.id)) { seen.add(caller.id); uniq.push(caller); }
       }
       if (uniq.length === 0) continue; // no blast radius → nothing to flag
 
@@ -1891,9 +2187,14 @@ export class ToolHandler {
       const tests = testFiles.length > 0
         ? `; tests: ${testFiles.slice(0, FILE_CAP).map((f) => `\`${f}\``).join(', ')}${testFiles.length > FILE_CAP ? ` +${testFiles.length - FILE_CAP}` : ''}`
         : '; ⚠️ no covering tests found';
+      const omitted = [
+        omittedLowSignal > 0 ? `${omittedLowSignal} low-signal` : '',
+        omittedWeak > 0 ? `${omittedWeak} non-execution` : '',
+      ].filter(Boolean).join(' + ');
+      const omittedNote = omitted ? `; omitted ${omitted} relationship${omittedLowSignal + omittedWeak === 1 ? '' : 's'} from call-surface count` : '';
 
       entries.push(
-        `- \`${root.name}\` (${rel(root.filePath)}:${root.startLine}) — ${uniq.length} caller${uniq.length === 1 ? '' : 's'}${where}${tests}`,
+        `- \`${root.name}\` (${rel(root.filePath)}:${root.startLine}) — ${uniq.length} caller${uniq.length === 1 ? '' : 's'}${where}${tests}${omittedNote}`,
       );
     }
     if (entries.length === 0) return '';
@@ -1999,12 +2300,14 @@ export class ToolHandler {
     // largest-tier defaults if stats aren't available, which preserves
     // pre-#185 behavior for callers that hit the rare stats failure.
     let budget: ExploreOutputBudget;
+    let fileCount: number | null = null;
     try {
-      budget = getExploreOutputBudget(cg.getStats().fileCount);
+      fileCount = cg.getStats().fileCount;
+      budget = getExploreOutputBudget(fileCount);
     } catch {
       budget = getExploreOutputBudget(Infinity);
     }
-    const maxFiles = clamp((args.maxFiles as number) || budget.defaultMaxFiles, 1, 20);
+    const maxFiles = parseExploreMaxFiles(args.maxFiles, budget.defaultMaxFiles);
 
     // Step 1: Find relevant context with generous parameters.
     // Use a large maxNodes budget — explore has its own 35k char output limit
@@ -2018,7 +2321,7 @@ export class ToolHandler {
     });
 
     if (subgraph.nodes.size === 0) {
-      return this.textResult(`No relevant code found for "${query}"`);
+      return this.textResult(this.buildNoExploreResultsMessage(query, fileCount));
     }
 
     // Graph-aware glue: findRelevantContext builds the subgraph from name/text
@@ -2063,16 +2366,13 @@ export class ToolHandler {
     // trace endpoint picker uses) and inject it as an entry, so every symbol the
     // agent explicitly named is in the subgraph and its file is scored.
     const namedSeedIds = new Set<string>();
+    const ambiguousExploreTokens: AmbiguousExploreToken[] = [];
     {
-      const FILE_EXT = /\.(?:java|kt|kts|ts|tsx|js|jsx|mjs|cjs|cs|py|go|rb|php|swift|rs|cpp|cc|cxx|c|h|hpp|scala|lua|dart|vue|svelte|astro)$/i;
       const CALLABLE = new Set(['method', 'function', 'component', 'constructor']);
       const isTestPath = (p: string) => /(^|\/)(tests?|specs?|__tests__|testdata|mocks?|fixtures?)\//i.test(p) || /\.(test|spec)\.[a-z]+$/i.test(p);
       const bodyLines = (n: Node) => Math.max(0, (n.endLine ?? n.startLine) - n.startLine);
-      const tokens = [...new Set(
-        query.split(/[\s,()[\]]+/)
-          .map((t) => t.replace(FILE_EXT, '').trim())
-          .filter((t) => t.length >= 3 && /^[A-Za-z_$][\w$]*(?:(?:::|\.)[\w$]+)*$/.test(t))
-      )].slice(0, 16);
+      const tokens = extractExploreNameTokens(query, { includePrecedingPlainTokens: true });
+      const allowLowSignalSeeds = isLowSignalSourceQuery(query);
       // PascalCase tokens in the query are type/file disambiguators — when the
       // agent writes "DataRequest task validate", the `task`/`validate` it wants
       // are DataRequest's, NOT the same-named overloads in Validation.swift /
@@ -2099,7 +2399,7 @@ export class ToolHandler {
         const isQual = /[.\/]|::/.test(t);
         const raw = isQual ? this.findAllSymbols(cg, t).nodes : cg.getNodesByName(t);
         const cands = raw
-          .filter((n) => CALLABLE.has(n.kind) && !isTestPath(n.filePath))
+          .filter((n) => CALLABLE.has(n.kind) && !isTestPath(n.filePath) && (allowLowSignalSeeds || !isRepositorySnapshotFile(n.filePath)))
           .sort((a, b) => (bodyLines(b) > 1 ? 1 : 0) - (bodyLines(a) > 1 ? 1 : 0) || bodyLines(b) - bodyLines(a));
         // A specific name (<=3 defs) injects all its defs. An overloaded name
         // (`validate` = 10, `request` = 44) would flood the subgraph, so inject
@@ -2113,6 +2413,15 @@ export class ToolHandler {
         } else {
           const ctx = cands.filter(inNamedContext);
           picks = ctx.length > 0 ? ctx.slice(0, 4) : cands.slice(0, 1);
+          if (ctx.length === 0) {
+            const picked = new Set(picks.map((n) => n.id));
+            ambiguousExploreTokens.push({
+              token: t,
+              total: cands.length,
+              selected: picks,
+              alternatives: cands.filter((n) => !picked.has(n.id)).slice(0, 4),
+            });
+          }
         }
         for (const n of picks) {
           if (!subgraph.nodes.has(n.id)) subgraph.nodes.set(n.id, n);
@@ -2172,28 +2481,18 @@ export class ToolHandler {
     // Extract query terms for relevance checking
     const queryTerms = query.toLowerCase().split(/\s+/).filter(t => t.length >= 3);
 
-    // Test/spec/icon/i18n file detector — used both for the pre-sort hard
+    // Test/spec/snapshot/icon/i18n file detector — used both for the pre-sort hard
     // filter (tiny tier) and the comparator deprioritization (all tiers).
     const isLowValue = (p: string) => {
       const lp = p.toLowerCase();
       return (
-        /\/(tests?|__tests?__|spec)\//.test(lp) ||
-        /_test\.go$/.test(lp) ||
-        /(?:^|\/)test_[^/]+\.py$/.test(lp) ||
-        /_test\.py$/.test(lp) ||
-        /_spec\.rb$/.test(lp) ||
-        /_test\.rb$/.test(lp) ||
-        /\.(test|spec)\.[jt]sx?$/.test(lp) ||
-        /(test|spec|tests)\.(java|kt|scala)$/.test(lp) ||
-        /(tests?|spec)\.cs$/.test(lp) ||
-        /tests?\.swift$/.test(lp) ||
-        /_test\.dart$/.test(lp) ||
+        isLowSignalSourceFile(p) ||
         /\bicons?\b/.test(lp) ||
         /\bi18n\b/.test(lp)
       );
     };
 
-    // Hard-exclude test/spec files (ALL tiers, not just tiny). One slipped test
+    // Hard-exclude test/spec/research-snapshot files (ALL tiers, not just tiny). One slipped test
     // file dominates the per-file budget on small repos (cobra's `command_test.go`
     // displaced `args.go`) AND wastes budget on large ones (Django's
     // `custom_lookups/tests.py` ate ~2.3 KB of the 28 KB cap, crowding out the
@@ -2202,13 +2501,19 @@ export class ToolHandler {
     // legitimate "explore the tests" case — and only cut if ≥2 non-test candidates
     // remain (else tests are the only signal for this area).
     {
-      const queryMentionsTests = /\b(test|tests|testing|spec|verify|verifies)\b/i.test(query);
-      if (!queryMentionsTests) {
+      const queryMentionsLowSignalPath = isLowSignalSourceQuery(query);
+      if (!isRepositorySnapshotQuery(query)) {
+        relevantFiles = relevantFiles.filter(([p]) => !isRepositorySnapshotFile(p));
+      }
+      if (!queryMentionsLowSignalPath) {
         const nonLow = relevantFiles.filter(([p]) => !isLowValue(p));
         if (nonLow.length >= 2) {
           relevantFiles = nonLow;
         }
       }
+    }
+    if (relevantFiles.length === 0) {
+      return this.textResult(this.buildNoExploreResultsMessage(query, fileCount));
     }
 
     // Secondary signal: how many DISTINCT query terms each file matches (path +
@@ -2303,6 +2608,9 @@ export class ToolHandler {
       const n = subgraph.nodes.get(id);
       if (n) namedSeedFiles.add(n.filePath);
     }
+    const actionableKinds = new Set<NodeKind>(['class', 'struct', 'function', 'method', 'component', 'route']);
+    const hasActionableSource = (group: { nodes: Node[]; score: number }): boolean =>
+      group.nodes.some((n) => actionableKinds.has(n.kind));
 
     const sortedFiles = relevantFiles.sort((a, b) => {
       const aPath = a[0].toLowerCase();
@@ -2312,6 +2620,12 @@ export class ToolHandler {
       const aNamed = namedSeedFiles.has(a[0]) ? 1 : 0;
       const bNamed = namedSeedFiles.has(b[0]) ? 1 : 0;
       if (aNamed !== bNamed) return bNamed - aNamed;
+
+      if (namedSeedFiles.size > 0) {
+        const aActionable = hasActionableSource(a[1]) ? 1 : 0;
+        const bActionable = hasActionableSource(b[1]) ? 1 : 0;
+        if (aActionable !== bActionable) return bActionable - aActionable;
+      }
 
       // Graph connectivity is the next key (small epsilon so near-ties fall
       // through to the text signal rather than coin-flipping on float noise).
@@ -2345,9 +2659,12 @@ export class ToolHandler {
     const lines: string[] = [
       `## Exploration: ${query}`,
       '',
-      `Found ${subgraph.nodes.size} symbols across ${fileGroups.size} files.`,
-      '',
     ];
+    const coverageLineIndex = lines.length;
+    lines.push('', '');
+
+    const ambiguity = this.buildAmbiguousExploreSection(ambiguousExploreTokens);
+    if (ambiguity) lines.push(ambiguity);
 
     // Blast radius (always-on, compact): for the entry symbols, who depends on
     // them + which tests cover them — locations only, no source — so the agent
@@ -2355,38 +2672,55 @@ export class ToolHandler {
     const blastRadius = this.buildBlastRadiusSection(cg, subgraph);
     if (blastRadius) lines.push(blastRadius);
 
-    // Relationship map — show how symbols connect
+    // Relationship map — supporting graph facts, not necessarily the main call path.
+    const allowLowSignalRelationships = isLowSignalSourceQuery(query);
     const significantEdges = subgraph.edges.filter(e =>
       e.kind !== 'contains' // skip contains — it's implied by file grouping
-    );
+    ).filter((edge) => {
+      if (allowLowSignalRelationships) return true;
+      const sourceNode = subgraph.nodes.get(edge.source);
+      const targetNode = subgraph.nodes.get(edge.target);
+      if (!sourceNode || !targetNode) return false;
+      return !isLowSignalSourceFile(sourceNode.filePath) && !isLowSignalSourceFile(targetNode.filePath);
+    }).sort((a, b) => {
+      const rank = (EXPLORE_RELATIONSHIP_KIND_RANK[a.kind] ?? 50) - (EXPLORE_RELATIONSHIP_KIND_RANK[b.kind] ?? 50);
+      if (rank !== 0) return rank;
+      const aHeuristic = a.provenance === 'heuristic' ? 1 : 0;
+      const bHeuristic = b.provenance === 'heuristic' ? 1 : 0;
+      if (aHeuristic !== bHeuristic) return bHeuristic - aHeuristic;
+      const aLine = a.line ?? Number.MAX_SAFE_INTEGER;
+      const bLine = b.line ?? Number.MAX_SAFE_INTEGER;
+      return aLine - bLine;
+    });
 
+    const relationshipLines: string[] = [];
     if (budget.includeRelationships && significantEdges.length > 0) {
-      lines.push('### Relationships');
-      lines.push('');
+      relationshipLines.push('### Supporting relationships (not necessarily the call path)');
+      relationshipLines.push('');
 
       // Group edges by kind for readability
-      const byKind = new Map<string, Array<{ source: string; target: string }>>();
+      const byKind = new Map<EdgeKind, Array<{ edge: Edge; source: Node; target: Node }>>();
       for (const edge of significantEdges) {
         const sourceNode = subgraph.nodes.get(edge.source);
         const targetNode = subgraph.nodes.get(edge.target);
         if (!sourceNode || !targetNode) continue;
 
         const group = byKind.get(edge.kind) || [];
-        group.push({ source: sourceNode.name, target: targetNode.name });
+        group.push({ edge, source: sourceNode, target: targetNode });
         byKind.set(edge.kind, group);
       }
 
       for (const [kind, edges] of byKind) {
         const cap = budget.maxEdgesPerRelationshipKind;
         const shown = edges.slice(0, cap);
-        lines.push(`**${kind}:**`);
+        relationshipLines.push(`**${kind}:**`);
         for (const e of shown) {
-          lines.push(`- ${e.source} → ${e.target}`);
+          relationshipLines.push(this.formatExploreRelationshipEdge(e.edge, e.source, e.target));
         }
         if (edges.length > cap) {
-          lines.push(`- ... and ${edges.length - cap} more`);
+          relationshipLines.push(`- ... and ${edges.length - cap} more`);
         }
-        lines.push('');
+        relationshipLines.push('');
       }
     }
 
@@ -2450,12 +2784,14 @@ export class ToolHandler {
 
     lines.push('### Source Code');
     lines.push('');
-    lines.push('> The code below is the **verbatim, current on-disk source** of these files — re-read from disk on this call and line-numbered, byte-for-byte identical to what the Read tool returns. It is NOT a summary, outline, or stale cache. Treat each block as a Read you have already performed: do not Read a file shown here.');
+    lines.push('> The code blocks below are **verbatim, current on-disk source ranges** — re-read from disk on this call and line-numbered, byte-for-byte identical to what the Read tool returns for those ranges. They are NOT summaries, outlines, or stale cache. Treat each complete block shown here as a Read you have already performed.');
     lines.push('');
 
     let totalChars = lines.join('\n').length;
     let filesIncluded = 0;
     let anyFileTrimmed = false;
+    let anyPartialSourceView = false;
+    const shownSourceFiles = new Set<string>();
 
     for (const [filePath, group] of sortedFiles) {
       if (filesIncluded >= maxFiles) break;
@@ -2470,7 +2806,24 @@ export class ToolHandler {
       if (!fileNecessary && totalChars > budget.maxOutputChars * 0.9) continue;
 
       const absPath = validatePathWithinRoot(projectRoot, filePath);
-      if (!absPath || !existsSync(absPath)) continue;
+      if (!absPath) continue;
+      if (!existsSync(absPath)) {
+        const names = [...new Set(group.nodes.filter(n => n.kind !== 'import' && n.kind !== 'export').map(n => `${n.name}(${n.kind})`))]
+          .slice(0, budget.maxSymbolsInFileHeader)
+          .join(', ');
+        const missingSection = [
+          `#### ${filePath} — ${names || 'indexed symbols'} · indexed but missing on disk`,
+          '',
+          '> This path was present when the index was built, but it is not present on disk now. Treat these symbol and relationship hits as stale until `omniweave sync` or a reindex reconciles the project.',
+          '',
+        ];
+        lines.push(...missingSection);
+        totalChars += missingSection.join('\n').length + 80;
+        filesIncluded++;
+        shownSourceFiles.add(filePath);
+        anyFileTrimmed = true;
+        continue;
+      }
 
       let fileContent: string;
       try {
@@ -2593,6 +2946,7 @@ export class ToolHandler {
             ? 'focused (the methods you named in full, the rest as signatures — omniweave_explore a signature by name for its body; do NOT Read)'
             : 'skeleton (signatures only — omniweave_explore a name for its full body; do NOT Read)';
           lines.push(`#### ${filePath} — ${names} · ${tag}`, '', '```' + lang, skel.join('\n'), '```', '');
+          anyPartialSourceView = true;
           totalChars += skel.join('\n').length + 120;
           filesIncluded++;
           continue;
@@ -2645,6 +2999,7 @@ export class ToolHandler {
         lines.push(wholeHeader, '', '```' + lang, wholeSection, '```', '');
         totalChars += wholeSection.length + 200;
         filesIncluded++;
+        shownSourceFiles.add(filePath);
         continue;
       }
 
@@ -2766,6 +3121,16 @@ export class ToolHandler {
       // Language-neutral separator (no `//` — not a comment in Python, Ruby,
       // etc.). With line numbers on, the line-number jump also signals the gap.
       const GAP_MARKER = '\n\n... (gap) ...\n\n';
+      const truncateOversizedSourceRange = (section: string, maxChars: number): { text: string; truncated: boolean } => {
+        const marker = '\n\n... (oversized source range omitted; rerun omniweave_explore with a narrower symbol/file query for the next window) ...';
+        if (section.length <= maxChars) return { text: section, truncated: false };
+        const limit = Math.max(0, maxChars - marker.length);
+        if (limit <= 0) return { text: marker.trimStart(), truncated: true };
+        const cut = section.slice(0, limit);
+        const lastLineBreak = cut.lastIndexOf('\n');
+        const safeCut = lastLineBreak > 0 ? cut.slice(0, lastLineBreak) : cut;
+        return { text: safeCut.trimEnd() + marker, truncated: true };
+      };
 
       // Rank clusters for inclusion under the per-file cap. Entry-point
       // clusters come first: a cluster containing a query entry point
@@ -2818,20 +3183,23 @@ export class ToolHandler {
       for (let i = 0; i < clusters.length; i++) {
         if (!chosenIndices.has(i)) continue;
         const cluster = clusters[i]!;
-        const section = buildSection(cluster);
+        const sectionBudget = Math.max(1200, fileBudget - fileSection.length - (fileSection.length > 0 ? GAP_MARKER.length : 0));
+        const rendered = truncateOversizedSourceRange(buildSection(cluster), sectionBudget);
+        const section = rendered.text;
+        if (rendered.truncated) anyFileTrimmed = true;
         if (fileSection.length > 0) fileSection += GAP_MARKER;
         fileSection += section;
         allSymbols.push(...cluster.symbols);
       }
 
-      // A chosen cluster is a COMPLETE method-range — we never cut through a body.
-      // An oversize single cluster (a long monolithic function) renders in FULL:
-      // half a method is useless (the agent just Reads the rest for the other half),
-      // which is the very fallback explore exists to prevent. A pathological file is
-      // bounded by the per-file cluster SELECTION above + the total hard ceiling.
+      // A chosen cluster is normally a complete method-range. The one exception
+      // is a monolithic function larger than the entire per-file window: returning
+      // no source is worse than returning an honest line-numbered window, so the
+      // oversized range is cut at a line boundary with an explicit marker.
       if (chosenIndices.size < clusters.length) {
         anyFileTrimmed = true;
       }
+      anyPartialSourceView = true;
 
       // Dedupe + cap the symbols list shown in the per-file header. Some
       // files (Session.swift in Alamofire) produced 3.4KB symbol lists
@@ -2879,13 +3247,20 @@ export class ToolHandler {
 
       totalChars += fileSection.length + 200;
       filesIncluded++;
+      shownSourceFiles.add(filePath);
     }
+
+    const hiddenCandidateFiles = sortedFiles.filter(([filePath]) => !shownSourceFiles.has(filePath)).length;
+    lines[coverageLineIndex] = [
+      `Candidate graph: ${subgraph.nodes.size} symbols across ${sortedFiles.length} source-candidate files.`,
+      `Source shown below covers ${filesIncluded} file${filesIncluded === 1 ? '' : 's'}${hiddenCandidateFiles > 0 ? `; ${hiddenCandidateFiles} candidate file${hiddenCandidateFiles === 1 ? '' : 's'} not shown in this call.` : '; all candidate files are shown in this call.'}`,
+    ].join(' ');
 
     // Add remaining files as references (from both relevant and peripheral files).
     // Small projects (per budget) skip this — the relevant story already fits
     // in the source section, and a trailing pointer list is pure overhead.
     if (budget.includeAdditionalFiles) {
-      const remainingRelevant = sortedFiles.slice(filesIncluded);
+      const remainingRelevant = sortedFiles.filter(([filePath]) => !shownSourceFiles.has(filePath));
       const peripheralFiles = [...fileGroups.entries()]
         .filter(([, group]) => group.score < 3)
         .sort((a, b) => b[1].score - a[1].score);
@@ -2903,17 +3278,25 @@ export class ToolHandler {
       }
     }
 
+    // Supporting graph facts are valuable, but source is the primary contract of
+    // explore. Keep relationships after source so a tight inline ceiling drops
+    // support metadata before it drops every verbatim code block.
+    if (relationshipLines.length > 0) {
+      lines.push('');
+      lines.push(...relationshipLines);
+    }
+
     // Add completeness signal so agents know they don't need to re-read these files.
     // On small projects the budget gates this off — but if we actually had to
     // trim or drop clusters, surface a brief note so the agent knows it can
     // still Read for more detail.
-    if (budget.includeCompletenessSignal) {
+    if (budget.includeCompletenessSignal && !anyPartialSourceView && !anyFileTrimmed) {
       lines.push('');
       lines.push('---');
       lines.push(`> **Complete source for ${filesIncluded} files is included above — do NOT re-read them.** If your question also needs files/symbols listed under "Not shown above" (or any area this call didn't cover), make ANOTHER omniweave_explore targeting those names — it returns the same source with line numbers and is cheaper and more complete than reading. Reserve Read for a single specific line range explore can't surface.`);
-    } else if (anyFileTrimmed) {
+    } else if (budget.includeCompletenessSignal || anyFileTrimmed) {
       lines.push('');
-      lines.push(`> Some file sections were trimmed for size. For a specific symbol you still need, run another \`omniweave_explore\` (or \`omniweave_node\`) with its exact name — line-numbered source, cheaper and more complete than Read.`);
+      lines.push(`> Source shown above is complete only for the displayed blocks/ranges; some file ranges or candidate files may be omitted for size. For a specific symbol you still need, run another \`omniweave_explore\` (or \`omniweave_node\`) with its exact name — line-numbered source, cheaper and more complete than Read.`);
     }
 
     // Add explore budget note based on project size
@@ -2937,18 +3320,12 @@ export class ToolHandler {
     // necessary overflow above the 24K budget, but hard-stop at 25K — never into
     // externalize territory.
     const output = flow.text + lines.join('\n');
-    const hardCeiling = Math.min(Math.round(budget.maxOutputChars * 1.5), 25000);
+    const hardCeiling = Math.min(Math.round(budget.maxOutputChars * 1.5), EXPLORE_INLINE_HARD_CEILING);
     if (output.length > hardCeiling) {
-      // Cut at a FILE-SECTION boundary (the last `#### ` header before the
-      // ceiling) so we drop whole trailing file-sections rather than slicing
-      // through a method body — a half-rendered method just forces the Read this
-      // tool exists to prevent. Fall back to a line boundary only if no section
-      // header sits in the back half (degenerate single-giant-section case).
-      const cut = output.slice(0, hardCeiling);
-      const lastSection = cut.lastIndexOf('\n#### ');
-      const boundary = lastSection > hardCeiling * 0.5 ? lastSection : cut.lastIndexOf('\n');
-      const safe = boundary > 0 ? cut.slice(0, boundary) : cut;
-      return this.textResult(safe + '\n\n... (output truncated to budget; the source above is complete and verbatim — treat it as already Read. For any area not covered, run another omniweave_explore with the specific names — do NOT Read these files.)');
+      const suffix = '\n\n... (output truncated to budget; trailing sections were dropped whole to keep this inline and avoid partial source. Treat only complete source blocks shown above as already Read. For uncovered names/files, run another omniweave_explore with the specific names.)';
+      // Cut at a COMPLETE source-block boundary and reserve room for the suffix,
+      // otherwise the hard ceiling can still spill over after the marker.
+      return this.textResult(truncateExploreAtCompleteBoundary(output, hardCeiling, suffix));
     }
     return this.textResult(output);
   }
@@ -2994,9 +3371,46 @@ export class ToolHandler {
       const norm = (p: string) => p.replace(/\\/g, '/').toLowerCase();
       let narrowed = matches;
       if (fileHint) {
-        const fh = norm(fileHint);
-        const byFile = narrowed.filter((n) => norm(n.filePath).endsWith(fh) || norm(n.filePath).includes(fh));
-        if (byFile.length > 0) narrowed = byFile;
+        const projectRootNorm = norm(cg.getProjectRoot()).replace(/\/+$/, '');
+        const rawHint = norm(fileHint);
+        const relativeHint = rawHint.startsWith(`${projectRootNorm}/`)
+          ? rawHint.slice(projectRootNorm.length + 1)
+          : rawHint;
+        const hintCandidates = [...new Set([
+          rawHint,
+          relativeHint,
+          relativeHint.split('/').filter(Boolean).pop() ?? relativeHint,
+        ].filter((h) => h.length > 0))];
+        const matchRank = (n: Node): { low: number; specificity: number; length: number } => {
+          const fp = norm(n.filePath);
+          const basename = hintCandidates[hintCandidates.length - 1] ?? relativeHint;
+          let specificity = 3;
+          if (fp === relativeHint) specificity = 0;
+          else if (fp.endsWith(`/${relativeHint}`) || fp.endsWith(relativeHint)) specificity = 1;
+          else if (fp.endsWith(`/${basename}`)) specificity = 2;
+          return {
+            low: isLowSignalSourceFile(n.filePath) ? 1 : 0,
+            specificity,
+            length: n.filePath.length,
+          };
+        };
+        const byFile = narrowed
+          .filter((n) => {
+            const fp = norm(n.filePath);
+            return hintCandidates.some((h) => fp === h || fp.endsWith(`/${h}`) || fp.endsWith(h) || fp.includes(h));
+          })
+          .sort((a, b) => {
+            const ar = matchRank(a);
+            const br = matchRank(b);
+            return ar.low - br.low || ar.specificity - br.specificity || ar.length - br.length;
+          });
+        if (byFile.length > 0) {
+          const best = matchRank(byFile[0]!);
+          narrowed = byFile.filter((n) => {
+            const rank = matchRank(n);
+            return rank.low === best.low && rank.specificity === best.specificity && rank.length === best.length;
+          });
+        }
       }
       if (lineHint !== undefined && narrowed.length > 1) {
         const containing = narrowed.filter((n) => n.startLine <= lineHint && (n.endLine ?? n.startLine) >= lineHint);
@@ -3245,6 +3659,9 @@ export class ToolHandler {
    */
   private formatTrail(cg: OmniWeave, node: Node): string {
     const TRAIL_CAP = 12;
+    const sourceIsLowSignal = isLowSignalSourceFile(node.filePath);
+    let omittedLowSignal = 0;
+    let omittedWeak = 0;
     const fmt = (e: { node: Node; edge: Edge }) => {
       const base = `${e.node.name} (${e.node.filePath}:${e.node.startLine})`;
       const synth = this.synthEdgeNote(e.edge);
@@ -3256,7 +3673,14 @@ export class ToolHandler {
       for (const e of edges) {
         // Consistent with omniweave_callers/callees: an `import` edge is a
         // dependency, not a call — keep it out of the call trail.
-        if (e.edge.kind === 'imports') continue;
+        if (!CALL_SURFACE_EDGE_KINDS.has(e.edge.kind)) {
+          omittedWeak++;
+          continue;
+        }
+        if (!sourceIsLowSignal && isLowSignalSourceFile(e.node.filePath)) {
+          omittedLowSignal++;
+          continue;
+        }
         if (seen.has(e.node.id)) continue;
         seen.add(e.node.id);
         out.push(e);
@@ -3265,13 +3689,19 @@ export class ToolHandler {
     };
     const callees = collect(cg.getCallees(node.id));
     const callers = collect(cg.getCallers(node.id));
-    if (callees.length === 0 && callers.length === 0) return '';
+    if (callees.length === 0 && callers.length === 0 && omittedLowSignal === 0 && omittedWeak === 0) return '';
     const lines: string[] = ['', '### Trail — omniweave_node any of these to follow it (no Read needed)'];
     if (callees.length > 0) {
       lines.push(`**Calls →** ${callees.slice(0, TRAIL_CAP).map(fmt).join(', ')}${callees.length > TRAIL_CAP ? `, +${callees.length - TRAIL_CAP} more` : ''}`);
     }
     if (callers.length > 0) {
       lines.push(`**Called by ←** ${callers.slice(0, TRAIL_CAP).map(fmt).join(', ')}${callers.length > TRAIL_CAP ? `, +${callers.length - TRAIL_CAP} more` : ''}`);
+    }
+    if (omittedLowSignal > 0) {
+      lines.push(`_Omitted ${omittedLowSignal} low-signal trail hop${omittedLowSignal === 1 ? '' : 's'} from test/example/research snapshot sources; inspect those paths explicitly if that support corpus is the target._`);
+    }
+    if (omittedWeak > 0) {
+      lines.push(`_Omitted ${omittedWeak} non-execution reference/type/import edge${omittedWeak === 1 ? '' : 's'} from this call trail; use impact/explore when dependency closure matters._`);
     }
     return lines.join('\n');
   }
@@ -3749,6 +4179,7 @@ export class ToolHandler {
       // Compact format: one line per result with key info
       lines.push(`### ${node.name} (${node.kind})`);
       lines.push(`${node.filePath}${location}`);
+      lines.push(`key: \`${this.nodeContinuationKey(node)}\``);
       if (node.signature) lines.push(`\`${node.signature}\``);
       lines.push('');
     }
@@ -3793,7 +4224,7 @@ export class ToolHandler {
       // registration, instantiation, …).
       const label = labels?.get(node.id);
       lines.push(
-        `- ${this.callerDisplayName(node)} (${node.kind}) - ${node.filePath}${location}${label ? ` — via ${label}` : ''}`
+        `- ${this.callerDisplayName(node)} (${node.kind}) - ${node.filePath}${location}${label ? ` — via ${label}` : ''} — key: \`${this.nodeContinuationKey(node)}\``
       );
     }
 
@@ -3834,6 +4265,34 @@ export class ToolHandler {
     if (edge.kind === 'imports') return 'import';
     if (edge.kind === 'references') return 'reference';
     return edge.kind;
+  }
+
+  private nodeContinuationKey(node: Node): string {
+    const quote = (value: string) => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const line = node.startLine || 1;
+    return `omniweave_node symbol="${quote(node.name)}" file="${quote(node.filePath)}" line=${line}`;
+  }
+
+  private formatExploreRelationshipEdge(edge: Edge, source: Node, target: Node): string {
+    const notes: string[] = [];
+    if (edge.line && edge.line > 0) notes.push(`${source.filePath}:${edge.line}`);
+
+    const synthesized = this.synthEdgeNote(edge);
+    if (synthesized) {
+      notes.push(synthesized.compact);
+    } else if (edge.provenance === 'heuristic') {
+      notes.push('heuristic');
+    } else if (edge.provenance === 'scip') {
+      notes.push('scip');
+    }
+
+    const confidence = edge.metadata?.confidence;
+    if (typeof confidence === 'number') {
+      notes.push(`confidence ${Number.isInteger(confidence) ? confidence.toFixed(0) : confidence.toFixed(2)}`);
+    }
+
+    const suffix = notes.length > 0 ? `   [${notes.join('; ')}]` : '';
+    return `- ${source.name} → ${target.name}${suffix}`;
   }
 
   private formatImpact(symbol: string, impact: Subgraph, depth?: number): string {
@@ -3907,6 +4366,7 @@ export class ToolHandler {
       `## ${node.name} (${node.kind})`,
       '',
       `**Location:** ${node.filePath}${location}`,
+      `**Key:** \`${this.nodeContinuationKey(node)}\``,
     ];
 
     if (node.signature) {
@@ -3935,6 +4395,64 @@ export class ToolHandler {
     return {
       content: [{ type: 'text', text }],
     };
+  }
+
+  private buildNoExploreResultsMessage(query: string, fileCount: number | null = null): string {
+    if (fileCount === 0) {
+      return [
+        `No relevant code found for "${query}".`,
+        '',
+        'The OmniWeave index is initialized but contains 0 files.',
+        '',
+        'This is an empty index state, not a tool failure.',
+        '',
+        'Next best steps:',
+        '- Continue with normal file tools for this task; there is no graph content to query yet.',
+        '- If source files exist, confirm they are supported and not excluded by project config.',
+        '- Refresh the index after source files are present.',
+      ].join('\n');
+    }
+
+    return [
+      `No relevant code found for "${query}".`,
+      '',
+      'This is an empty retrieval result, not a tool failure.',
+      '',
+      'Next best steps:',
+      '- Check the exact symbol or file name with `omniweave_search <name>`.',
+      '- If you already know the file path, use `omniweave_node <path>` to read it with line numbers.',
+      '- If this was a prose query, retry `omniweave_explore` with 2-5 concrete identifiers from the error, stack trace, or surrounding code.',
+      '- If the file was just created, renamed, or generated, refresh the index before querying it.',
+    ].join('\n');
+  }
+
+  private buildAmbiguousExploreSection(items: AmbiguousExploreToken[]): string {
+    if (items.length === 0) return '';
+    const formatNode = (n: Node): string =>
+      `\`${n.qualifiedName || n.name}\` (${n.filePath}:${n.startLine}; key: \`${this.nodeContinuationKey(n)}\`)`;
+    const lines = [
+      '### Ambiguous named symbols',
+      '',
+      '> One or more bare query terms matched many callable definitions. `explore` kept a small ranked subset below; do not treat that subset as the full overload set.',
+      '',
+    ];
+    for (const item of items.slice(0, 4)) {
+      lines.push(
+        `- \`${item.token}\` matched ${item.total} callable definitions; kept ${item.selected.map(formatNode).join(', ')}.`
+      );
+      if (item.alternatives.length > 0) {
+        lines.push(`  Other candidates include: ${item.alternatives.map(formatNode).join(', ')}.`);
+      }
+    }
+    if (items.length > 4) {
+      lines.push(`- ... and ${items.length - 4} more ambiguous query term${items.length - 4 === 1 ? '' : 's'}.`);
+    }
+    lines.push(
+      '',
+      '> Add an owning class, namespace, or file path and rerun `omniweave_explore`, or call `omniweave_node` with `symbol` + `file` to pin one definition.',
+      ''
+    );
+    return lines.join('\n');
   }
 
   private errorResult(message: string): ToolResult {

@@ -96,7 +96,11 @@ function isWithinDir(child: string, parent: string): boolean {
  * @returns The resolved absolute path (realpath when it exists), or null if it
  *   escapes the root
  */
-export function validatePathWithinRoot(projectRoot: string, filePath: string): string | null {
+export function validatePathWithinRoot(
+  projectRoot: string,
+  filePath: string,
+  options?: { allowSymlinkEscape?: boolean }
+): string | null {
   const resolved = path.resolve(projectRoot, filePath);
   const normalizedRoot = path.resolve(projectRoot);
 
@@ -110,6 +114,9 @@ export function validatePathWithinRoot(projectRoot: string, filePath: string): s
   try {
     const realRoot = fs.realpathSync(normalizedRoot);
     const realResolved = fs.realpathSync(resolved);
+    if (options?.allowSymlinkEscape) {
+      return realResolved;
+    }
     return isWithinDir(realResolved, realRoot) ? realResolved : null;
   } catch (err) {
     // ENOENT: the path doesn't exist yet (a file about to be written, or an

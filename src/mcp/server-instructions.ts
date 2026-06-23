@@ -15,9 +15,9 @@
  * burn tokens. Reference only tools that exist on `main`; gate any
  * conditional tools behind feature checks if/when they ship.
  */
-export const SERVER_INSTRUCTIONS = `# OmniWeave — code intelligence over an indexed knowledge graph
+export const SERVER_INSTRUCTIONS = `# OmniWeave — code intelligence over an indexed structural graph
 
-OmniWeave is a SQLite knowledge graph of every symbol, edge, and file in
+OmniWeave is a SQLite structural graph of every symbol, edge, and file in
 the workspace — pre-computed structure you would otherwise re-derive by
 reading files (cached intelligence: thousands of parse/trace decisions you
 don't pay to re-reason each run). Reads are sub-millisecond; the index lags
@@ -37,6 +37,8 @@ not always \`omniweave_explore\`:
       lightest — don't spin up \`omniweave_explore\` to skim a signature off a bag of sources).
     - need to SEE its source (body, constructor, overload) → ONE \`omniweave_node\`
       (returns its location AND source) — \`omniweave_explore\` works too. Either is one call.
+      If a prior result printed a \`key: omniweave_node symbol="..." file="..." line=N\`,
+      reuse that exact symbol/file/line triple to pin the definition.
   Don't chain two omniweave calls for one symbol; on a single literal locate a direct
   grep/read also ties, so don't over-invest.
 - **Reverse / transitive / blast-radius / cross-boundary** — "what calls X?", "what
@@ -86,8 +88,8 @@ typically one to a few calls; a grep/read exploration is dozens.
 - **Don't grep first** when looking up a symbol by name — \`omniweave_search\` is faster and returns kind + location + signature.
 - **Don't chain \`omniweave_search\` + \`omniweave_node\`** to understand an area — ONE \`omniweave_explore\` returns the relevant symbols' source together in a single round-trip.
 - **Don't loop \`omniweave_node\` over many symbols** — one \`omniweave_explore\` call returns them all grouped by file, while each separate call re-reads the whole context and costs far more. Use \`omniweave_node\` for a single symbol.
-- **Don't reach for the \`Read\` tool on an indexed source file** — \`omniweave_node\` with a \`file\` reads it for you (same \`<n>\\t<line>\` source, \`offset\`/\`limit\` like Read, faster, with its blast radius), and with a \`symbol\` it returns the source plus the caller/callee trail. Reach for raw \`Read\` only for what omniweave doesn't index (configs, docs) or when the staleness banner flags a file as pending re-index.
-- **After editing, check the staleness banner.** When a tool response starts with "⚠️ Some files referenced below were edited since the last index sync…", the listed files are pending re-index — Read those specific files for accurate content. Every file NOT in that banner is fresh, so still trust omniweave.
+- **Don't reach for the \`Read\` tool on an indexed source file** — \`omniweave_node\` with a \`file\` reads it for you (same \`<n>\\t<line>\` source, \`offset\`/\`limit\` like Read, faster, with its blast radius), and with a \`symbol\` it returns the source plus the caller/callee trail. Reach for raw \`Read\` only for what omniweave doesn't index (configs, docs).
+- **After editing, check the staleness banner.** When a tool response starts with "⚠️ Some files referenced below were edited since the last index sync…", the listed files are pending re-index — source blocks may be current, but symbols/edges/line ranges for those files can be stale. Use \`omniweave_node <path>\` for a focused current file read, or run \`omniweave sync\` before trusting relationships. Every file NOT in that banner is fresh, so still trust omniweave.
 
 ## Limitations
 

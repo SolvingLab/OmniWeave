@@ -677,6 +677,14 @@ describe('CLI uninit', () => {
 // =============================================================================
 
 describe('Tree-sitter WASM Setup', () => {
+  it('keeps the repository root package guarded so public npm releases use generated shim packages', () => {
+    const pkgPath = path.join(__dirname, '..', 'package.json');
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+
+    expect(pkg.private).toBe(true);
+    expect(pkg.scripts.prepublishOnly).toBe('node scripts/guard-root-publish.mjs');
+  });
+
   it('should use web-tree-sitter and tree-sitter-wasms in dependencies', () => {
     const pkgPath = path.join(__dirname, '..', 'package.json');
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));

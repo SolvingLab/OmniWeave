@@ -139,7 +139,7 @@ export class SearchError extends OmniWeaveError {
 }
 
 /**
- * Error with vector/embedding operations
+ * Reserved for optional vector sidecars; core OmniWeave does not run embeddings.
  */
 export class VectorError extends OmniWeaveError {
   constructor(message: string, operation: string, cause?: Error) {

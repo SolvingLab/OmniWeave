@@ -74,3 +74,14 @@ OmniWeave-design-v1.md
 OmniWeave-STATUS.md
 __tests__/evaluation/results/
 .claude/handoffs/
+
+# Research corpus clones and LaTeX build products are local evidence caches.
+# Keep curated reports/metadata tracked, but not vendored external repos or
+# transient PDF compiler files.
+research/**/repos/
+research/**/pdf/*.aux
+research/**/pdf/*.fdb_latexmk
+research/**/pdf/*.fls
+research/**/pdf/*.out
+research/**/pdf/*.toc
+research/**/pdf/*.xdv

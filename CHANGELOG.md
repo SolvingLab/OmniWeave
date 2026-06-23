@@ -9,6 +9,19 @@ and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### New Features
+
+- Added optional `omniweave.json` extension mappings so projects can map non-standard extensions to supported languages. The mapping is honored consistently by full indexing, incremental sync, and file watching, while zero-config behavior stays unchanged.
+- GoFrame `g.Meta` routes now index as route nodes and link to their controller methods through the request type in the handler signature, surfacing GoFrame's reflective route binding as an explicit dynamic-dispatch edge.
+
+### Fixes
+
+- Incremental sync now preserves cross-file incoming caller edges when a callee file is re-indexed, filters git-status changes with the same ignore rules as full indexing, and skips worktree/submodule `.git` pointer roots instead of duplicating them as embedded repos.
+- The MCP server now re-resolves worktree project roots and reopens the SQLite database when an index is replaced on disk, avoiding stale-root and stale-connection reads in long-lived sessions.
+- Unsafe index roots such as the filesystem root, home directory, or the parent of home are refused by default during CLI initialization and skipped by automatic installer indexing unless explicitly forced.
+- Symlinked source files can now be indexed through an in-root symlink without relaxing content-serving protections, so `omniweave_node` still refuses out-of-root reads.
+- C++ extraction no longer invents phantom functions from macro-prefixed type declarations.
+- Synthesized dynamic-dispatch edges now have a generic MCP label fallback, so new heuristic bridges do not appear as bare static calls.
 
 ## [1.0.0] - 2026-06-12
 

@@ -187,3 +187,53 @@ describe('worktree mismatch surfaces on hot read tools (issue #155)', () => {
     }
   });
 });
+
+describe('worktree mismatch verdict re-resolves when the index root changes', () => {
+  let mainRepo: string;
+  let worktree: string;
+  let mainCg: OmniWeave;
+  let worktreeCg: OmniWeave;
+  let handler: ToolHandler;
+
+  beforeEach(async () => {
+    mainRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'omniweave-wt-flip-'));
+    git(mainRepo, 'init', '-q');
+    git(mainRepo, 'config', 'user.email', 'test@example.com');
+    git(mainRepo, 'config', 'user.name', 'Test');
+    git(mainRepo, 'config', 'commit.gpgsign', 'false');
+    fs.mkdirSync(path.join(mainRepo, 'src'));
+    fs.writeFileSync(path.join(mainRepo, 'src', 'a.ts'), 'export function mainOnly() { return 1; }\n');
+    git(mainRepo, 'add', '.');
+    git(mainRepo, 'commit', '-q', '-m', 'init');
+
+    mainCg = OmniWeave.initSync(mainRepo);
+    await mainCg.indexAll();
+
+    worktree = path.join(mainRepo, 'wt');
+    git(mainRepo, 'worktree', 'add', '-q', '-b', 'feature', worktree);
+    worktreeCg = OmniWeave.initSync(worktree);
+    await worktreeCg.indexAll();
+
+    handler = new ToolHandler(mainCg);
+  });
+
+  afterEach(() => {
+    try { mainCg.destroy(); } catch { /* best effort */ }
+    try { worktreeCg.destroy(); } catch { /* best effort */ }
+    try { git(mainRepo, 'worktree', 'remove', '--force', worktree); } catch { /* best effort */ }
+    fs.rmSync(mainRepo, { recursive: true, force: true });
+  });
+
+  it('drops the stale borrowed-index warning once the index root flips to the worktree', async () => {
+    handler.setDefaultProjectHint(worktree);
+
+    const before = await handler.execute('omniweave_status', {});
+    expect(before.content[0].text).toContain('different git working tree');
+    expect(before.content[0].text).toContain(real(mainRepo));
+
+    handler.setDefaultOmniWeave(worktreeCg);
+
+    const after = await handler.execute('omniweave_status', {});
+    expect(after.content[0].text).not.toContain('different git working tree');
+  });
+});

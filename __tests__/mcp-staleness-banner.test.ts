@@ -8,7 +8,7 @@
  * file(s) elsewhere in this project are pending index sync…)").
  *
  * No auto-flush, no static wait — the response is instant and the agent
- * decides whether to Read the specific stale file. These tests exercise
+ * decides whether to verify the specific stale file or refresh the index. These tests exercise
  * the full real path: real OmniWeave index + real ToolHandler.execute().
  *
  * **Event delivery uses a synthetic seam** (`__emitWatchEventForTests`): the
@@ -64,6 +64,14 @@ describe('MCP staleness banner', () => {
       path.join(testDir, 'src', 'charlie-only.ts'),
       'export function charlieOnly() { return 3; }\n',
     );
+    fs.writeFileSync(
+      path.join(testDir, 'src', 'prefix.ts'),
+      'export function shortUnrelatedOnly() { return 4; }\n',
+    );
+    fs.writeFileSync(
+      path.join(testDir, 'src', 'prefix.ts-extra.ts'),
+      'export function longUniqueOnly() { return 5; }\n',
+    );
 
     cg = OmniWeave.initSync(testDir, { config: { include: ['**/*.ts'], exclude: [] } });
     await cg.indexAll();
@@ -103,9 +111,105 @@ describe('MCP staleness banner', () => {
     expect(text.startsWith('⚠️')).toBe(true);
     expect(text).toContain('src/alpha-only.ts');
     expect(text).toMatch(/edited \d+ms ago/);
-    expect(text).toMatch(/Read them directly/);
+    expect(text).toMatch(/symbols, edges, or line ranges may be stale/);
+    expect(text).toMatch(/omniweave_node <path>/);
+    expect(text).toMatch(/omniweave sync/);
+    expect(text).not.toMatch(/Read them directly/);
     // The actual result must still follow the banner.
     expect(text).toMatch(/alphaOnly/);
+  });
+
+  it('marks omniweave_explore stale while still showing current disk source bytes', async () => {
+    cg.watch({ debounceMs: 4000, inertForTests: true });
+    await cg.waitUntilWatcherReady();
+
+    fs.writeFileSync(
+      path.join(testDir, 'src', 'alpha-only.ts'),
+      'export function alphaOnly() { return 99; }\n',
+    );
+    __emitWatchEventForTests(testDir, 'src/alpha-only.ts');
+    await waitFor(() => cg.getPendingFiles().some((p) => p.path === 'src/alpha-only.ts'));
+
+    const res = await handler.execute('omniweave_explore', { query: 'alphaOnly', maxFiles: 3 });
+    expect(res.isError).toBeFalsy();
+    const text = res.content[0].text;
+
+    expect(text.startsWith('⚠️')).toBe(true);
+    expect(text).toContain('src/alpha-only.ts');
+    expect(text).toMatch(/symbols, edges, or line ranges may be stale/);
+    expect(text).toContain('return 99');
+    expect(text).toContain('### Source Code');
+  });
+
+  it('falls back to changed-files freshness when no watcher is active', async () => {
+    fs.writeFileSync(
+      path.join(testDir, 'src', 'alpha-only.ts'),
+      'export function alphaOnly() { return 99; }\n',
+    );
+
+    const res = await handler.execute('omniweave_explore', { query: 'alphaOnly', maxFiles: 3 });
+    expect(res.isError).toBeFalsy();
+    const text = res.content[0].text;
+
+    expect(text.startsWith('⚠️')).toBe(true);
+    expect(text).toContain('index is behind the worktree');
+    expect(text).toContain('src/alpha-only.ts (modified)');
+    expect(text).toContain('symbols, edges, ranking, and line ranges may still come from the old index');
+    expect(text).toContain('omniweave sync');
+    expect(text).toContain('return 99');
+    expect(text).toContain('### Source Code');
+  });
+
+  it('warns that empty explore results may be stale when new files are not indexed yet', async () => {
+    fs.writeFileSync(
+      path.join(testDir, 'src', 'new-feature.ts'),
+      'export function brandNewFeature() { return 42; }\n',
+    );
+
+    const res = await handler.execute('omniweave_explore', { query: 'brandNewFeature', maxFiles: 3 });
+    expect(res.isError).toBeFalsy();
+    const text = res.content[0].text;
+
+    expect(text.startsWith('⚠️')).toBe(true);
+    expect(text).toContain('empty explore result may be stale');
+    expect(text).toContain('src/new-feature.ts (added)');
+    expect(text).toContain('run `omniweave sync`');
+    expect(text).toContain('use normal file tools for that path');
+    expect(text).toContain('No relevant code found for "brandNewFeature"');
+    expect(text).not.toContain('elsewhere in this project changed since the last index');
+  });
+
+  it('does not treat a changed path as referenced when it is only a prefix of another path', async () => {
+    fs.writeFileSync(
+      path.join(testDir, 'src', 'prefix.ts'),
+      'export function shortUnrelatedOnly() { return 44; }\n',
+    );
+
+    const res = await handler.execute('omniweave_explore', { query: 'longUniqueOnly', maxFiles: 3 });
+    expect(res.isError).toBeFalsy();
+    const text = res.content[0].text;
+
+    expect(text.startsWith('⚠️')).toBe(false);
+    expect(text).toContain('src/prefix.ts-extra.ts');
+    expect(text).toContain('longUniqueOnly');
+    expect(text).toMatch(/elsewhere in this project changed since the last index/);
+    expect(text).toContain('src/prefix.ts (modified)');
+  });
+
+  it('treats deleted indexed files as stale references instead of silent missing source', async () => {
+    fs.rmSync(path.join(testDir, 'src', 'alpha-only.ts'));
+
+    const res = await handler.execute('omniweave_explore', { query: 'alphaOnly', maxFiles: 3 });
+    expect(res.isError).toBeFalsy();
+    const text = res.content[0].text;
+
+    expect(text.startsWith('⚠️')).toBe(true);
+    expect(text).toContain('index is behind the worktree');
+    expect(text).toContain('src/alpha-only.ts (removed)');
+    expect(text).toContain('indexed but missing on disk');
+    expect(text).toContain('Treat these symbol and relationship hits as stale');
+    expect(text).not.toContain('elsewhere in this project changed since the last index');
+    expect(text).not.toContain('return 1');
   });
 
   it('uses the footer (not the banner) when pending files are not referenced', async () => {

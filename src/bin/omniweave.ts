@@ -20,18 +20,23 @@
  *   omniweave callees <symbol>   Find what a function/method calls
  *   omniweave impact <symbol>    Analyze what code is affected by changing a symbol
  *   omniweave affected [files]   Find test files affected by changes
+ *   omniweave snapshot           Export, verify, or import graph artifacts
+ *   omniweave scip import        Import optional SCIP facts from index.scip
  *   omniweave upgrade [version]  Update OmniWeave to the latest release
  */
 
 import { Command } from 'commander';
 import * as path from 'path';
 import * as fs from 'fs';
-import { getOmniWeaveDir, isInitialized } from '../directory';
+import { getOmniWeaveDir, isInitialized, unsafeIndexRootReason } from '../directory';
 import { detectWorktreeIndexMismatch, worktreeMismatchWarning } from '../sync/worktree';
 import { createShimmerProgress } from '../ui/shimmer-progress';
 import { getGlyphs } from '../ui/glyphs';
+import type { EdgeKind, Node } from '../types';
+import { isLowSignalSourceFile } from '../search/query-utils';
+import { clamp } from '../utils';
 
-import { buildNode25BlockBanner, buildNodeTooOldBanner, MIN_NODE_MAJOR } from './node-version-check';
+import { buildNode25BlockBanner, buildNodeTooOldBanner, isNodeTooOld } from './node-version-check';
 import { relaunchWithWasmRuntimeFlagsIfNeeded } from '../extraction/wasm-runtime-flags';
 import { EXTRACTION_VERSION } from '../extraction/extraction-version';
 import { getTelemetry, TELEMETRY_DOCS, recordIndexEvent } from '../telemetry';
@@ -48,6 +53,113 @@ async function loadOmniWeave(): Promise<typeof import('../index')> {
     console.error('\n  Try reinstalling with: npm install -g @solvinglab/omniweave\n');
     process.exit(1);
   }
+}
+
+function nodeContinuationKey(node: Node): string {
+  const quote = (value: string) => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  const line = node.startLine || 1;
+  return `omniweave_node symbol="${quote(node.name)}" file="${quote(node.filePath)}" line=${line}`;
+}
+
+function parseCliIntOption(value: string | undefined, fallback: number, min: number, max: number): number {
+  if (value === undefined || value.trim() === '') return fallback;
+  const trimmed = value.trim();
+  if (!/^-?\d+$/.test(trimmed)) return fallback;
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed)) return fallback;
+  return clamp(parsed, min, max);
+}
+
+const CLI_CALL_SURFACE_EDGE_KINDS = new Set<EdgeKind>(['calls', 'crossLang', 'invokes', 'instantiates']);
+
+interface CliRelationshipNode {
+  name: string;
+  kind: string;
+  filePath: string;
+  startLine?: number;
+}
+
+interface CliCallSurfaceResult {
+  nodes: CliRelationshipNode[];
+  omittedLowSignal: number;
+  omittedWeak: number;
+}
+
+function exactCliSymbolMatch(node: Node, symbol: string): boolean {
+  return node.name === symbol || node.name.endsWith(`.${symbol}`) || node.name.endsWith(`::${symbol}`);
+}
+
+function cliFileMatches(node: Node, fileFilter: string): boolean {
+  const wanted = fileFilter.replace(/\\/g, '/').replace(/^\.\//, '');
+  const filePath = node.filePath.replace(/\\/g, '/');
+  return filePath === wanted || filePath.endsWith(wanted) || filePath.endsWith(`/${wanted}`);
+}
+
+function narrowCliSymbolMatches(
+  matches: Array<{ node: Node }>,
+  symbol: string,
+  fileFilter?: string
+): { matches: Array<{ node: Node }>; filteredOut: boolean } {
+  const exactMatches = matches.filter((match) => exactCliSymbolMatch(match.node, symbol));
+  const exactPool = exactMatches.length > 0 ? exactMatches : matches.slice(0, 1);
+  const hasFirstPartyExact = exactPool.some((match) => !isLowSignalSourceFile(match.node.filePath));
+  const firstPartyPool = hasFirstPartyExact
+    ? exactPool.filter((match) => !isLowSignalSourceFile(match.node.filePath))
+    : exactPool;
+
+  if (!fileFilter) return { matches: firstPartyPool, filteredOut: false };
+  const narrowed = firstPartyPool.filter((match) => cliFileMatches(match.node, fileFilter));
+  return narrowed.length > 0
+    ? { matches: narrowed, filteredOut: false }
+    : { matches: firstPartyPool, filteredOut: true };
+}
+
+function cliRelationshipOmissionNote(omittedLowSignal: number, omittedWeak: number): string[] {
+  const lines: string[] = [];
+  if (omittedLowSignal > 0) {
+    lines.push(`Omitted ${omittedLowSignal} low-signal relationship${omittedLowSignal === 1 ? '' : 's'} from test/example/research snapshot sources; inspect those paths explicitly if that support corpus is the target.`);
+  }
+  if (omittedWeak > 0) {
+    lines.push(`Omitted ${omittedWeak} non-execution reference/type/import relationship${omittedWeak === 1 ? '' : 's'}; use impact/explore when dependency closure matters.`);
+  }
+  return lines;
+}
+
+function collectCliCallSurface(
+  matches: Array<{ node: Node }>,
+  symbol: string,
+  fileFilter: string | undefined,
+  getRelationships: (nodeId: string) => Array<{ node: Node; edge: { kind: EdgeKind } }>
+): CliCallSurfaceResult & { filteredOut: boolean } {
+  const narrowed = narrowCliSymbolMatches(matches, symbol, fileFilter);
+  const seen = new Set<string>();
+  const nodes: CliRelationshipNode[] = [];
+  let omittedLowSignal = 0;
+  let omittedWeak = 0;
+
+  for (const match of narrowed.matches) {
+    const definitionIsLowSignal = isLowSignalSourceFile(match.node.filePath);
+    for (const relationship of getRelationships(match.node.id)) {
+      if (!CLI_CALL_SURFACE_EDGE_KINDS.has(relationship.edge.kind)) {
+        omittedWeak++;
+        continue;
+      }
+      if (!definitionIsLowSignal && isLowSignalSourceFile(relationship.node.filePath)) {
+        omittedLowSignal++;
+        continue;
+      }
+      if (seen.has(relationship.node.id)) continue;
+      seen.add(relationship.node.id);
+      nodes.push({
+        name: relationship.node.name,
+        kind: relationship.node.kind,
+        filePath: relationship.node.filePath,
+        startLine: relationship.node.startLine,
+      });
+    }
+  }
+
+  return { nodes, omittedLowSignal, omittedWeak, filteredOut: narrowed.filteredOut };
 }
 
 // Dynamic import helper — tsc compiles import() to require() in CJS mode,
@@ -75,7 +187,7 @@ if (nodeMajor >= 25) {
 // Enforce the supported Node floor. `engines` in package.json only *warns* on
 // install (unless engine-strict), so hard-block here to actually keep users off
 // unsupported versions. Mirrors the 25+ block above. See package.json `engines`.
-if (nodeMajor < MIN_NODE_MAJOR) {
+if (isNodeTooOld(nodeVersion)) {
   process.stderr.write(buildNodeTooOldBanner(nodeVersion) + '\n');
   if (!process.env.OMNIWEAVE_ALLOW_UNSAFE_NODE) {
     process.exit(1);
@@ -299,6 +411,16 @@ function warn(message: string): void {
   console.log(chalk.yellow(getGlyphs().warn) + ' ' + message);
 }
 
+function buildExploreUnavailableMessage(projectPath: string): string {
+  return [
+    `OmniWeave isn't available here — no .omniweave/ index exists in ${projectPath}.`,
+    '',
+    'This is not a tool failure. If you are an AI agent, continue with your usual tools for this task; indexing is the user/project owner\'s decision, do not run it yourself.',
+    '',
+    `The project owner can enable OmniWeave later with: omniweave init "${projectPath}"`,
+  ].join('\n');
+}
+
 type IndexResult = {
   success: boolean;
   filesIndexed: number;
@@ -455,14 +577,24 @@ program
   .command('init [path]')
   .description('Initialize OmniWeave in a project directory and build the initial index')
   .option('-i, --index', 'Deprecated: indexing now runs by default; flag accepted for backward compatibility')
+  .option('-f, --force', 'Initialize even if the path looks like your home directory or a filesystem root')
   .option('-v, --verbose', 'Show detailed worker lifecycle and memory info')
-  .action(async (pathArg: string | undefined, options: { index?: boolean; verbose?: boolean }) => {
+  .action(async (pathArg: string | undefined, options: { index?: boolean; force?: boolean; verbose?: boolean }) => {
     const projectPath = path.resolve(pathArg || process.cwd());
     const clack = await importESM('@clack/prompts');
 
     clack.intro('Initializing OmniWeave');
 
     try {
+      const unsafe = unsafeIndexRootReason(projectPath);
+      if (unsafe && !options.force) {
+        clack.log.error(`Refusing to initialize in ${projectPath} — it looks like ${unsafe}.`);
+        clack.log.info('Run this inside a specific project directory, or pass --force if you really mean to index everything under it.');
+        clack.outro('');
+        process.exitCode = 1;
+        return;
+      }
+
       if (isInitialized(projectPath)) {
         clack.log.warn(`Already initialized in ${projectPath}`);
         clack.log.info('Use "omniweave index" to re-index or "omniweave sync" to update');
@@ -585,6 +717,12 @@ program
     const projectPath = resolveProjectPath(pathArg);
 
     try {
+      const unsafe = unsafeIndexRootReason(projectPath);
+      if (unsafe && !options.force) {
+        error(`Refusing to index ${projectPath} — it looks like ${unsafe}. Pass --force to override.`);
+        process.exit(1);
+      }
+
       if (!isInitialized(projectPath)) {
         error(`OmniWeave not initialized in ${projectPath}`);
         info('Run "omniweave init" first');
@@ -875,7 +1013,7 @@ program
   .command('query <search>')
   .description('Search for symbols in the codebase')
   .option('-p, --path <path>', 'Project path')
-  .option('-l, --limit <number>', 'Maximum results', '10')
+  .option('-l, --limit <number>', 'Maximum results (1-100)', '10')
   .option('-k, --kind <kind>', 'Filter by node kind (function, class, etc.)')
   .option('-j, --json', 'Output as JSON')
   .action(async (search: string, options: { path?: string; limit?: string; kind?: string; json?: boolean }) => {
@@ -890,10 +1028,11 @@ program
       const { default: OmniWeave } = await loadOmniWeave();
       const cg = await OmniWeave.open(projectPath);
 
-      const limit = parseInt(options.limit || '10', 10);
+      const limit = parseCliIntOption(options.limit, 10, 1, 100);
+      const kind = options.kind === 'type' ? 'type_alias' : options.kind;
       const rawResults = cg.searchNodes(search, {
         limit,
-        kinds: options.kind ? [options.kind as any] : undefined,
+        kinds: kind ? [kind as any] : undefined,
       });
 
       // Mirror the MCP search down-rank so the CLI also surfaces the
@@ -925,6 +1064,7 @@ program
               ' ' + score
             );
             console.log(chalk.dim(`  ${location}`));
+            console.log(chalk.dim(`  key: ${nodeContinuationKey(node)}`));
             if (node.signature) {
               console.log(chalk.dim(`  ${node.signature}`));
             }
@@ -953,14 +1093,14 @@ program
   .command('explore <query...>')
   .description('Explore an area: relevant symbols\' source + call paths in one shot (same output as the omniweave_explore MCP tool)')
   .option('-p, --path <path>', 'Project path')
-  .option('--max-files <number>', 'Maximum number of files to include source from')
+  .option('--max-files <number>', 'Maximum number of files to include source from (default is adaptive by project size)')
   .action(async (queryParts: string[], options: { path?: string; maxFiles?: string }) => {
     const projectPath = resolveProjectPath(options.path);
 
     try {
       if (!isInitialized(projectPath)) {
-        error(`OmniWeave isn't available here — no .omniweave/ index exists in ${projectPath}. If you are an AI agent: continue with your usual tools; indexing is the user's decision, do not run it yourself. (The project owner can enable OmniWeave with 'omniweave init'.)`);
-        process.exit(1);
+        console.log(buildExploreUnavailableMessage(projectPath));
+        return;
       }
 
       const { default: OmniWeave } = await loadOmniWeave();
@@ -969,7 +1109,7 @@ program
       const handler = new ToolHandler(cg);
 
       const args: Record<string, unknown> = { query: queryParts.join(' ') };
-      if (options.maxFiles) args.maxFiles = parseInt(options.maxFiles, 10);
+      if (options.maxFiles) args.maxFiles = options.maxFiles;
       const result = await handler.execute('omniweave_explore', args);
 
       console.log(result.content[0]?.text ?? '');
@@ -993,10 +1133,11 @@ program
   .description('One symbol\'s source + caller/callee trail, or read a file with line numbers + dependents (same output as the omniweave_node MCP tool)')
   .option('-p, --path <path>', 'Project path')
   .option('-f, --file <file>', 'Treat as file mode (or disambiguate a symbol to this file)')
+  .option('--line <number>', 'Symbol mode: disambiguate to the definition at or near this line')
   .option('--offset <number>', 'File mode: 1-based start line')
-  .option('--limit <number>', 'File mode: maximum lines')
+  .option('--limit <number>', 'File mode: maximum lines (1-2000)')
   .option('--symbols-only', 'File mode: just the symbol map + dependents')
-  .action(async (name: string, options: { path?: string; file?: string; offset?: string; limit?: string; symbolsOnly?: boolean }) => {
+  .action(async (name: string, options: { path?: string; file?: string; line?: string; offset?: string; limit?: string; symbolsOnly?: boolean }) => {
     const projectPath = resolveProjectPath(options.path);
 
     try {
@@ -1018,15 +1159,19 @@ program
       const args: Record<string, unknown> = {};
       if (options.file) {
         args.file = options.file;
-        if (name && name !== options.file) args.symbol = name;
+        if (name && name !== options.file) {
+          args.symbol = name;
+          args.includeCode = true;
+        }
       } else if (name.includes('/') || name.includes('\\')) {
         args.file = name.replace(/\\/g, '/');
       } else {
         args.symbol = name;
         args.includeCode = true;
       }
-      if (options.offset) args.offset = parseInt(options.offset, 10);
-      if (options.limit) args.limit = parseInt(options.limit, 10);
+      if (options.line) args.line = parseCliIntOption(options.line, 1, 1, Number.MAX_SAFE_INTEGER);
+      if (options.offset) args.offset = parseCliIntOption(options.offset, 1, 1, Number.MAX_SAFE_INTEGER);
+      if (options.limit) args.limit = parseCliIntOption(options.limit, 2000, 1, 2000);
       if (options.symbolsOnly) args.symbolsOnly = true;
 
       const result = await handler.execute('omniweave_node', args);
@@ -1050,7 +1195,7 @@ program
   .option('--filter <dir>', 'Filter to files under this directory')
   .option('--pattern <glob>', 'Filter files matching this glob pattern')
   .option('--format <format>', 'Output format (tree, flat, grouped)', 'tree')
-  .option('--max-depth <number>', 'Maximum directory depth for tree format')
+  .option('--max-depth <number>', 'Maximum directory depth for tree format (1-20)')
   .option('--no-metadata', 'Hide file metadata (language, symbol count)')
   .option('-j, --json', 'Output as JSON')
   .action(async (options: {
@@ -1113,7 +1258,7 @@ program
 
       const includeMetadata = options.metadata !== false;
       const format = options.format || 'tree';
-      const maxDepth = options.maxDepth ? parseInt(options.maxDepth, 10) : undefined;
+      const maxDepth = options.maxDepth ? parseCliIntOption(options.maxDepth, 20, 1, 20) : undefined;
 
       // Format output
       switch (format) {
@@ -1288,13 +1433,14 @@ program
   }
 }
 `));
-        console.error('Available tools:');
+        console.error('Default tools:');
         console.error(chalk.cyan('  omniweave_explore') + '   - Primary: source of the relevant symbols for any question');
         console.error(chalk.cyan('  omniweave_search') + '    - Search for code symbols');
         console.error(chalk.cyan('  omniweave_callers') + '   - Find callers of a symbol');
-        console.error(chalk.cyan('  omniweave_callees') + '   - Find what a symbol calls');
         console.error(chalk.cyan('  omniweave_impact') + '    - Analyze impact of changes');
         console.error(chalk.cyan('  omniweave_node') + '      - Get symbol details');
+        console.error('\nOpt-in tools via OMNIWEAVE_MCP_TOOLS:');
+        console.error(chalk.cyan('  omniweave_callees') + '   - Find what a symbol calls');
         console.error(chalk.cyan('  omniweave_files') + '     - Get project file structure');
         console.error(chalk.cyan('  omniweave_status') + '    - Get index status');
       }
@@ -1345,9 +1491,10 @@ program
   .command('callers <symbol>')
   .description('Find all functions/methods that call a specific symbol')
   .option('-p, --path <path>', 'Project path')
-  .option('-l, --limit <number>', 'Maximum results', '20')
+  .option('-f, --file <file>', 'Narrow to the definition in this file when names repeat')
+  .option('-l, --limit <number>', 'Maximum results (1-100)', '20')
   .option('-j, --json', 'Output as JSON')
-  .action(async (symbol: string, options: { path?: string; limit?: string; json?: boolean }) => {
+  .action(async (symbol: string, options: { path?: string; file?: string; limit?: string; json?: boolean }) => {
     const projectPath = resolveProjectPath(options.path);
 
     try {
@@ -1358,7 +1505,7 @@ program
 
       const { default: OmniWeave } = await loadOmniWeave();
       const cg = await OmniWeave.open(projectPath);
-      const limit = parseInt(options.limit || '20', 10);
+      const limit = parseCliIntOption(options.limit, 20, 1, 100);
 
       const matches = cg.searchNodes(symbol, { limit: 50 });
       if (matches.length === 0) {
@@ -1367,42 +1514,32 @@ program
         return;
       }
 
-      const seen = new Set<string>();
-      const allCallers: Array<{ name: string; kind: string; filePath: string; startLine?: number }> = [];
-
-      for (const match of matches) {
-        const exactMatch = match.node.name === symbol || match.node.name.endsWith(`.${symbol}`) || match.node.name.endsWith(`::${symbol}`);
-        if (!exactMatch && matches.length > 1) continue;
-        for (const c of cg.getCallers(match.node.id)) {
-          if (!seen.has(c.node.id)) {
-            seen.add(c.node.id);
-            allCallers.push({ name: c.node.name, kind: c.node.kind, filePath: c.node.filePath, startLine: c.node.startLine });
-          }
-        }
-      }
-
-      // Fallback: if exact filter removed everything, use the top match
-      if (allCallers.length === 0 && matches[0]) {
-        for (const c of cg.getCallers(matches[0].node.id)) {
-          if (!seen.has(c.node.id)) {
-            seen.add(c.node.id);
-            allCallers.push({ name: c.node.name, kind: c.node.kind, filePath: c.node.filePath, startLine: c.node.startLine });
-          }
-        }
-      }
+      const {
+        nodes: allCallers,
+        omittedLowSignal,
+        omittedWeak,
+        filteredOut,
+      } = collectCliCallSurface(matches, symbol, options.file, (nodeId) => cg.getCallers(nodeId));
 
       const limited = allCallers.slice(0, limit);
       const truncated = allCallers.length > limit;
+      const omissionNotes = cliRelationshipOmissionNote(omittedLowSignal, omittedWeak);
+      const filterNote = filteredOut && options.file
+        ? `No definition of "${symbol}" matches file "${options.file}" — showing all definitions instead.`
+        : '';
 
       if (options.json) {
         // Surface the true total + a `truncated` flag so scripts never read a
         // capped slice as the whole fan-in (MCP parity — see moreResultsNote).
-        console.log(JSON.stringify({ symbol, total: allCallers.length, truncated, callers: limited }, null, 2));
+        console.log(JSON.stringify({ symbol, file: options.file, filterMatched: !filteredOut, total: allCallers.length, truncated, omittedLowSignal, omittedWeak, callers: limited }, null, 2));
       } else if (limited.length === 0) {
         info(`No callers found for "${symbol}"`);
+        if (filterNote) console.log(chalk.dim(filterNote));
+        for (const note of omissionNotes) console.log(chalk.dim(note));
       } else {
         const heading = truncated ? `${limited.length} of ${allCallers.length}` : `${limited.length}`;
         console.log(chalk.bold(`\nCallers of "${symbol}" (${heading}):\n`));
+        if (filterNote) console.log(chalk.dim(filterNote + '\n'));
         for (const node of limited) {
           const loc = node.startLine ? `:${node.startLine}` : '';
           console.log(
@@ -1413,6 +1550,7 @@ program
           console.log();
         }
         if (truncated) console.log(chalk.yellow(`  … ${allCallers.length - limit} more — re-run with --limit ${Math.min(allCallers.length, 100)} for the full list.\n`));
+        for (const note of omissionNotes) console.log(chalk.dim(note));
       }
 
       cg.destroy();
@@ -1429,9 +1567,10 @@ program
   .command('callees <symbol>')
   .description('Find all functions/methods that a specific symbol calls')
   .option('-p, --path <path>', 'Project path')
-  .option('-l, --limit <number>', 'Maximum results', '20')
+  .option('-f, --file <file>', 'Narrow to the definition in this file when names repeat')
+  .option('-l, --limit <number>', 'Maximum results (1-100)', '20')
   .option('-j, --json', 'Output as JSON')
-  .action(async (symbol: string, options: { path?: string; limit?: string; json?: boolean }) => {
+  .action(async (symbol: string, options: { path?: string; file?: string; limit?: string; json?: boolean }) => {
     const projectPath = resolveProjectPath(options.path);
 
     try {
@@ -1442,7 +1581,7 @@ program
 
       const { default: OmniWeave } = await loadOmniWeave();
       const cg = await OmniWeave.open(projectPath);
-      const limit = parseInt(options.limit || '20', 10);
+      const limit = parseCliIntOption(options.limit, 20, 1, 100);
 
       const matches = cg.searchNodes(symbol, { limit: 50 });
       if (matches.length === 0) {
@@ -1451,39 +1590,30 @@ program
         return;
       }
 
-      const seen = new Set<string>();
-      const allCallees: Array<{ name: string; kind: string; filePath: string; startLine?: number }> = [];
-
-      for (const match of matches) {
-        const exactMatch = match.node.name === symbol || match.node.name.endsWith(`.${symbol}`) || match.node.name.endsWith(`::${symbol}`);
-        if (!exactMatch && matches.length > 1) continue;
-        for (const c of cg.getCallees(match.node.id)) {
-          if (!seen.has(c.node.id)) {
-            seen.add(c.node.id);
-            allCallees.push({ name: c.node.name, kind: c.node.kind, filePath: c.node.filePath, startLine: c.node.startLine });
-          }
-        }
-      }
-
-      if (allCallees.length === 0 && matches[0]) {
-        for (const c of cg.getCallees(matches[0].node.id)) {
-          if (!seen.has(c.node.id)) {
-            seen.add(c.node.id);
-            allCallees.push({ name: c.node.name, kind: c.node.kind, filePath: c.node.filePath, startLine: c.node.startLine });
-          }
-        }
-      }
+      const {
+        nodes: allCallees,
+        omittedLowSignal,
+        omittedWeak,
+        filteredOut,
+      } = collectCliCallSurface(matches, symbol, options.file, (nodeId) => cg.getCallees(nodeId));
 
       const limited = allCallees.slice(0, limit);
       const truncated = allCallees.length > limit;
+      const omissionNotes = cliRelationshipOmissionNote(omittedLowSignal, omittedWeak);
+      const filterNote = filteredOut && options.file
+        ? `No definition of "${symbol}" matches file "${options.file}" — showing all definitions instead.`
+        : '';
 
       if (options.json) {
-        console.log(JSON.stringify({ symbol, total: allCallees.length, truncated, callees: limited }, null, 2));
+        console.log(JSON.stringify({ symbol, file: options.file, filterMatched: !filteredOut, total: allCallees.length, truncated, omittedLowSignal, omittedWeak, callees: limited }, null, 2));
       } else if (limited.length === 0) {
         info(`No callees found for "${symbol}"`);
+        if (filterNote) console.log(chalk.dim(filterNote));
+        for (const note of omissionNotes) console.log(chalk.dim(note));
       } else {
         const heading = truncated ? `${limited.length} of ${allCallees.length}` : `${limited.length}`;
         console.log(chalk.bold(`\nCallees of "${symbol}" (${heading}):\n`));
+        if (filterNote) console.log(chalk.dim(filterNote + '\n'));
         for (const node of limited) {
           const loc = node.startLine ? `:${node.startLine}` : '';
           console.log(
@@ -1494,6 +1624,7 @@ program
           console.log();
         }
         if (truncated) console.log(chalk.yellow(`  … ${allCallees.length - limit} more — re-run with --limit ${Math.min(allCallees.length, 100)} for the full list.\n`));
+        for (const note of omissionNotes) console.log(chalk.dim(note));
       }
 
       cg.destroy();
@@ -1510,9 +1641,10 @@ program
   .command('impact <symbol>')
   .description('Analyze what code is affected by changing a symbol')
   .option('-p, --path <path>', 'Project path')
-  .option('-d, --depth <number>', 'Traversal depth', '2')
+  .option('-f, --file <file>', 'Narrow to the definition in this file when names repeat')
+  .option('-d, --depth <number>', 'Traversal depth (1-10)', '2')
   .option('-j, --json', 'Output as JSON')
-  .action(async (symbol: string, options: { path?: string; depth?: string; json?: boolean }) => {
+  .action(async (symbol: string, options: { path?: string; file?: string; depth?: string; json?: boolean }) => {
     const projectPath = resolveProjectPath(options.path);
 
     try {
@@ -1523,7 +1655,7 @@ program
 
       const { default: OmniWeave } = await loadOmniWeave();
       const cg = await OmniWeave.open(projectPath);
-      const depth = Math.min(Math.max(parseInt(options.depth || '2', 10), 1), 10);
+      const depth = parseCliIntOption(options.depth, 2, 1, 10);
 
       const matches = cg.searchNodes(symbol, { limit: 50 });
       if (matches.length === 0) {
@@ -1537,9 +1669,8 @@ program
       const seenEdges = new Set<string>();
       let edgeCount = 0;
 
-      for (const match of matches) {
-        const exactMatch = match.node.name === symbol || match.node.name.endsWith(`.${symbol}`) || match.node.name.endsWith(`::${symbol}`);
-        if (!exactMatch && matches.length > 1) continue;
+      const narrowed = narrowCliSymbolMatches(matches, symbol, options.file);
+      for (const match of narrowed.matches) {
         const impact = cg.getImpactRadius(match.node.id, depth);
         for (const [id, n] of impact.nodes) {
           mergedNodes.set(id, { name: n.name, kind: n.kind, filePath: n.filePath, startLine: n.startLine });
@@ -1565,6 +1696,8 @@ program
       if (options.json) {
         console.log(JSON.stringify({
           symbol,
+          file: options.file,
+          filterMatched: !narrowed.filteredOut,
           depth,
           nodeCount: mergedNodes.size,
           edgeCount,
@@ -1574,6 +1707,9 @@ program
         info(`No affected symbols found for "${symbol}"`);
       } else {
         console.log(chalk.bold(`\nImpact of changing "${symbol}" — ${mergedNodes.size} affected symbols:\n`));
+        if (narrowed.filteredOut && options.file) {
+          console.log(chalk.dim(`No definition of "${symbol}" matches file "${options.file}" — showing all definitions instead.\n`));
+        }
 
         // Group by file
         const byFile = new Map<string, Array<{ name: string; kind: string; startLine?: number }>>();
@@ -1615,7 +1751,7 @@ program
   .description('Find test files affected by changed source files')
   .option('-p, --path <path>', 'Project path')
   .option('--stdin', 'Read file list from stdin (one per line)')
-  .option('-d, --depth <number>', 'Max dependency traversal depth', '5')
+  .option('-d, --depth <number>', 'Max dependency traversal depth (1-50)', '5')
   .option('-f, --filter <glob>', 'Custom glob filter for test files (e.g. "e2e/*.spec.ts")')
   .option('-j, --json', 'Output as JSON')
   .option('-q, --quiet', 'Only output file paths, no decoration')
@@ -1644,7 +1780,7 @@ program
 
       const { default: OmniWeave } = await loadOmniWeave();
       const cg = await OmniWeave.open(projectPath);
-      const maxDepth = parseInt(options.depth || '5', 10);
+      const maxDepth = parseCliIntOption(options.depth, 5, 1, 50);
 
       // Common test file patterns
       const defaultTestPatterns = [
@@ -1734,6 +1870,155 @@ program
       cg.destroy();
     } catch (err) {
       error(`Affected analysis failed: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+  });
+
+/**
+ * omniweave snapshot export <output-dir>
+ *
+ * Creates a portable, versioned graph artifact. Import stays intentionally
+ * separate so the first contract is a verifiable bundle, not a hidden cache swap.
+ */
+const snapshotCommand = program
+  .command('snapshot')
+  .description('Export, verify, or import versioned OmniWeave graph artifacts');
+
+snapshotCommand
+  .command('export <outputDir>')
+  .description('Export the current graph database plus a hash-verified manifest')
+  .option('-p, --path <path>', 'Project path')
+  .option('-f, --force', 'Overwrite existing snapshot files in the output directory')
+  .option('-j, --json', 'Output manifest metadata as JSON')
+  .action(async (outputDir: string, options: { path?: string; force?: boolean; json?: boolean }) => {
+    const projectPath = resolveProjectPath(options.path);
+
+    try {
+      if (!isInitialized(projectPath)) {
+        error(`OmniWeave not initialized in ${projectPath}`);
+        process.exit(1);
+      }
+
+      const { exportSnapshot } = await import('../snapshot');
+      const result = await exportSnapshot(projectPath, outputDir, {
+        force: options.force === true,
+        omniweaveVersion: packageJson.version,
+      });
+
+      if (options.json) {
+        console.log(JSON.stringify(result.manifest, null, 2));
+      } else {
+        success(`Snapshot exported to ${result.directory}`);
+        info(`Manifest: ${result.manifestPath}`);
+        info(`Database: ${result.databasePath}`);
+        info(`Fingerprint: ${result.manifest.sourceRoot.fingerprint}`);
+      }
+    } catch (err) {
+      error(`Snapshot export failed: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+  });
+
+snapshotCommand
+  .command('verify <snapshotDir>')
+  .description('Verify a snapshot manifest, artifact hashes, and optional target staleness')
+  .option('-p, --path <path>', 'Project path to compare indexed file hashes against')
+  .option('-j, --json', 'Output verification metadata as JSON')
+  .action(async (snapshotDir: string, options: { path?: string; json?: boolean }) => {
+    try {
+      const { verifySnapshot } = await import('../snapshot');
+      const result = await verifySnapshot(snapshotDir, {
+        projectRoot: options.path ? resolveProjectPath(options.path) : undefined,
+      });
+
+      if (options.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        if (result.ok) {
+          success(`Snapshot verified: ${result.directory}`);
+          if (result.manifest) {
+            info(`Manifest: ${result.manifestPath}`);
+            info(`Fingerprint: ${result.manifest.sourceRoot.fingerprint}`);
+          }
+        } else {
+          error(`Snapshot verification failed: ${result.errors.join('; ')}`);
+        }
+        for (const message of result.warnings) warn(message);
+      }
+
+      if (!result.ok) process.exit(1);
+    } catch (err) {
+      error(`Snapshot verify failed: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+  });
+
+snapshotCommand
+  .command('import <snapshotDir>')
+  .description('Import a verified snapshot into a project .omniweave directory')
+  .option('-p, --path <path>', 'Project path')
+  .option('-f, --force', 'Replace existing OmniWeave database files in the target project')
+  .option('--allow-stale', 'Import even when indexed files differ from the target working tree')
+  .option('-j, --json', 'Output import metadata as JSON')
+  .action(async (snapshotDir: string, options: { path?: string; force?: boolean; allowStale?: boolean; json?: boolean }) => {
+    const projectPath = resolveProjectPath(options.path);
+
+    try {
+      const { importSnapshot } = await import('../snapshot');
+      const result = await importSnapshot(snapshotDir, projectPath, {
+        force: options.force === true,
+        allowStale: options.allowStale === true,
+      });
+
+      if (options.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        success(`Snapshot imported into ${result.projectRoot}`);
+        info(`Database: ${result.databasePath}`);
+        info(`Fingerprint: ${result.manifest.sourceRoot.fingerprint}`);
+        for (const message of result.warnings) warn(message);
+      }
+    } catch (err) {
+      error(`Snapshot import failed: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+  });
+
+const scipCommand = program
+  .command('scip')
+  .description('Import optional SCIP precision facts');
+
+scipCommand
+  .command('import <indexFile>')
+  .description('Import definitions, references, and relationships from an existing index.scip')
+  .option('-p, --path <path>', 'Project path')
+  .option('--keep-existing', 'Keep existing SCIP facts instead of replacing them first')
+  .option('-j, --json', 'Output import metadata as JSON')
+  .action(async (indexFile: string, options: { path?: string; keepExisting?: boolean; json?: boolean }) => {
+    const projectPath = resolveProjectPath(options.path);
+
+    try {
+      if (!isInitialized(projectPath)) {
+        error(`OmniWeave not initialized in ${projectPath}`);
+        process.exit(1);
+      }
+
+      const { importScipIndex } = await import('../scip/importer');
+      const result = await importScipIndex(projectPath, indexFile, {
+        replace: options.keepExisting !== true,
+      });
+
+      if (options.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        success(`SCIP facts imported into ${result.projectRoot}`);
+        info(`Documents: ${result.documentsImported}/${result.documentsRead}`);
+        info(`Nodes: ${result.nodesImported}  Edges: ${result.edgesImported}`);
+        info(`References: ${result.referencesImported}  Relationships: ${result.relationshipsImported}`);
+        for (const message of result.warnings) warn(message);
+      }
+    } catch (err) {
+      error(`SCIP import failed: ${err instanceof Error ? err.message : String(err)}`);
       process.exit(1);
     }
   });

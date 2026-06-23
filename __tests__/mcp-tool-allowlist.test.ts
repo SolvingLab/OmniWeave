@@ -4,7 +4,7 @@
  * Filtering happens in ListTools (getTools) and is enforced again on execute().
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import { ToolHandler } from '../src/mcp/tools';
+import { getStaticTools, ToolHandler } from '../src/mcp/tools';
 
 const ENV = 'OMNIWEAVE_MCP_TOOLS';
 
@@ -53,6 +53,35 @@ describe('OMNIWEAVE_MCP_TOOLS allowlist', () => {
     process.env[ENV] = '   ';
     expect(listed()).toHaveLength(5);
     expect(listed()).toContain('omniweave_explore');
+  });
+
+  it('does not advertise a stale fixed maxFiles default in the static explore schema', () => {
+    delete process.env[ENV];
+    const explore = getStaticTools().find(t => t.name === 'omniweave_explore');
+    const maxFiles = explore?.inputSchema.properties.maxFiles;
+
+    expect(maxFiles?.description).toContain('adaptive project-size default');
+    expect(maxFiles).not.toHaveProperty('default');
+  });
+
+  it('adds the current adaptive maxFiles default to the dynamic explore description', () => {
+    delete process.env[ENV];
+    const cg = {
+      getStats: () => ({ fileCount: 42 }),
+    } as unknown as ConstructorParameters<typeof ToolHandler>[0];
+    const explore = new ToolHandler(cg).getTools().find(t => t.name === 'omniweave_explore');
+
+    expect(explore?.description).toContain('Budget: make at most 1 calls for this project');
+    expect(explore?.description).toContain('defaults to 4 source files per call');
+  });
+
+  it('discloses bounded numeric parameters in the static tool schemas', () => {
+    delete process.env[ENV];
+    const byName = new Map(getStaticTools().map(t => [t.name, t]));
+
+    expect(byName.get('omniweave_search')?.inputSchema.properties.limit.description).toContain('clamped to 1-100');
+    expect(byName.get('omniweave_callers')?.inputSchema.properties.limit.description).toContain('clamped to 1-100');
+    expect(byName.get('omniweave_impact')?.inputSchema.properties.depth.description).toContain('clamped to 1-10');
   });
 
   it('rejects a disabled tool on execute (defense in depth)', async () => {

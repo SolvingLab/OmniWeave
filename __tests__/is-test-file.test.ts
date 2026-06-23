@@ -10,7 +10,7 @@
  * `manifest.kt` / a `RealCall.kt` production file must NOT be flagged.
  */
 import { describe, it, expect } from 'vitest';
-import { isTestFile } from '../src/search/query-utils';
+import { isRepositorySnapshotFile, isTestFile } from '../src/search/query-utils';
 
 describe('isTestFile', () => {
   it('flags Kotlin test files and source sets', () => {
@@ -49,5 +49,18 @@ describe('isTestFile', () => {
     expect(isTestFile('src/flask/app.py')).toBe(false);
     expect(isTestFile('src/vs/workbench/api/common/extensionHostMain.ts')).toBe(false);
     expect(isTestFile('okhttp/src/commonJvmAndroid/kotlin/okhttp3/OkHttpClient.kt')).toBe(false);
+  });
+});
+
+describe('isRepositorySnapshotFile', () => {
+  it('flags external source snapshots under research repos', () => {
+    expect(isRepositorySnapshotFile('research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/tools.ts')).toBe(true);
+    expect(isRepositorySnapshotFile('/tmp/project/research/agent-study/repos/serena/src/agent.py')).toBe(true);
+  });
+
+  it('does NOT flag first-party research code or ordinary source', () => {
+    expect(isRepositorySnapshotFile('research/src/analysis.ts')).toBe(false);
+    expect(isRepositorySnapshotFile('src/research/model.ts')).toBe(false);
+    expect(isRepositorySnapshotFile('src/mcp/tools.ts')).toBe(false);
   });
 });

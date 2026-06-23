@@ -180,6 +180,22 @@ describe('No-error policy on expected conditions', () => {
     expect(res.content[0]!.text).toMatch(/projectPath/);
   });
 
+  it('empty initialized index is SUCCESS-shaped guidance, not a generic miss', async () => {
+    const cg = OmniWeave.initSync(tempDir, {
+      config: { include: ['**/*.ts'], exclude: [] },
+    });
+    try {
+      const res = await new ToolHandler(cg).execute('omniweave_explore', { query: 'anything' });
+
+      expect(res.isError).toBeUndefined();
+      expect(res.content[0]!.text).toMatch(/index is initialized but contains 0 files/);
+      expect(res.content[0]!.text).toMatch(/empty index state, not a tool failure/);
+      expect(res.content[0]!.text).toMatch(/Continue with normal file tools/);
+    } finally {
+      cg.close();
+    }
+  });
+
   it.runIf(process.platform !== 'win32')(
     'sensitive-path refusal stays a hard error (no retry encouragement)',
     async () => {

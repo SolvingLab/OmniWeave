@@ -17,6 +17,7 @@ import * as os from 'os';
 import OmniWeave from '../src/index';
 import { LOW_CONFIDENCE_MARKER } from '../src/context';
 import { isDistinctiveIdentifier, scorePathRelevance, deriveProjectNameTokens } from '../src/search/query-utils';
+import { ToolHandler } from '../src/mcp/tools';
 
 describe('isDistinctiveIdentifier', () => {
   it('treats plain dictionary words as non-distinctive', () => {
@@ -103,6 +104,35 @@ describe('project-name down-weighting in path relevance (#720)', () => {
       scorePathRelevance(path0, 'controller chat')
     );
   });
+
+  it('deprioritizes external research repository snapshots for ordinary code queries', () => {
+    const firstParty = scorePathRelevance('src/mcp/tools.ts', 'mcp tools explore');
+    const snapshot = scorePathRelevance(
+      'research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/tools.ts',
+      'mcp tools explore'
+    );
+
+    expect(snapshot).toBeLessThan(firstParty);
+  });
+
+  it('keeps repository snapshots searchable when the query explicitly asks for them', () => {
+    const snapshot = scorePathRelevance(
+      'research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/tools.ts',
+      'codegraph snapshot mcp tools'
+    );
+
+    expect(snapshot).toBeGreaterThan(0);
+  });
+
+  it('does not treat the ordinary word repo as an external-snapshot request', () => {
+    const firstParty = scorePathRelevance('src/mcp/tools.ts', 'large repo mcp tools');
+    const snapshot = scorePathRelevance(
+      'research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/tools.ts',
+      'large repo mcp tools'
+    );
+
+    expect(snapshot).toBeLessThan(firstParty);
+  });
 });
 
 describe('Context ranking — common-word precision & confidence', () => {
@@ -175,8 +205,10 @@ export function downloadDataset(name: string): string { return name; }
     const md = await cg.buildContext(query, { format: 'markdown' });
     expect(typeof md).toBe('string');
     expect(md as string).toContain(LOW_CONFIDENCE_MARKER);
-    // The handoff routes to the precise tools rather than claiming completeness.
+    // The handoff routes to default precise tools rather than claiming completeness.
     expect(md as string).toMatch(/omniweave_explore/);
+    expect(md as string).toMatch(/likely path hint/);
+    expect(md as string).not.toContain('omniweave_files');
   });
 
   it('does not emit the handoff for a precise, distinctive-symbol query', async () => {
@@ -185,5 +217,288 @@ export function downloadDataset(name: string): string { return name; }
 
     const md = await cg.buildContext('CaptureIntroScreen', { format: 'markdown' });
     expect(md as string).not.toContain(LOW_CONFIDENCE_MARKER);
+  });
+});
+
+describe('omniweave_explore — low-signal repository snapshots', () => {
+  let testDir: string;
+  let cg: OmniWeave;
+
+  beforeEach(async () => {
+    testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omniweave-snapshot-rank-'));
+
+    const firstPartyMcp = path.join(testDir, 'src', 'mcp');
+    const firstPartyContext = path.join(testDir, 'src', 'context');
+    const firstPartySrc = path.join(testDir, 'src');
+    const siteLib = path.join(testDir, 'site', 'src', 'lib');
+    const exampleHelpers = path.join(testDir, 'examples', 'helpers');
+    const overloads = path.join(testDir, 'src', 'overloads');
+    const snapshotMcp = path.join(
+      testDir,
+      'research',
+      '2026-06-23-codegraph-ecosystem',
+      'repos',
+      'codegraph',
+      'src',
+      'mcp'
+    );
+    fs.mkdirSync(firstPartyMcp, { recursive: true });
+    fs.mkdirSync(firstPartyContext, { recursive: true });
+    fs.mkdirSync(firstPartySrc, { recursive: true });
+    fs.mkdirSync(siteLib, { recursive: true });
+    fs.mkdirSync(exampleHelpers, { recursive: true });
+    fs.mkdirSync(overloads, { recursive: true });
+    fs.mkdirSync(snapshotMcp, { recursive: true });
+
+    fs.writeFileSync(
+      path.join(firstPartyMcp, 'tools.ts'),
+      `export interface ExploreOutputBudget {
+  maxOutputChars: number;
+  defaultMaxFiles: number;
+}
+
+export function getExploreOutputBudget(): ExploreOutputBudget {
+  return { maxOutputChars: 24000, defaultMaxFiles: 8 };
+}
+
+export function buildExploreOutput(): string {
+  return 'ranking budget truncation call path edge significance';
+}
+`
+    );
+    fs.writeFileSync(
+      path.join(firstPartyContext, 'ranking.ts'),
+      `export function rankExploreCandidates(): string {
+  return buildRankingBudget('ranking budget truncation');
+}
+
+function buildRankingBudget(input: string): string {
+  return input;
+}
+`
+    );
+    fs.writeFileSync(
+      path.join(firstPartySrc, 'types.ts'),
+      `export interface BuildContextOptions {
+  rankingBudget: string;
+  truncationBudget: string;
+}
+
+export interface Context {
+  callPath: string;
+}
+`
+    );
+    fs.writeFileSync(
+      path.join(siteLib, 'github.ts'),
+      `export function format(value: string): string {
+  return value.trim();
+}
+`
+    );
+    fs.writeFileSync(
+      path.join(exampleHelpers, 'dom.ts'),
+      `export function empty(): null {
+  return null;
+}
+
+export function large(): string {
+  return 'large';
+}
+`
+    );
+    for (const name of ['alpha', 'bravo', 'charlie', 'delta', 'echo']) {
+      fs.writeFileSync(
+        path.join(overloads, `${name}.ts`),
+        `export function reconcile(): string {
+  return '${name}';
+}
+`
+      );
+    }
+    fs.writeFileSync(
+      path.join(snapshotMcp, 'tools.ts'),
+      `export interface ExploreOutputBudget {
+  maxOutputChars: number;
+  defaultMaxFiles: number;
+}
+
+export function getExploreOutputBudget(): ExploreOutputBudget {
+  return { maxOutputChars: 99999, defaultMaxFiles: 99 };
+}
+
+export function buildExploreOutput(): string {
+  return 'external snapshot ranking budget truncation call path';
+}
+
+export function snapshotBuildExploreOutputCaller(): string {
+  return buildExploreOutput();
+}
+`
+    );
+    fs.writeFileSync(
+      path.join(snapshotMcp, 'symbol.ts'),
+      `export class Symbol {
+  parseFrom(): string {
+    return 'external snapshot symbol';
+  }
+}
+`
+    );
+
+    cg = OmniWeave.initSync(testDir, {
+      config: { include: ['**/*.ts'], exclude: [] },
+    });
+    await cg.indexAll();
+  });
+
+  afterEach(() => {
+    if (cg) cg.destroy();
+    if (fs.existsSync(testDir)) fs.rmSync(testDir, { recursive: true, force: true });
+  });
+
+  it('keeps research repository snapshots out of default explore source output', async () => {
+    const handler = new ToolHandler(cg);
+    const result = await handler.execute('omniweave_explore', {
+      query: 'buildExploreOutput rankExploreCandidates ranking budget truncation',
+      maxFiles: 5,
+    });
+    const text = result.content.map((part) => part.text).join('\n');
+
+    expect(text).toContain('src/mcp/tools.ts');
+    expect(text).toContain('src/context/ranking.ts');
+    expect(text).not.toContain('research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/tools.ts');
+  });
+
+  it('does not seed same-name repository snapshots into default explore roots', async () => {
+    const handler = new ToolHandler(cg);
+    const result = await handler.execute('omniweave_explore', {
+      query: 'buildExploreOutput',
+      maxFiles: 5,
+    });
+    const text = result.content.map((part) => part.text).join('\n');
+
+    expect(text).toContain('src/mcp/tools.ts');
+    expect(text).not.toContain('research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/tools.ts');
+    expect(text).not.toContain('snapshotBuildExploreOutputCaller');
+  });
+
+  it('does not treat ordinary words in broad explore queries as named symbol seeds', async () => {
+    const handler = new ToolHandler(cg);
+    const result = await handler.execute('omniweave_explore', {
+      query: 'buildExploreOutput rankExploreCandidates formatting empty large repo behavior',
+      maxFiles: 5,
+    });
+    const text = result.content.map((part) => part.text).join('\n');
+
+    expect(text).toContain('src/mcp/tools.ts');
+    expect(text).toContain('src/context/ranking.ts');
+    expect(text).not.toContain('site/src/lib/github.ts');
+    expect(text).not.toContain('examples/helpers/dom.ts');
+  });
+
+  it('keeps multi-term mechanism matches ahead of isolated ordinary-word hits', async () => {
+    const handler = new ToolHandler(cg);
+    const result = await handler.execute('omniweave_explore', {
+      query: 'explore large repo output budget max files truncation repository too large status stale warning',
+      maxFiles: 5,
+    });
+    const text = result.content.map((part) => part.text).join('\n');
+
+    expect(text).toContain('#### src/mcp/tools.ts');
+    expect(text).toContain('getExploreOutputBudget');
+    expect(text).not.toContain('examples/helpers/dom.ts');
+    expect(text).not.toContain('research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/tools.ts');
+  });
+
+  it('does not let CamelCase subtoken exact hits steal source slots', async () => {
+    const handler = new ToolHandler(cg);
+    const result = await handler.execute('omniweave_explore', {
+      query: 'buildExploreOutput rankExploreCandidates formatContext ExploreOutputBudget ranking budget truncation',
+      maxFiles: 5,
+    });
+    const text = result.content.map((part) => part.text).join('\n');
+
+    expect(text).toContain('#### src/mcp/tools.ts');
+    expect(text).toContain('#### src/context/ranking.ts');
+    expect(text).not.toContain('site/src/lib/github.ts');
+  });
+
+  it('orders executable source sections before type-only support files', async () => {
+    const handler = new ToolHandler(cg);
+    const result = await handler.execute('omniweave_explore', {
+      query: 'buildExploreOutput rankExploreCandidates BuildContextOptions Context ranking budget truncation',
+      maxFiles: 5,
+    });
+    const text = result.content.map((part) => part.text).join('\n');
+
+    const executableIndexes = [
+      text.indexOf('#### src/mcp/tools.ts'),
+      text.indexOf('#### src/context/ranking.ts'),
+    ].filter((idx) => idx >= 0);
+    const executableIdx = Math.min(...executableIndexes);
+    const typesIdx = text.indexOf('#### src/types.ts');
+
+    expect(executableIndexes.length).toBeGreaterThan(0);
+    if (typesIdx >= 0) {
+      expect(executableIdx).toBeLessThan(typesIdx);
+    }
+  });
+
+  it('returns recovery guidance, not an error-shaped dead end, for empty explore results', async () => {
+    const handler = new ToolHandler(cg);
+    const result = await handler.execute('omniweave_explore', {
+      query: 'xqzvbnmwrtypsdfghjkl',
+      maxFiles: 5,
+    });
+    const text = result.content.map((part) => part.text).join('\n');
+
+    expect(result.isError).not.toBe(true);
+    expect(text).toContain('No relevant code found for "xqzvbnmwrtypsdfghjkl"');
+    expect(text).toContain('not a tool failure');
+    expect(text).toContain('omniweave_search');
+    expect(text).toContain('omniweave_node');
+    expect(text).toContain('refresh the index');
+  });
+
+  it('does not use external repository snapshots as the fallback for ordinary missing-symbol queries', async () => {
+    const handler = new ToolHandler(cg);
+    const result = await handler.execute('omniweave_explore', {
+      query: 'NoSuchSymbolAbsolutelyMissing987654',
+      maxFiles: 5,
+    });
+    const text = result.content.map((part) => part.text).join('\n');
+
+    expect(result.isError).not.toBe(true);
+    expect(text).toContain('No relevant code found for "NoSuchSymbolAbsolutelyMissing987654"');
+    expect(text).not.toContain('research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/symbol.ts');
+  });
+
+  it('keeps external repository snapshots available when explicitly requested', async () => {
+    const handler = new ToolHandler(cg);
+    const result = await handler.execute('omniweave_explore', {
+      query: 'snapshot Symbol',
+      maxFiles: 5,
+    });
+    const text = result.content.map((part) => part.text).join('\n');
+
+    expect(text).toContain('research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/symbol.ts');
+  });
+
+  it('flags a bare overloaded symbol as ambiguous instead of implying completeness', async () => {
+    const handler = new ToolHandler(cg);
+    const result = await handler.execute('omniweave_explore', {
+      query: 'reconcile',
+      maxFiles: 5,
+    });
+    const text = result.content.map((part) => part.text).join('\n');
+
+    expect(result.isError).not.toBe(true);
+    expect(text).toContain('### Ambiguous named symbols');
+    expect(text).toContain('`reconcile` matched 5 callable definitions');
+    expect(text).toContain('key: `omniweave_node symbol="reconcile" file="src/overloads/');
+    expect(text).toContain('do not treat that subset as the full overload set');
+    expect(text).toContain('omniweave_node');
+    expect(text).not.toContain('Read them directly');
   });
 });

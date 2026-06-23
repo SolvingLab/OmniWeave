@@ -2582,6 +2582,43 @@ std::unique_ptr<Widget> makeWidget() { return nullptr; }
     });
   });
 
+  describe('C++ macro-prefixed class/struct misparse', () => {
+    it('does not mint a phantom function for a macro-annotated class that inherits', () => {
+      const code = `#pragma once
+#define MAPCORE_EXPORT __attribute__((visibility("default")))
+
+class DataProvider {
+public:
+    virtual bool Request(void* param) = 0;
+};
+
+class MAPCORE_EXPORT LocalDataProvider : public DataProvider
+{
+public:
+    LocalDataProvider(int dataType);
+    virtual bool Request(void* param) override;
+};
+`;
+      expect(detectLanguage('provider.h', code)).toBe('cpp');
+      const result = extractFromSource('provider.h', code);
+
+      expect(result.nodes.find((n) => n.name === 'LocalDataProvider' && n.kind === 'function')).toBeUndefined();
+      expect(result.nodes.find((n) => n.name === 'DataProvider')?.kind).toBe('class');
+    });
+
+    it('drops the struct variant without dropping a genuine class', () => {
+      const code = `
+#define API __declspec(dllexport)
+struct API Widget : public Base { int x; };
+class Plain : public Base { public: int y; };
+`;
+      const result = extractFromSource('widget.cpp', code);
+
+      expect(result.nodes.find((n) => n.name === 'Widget' && n.kind === 'function')).toBeUndefined();
+      expect(result.nodes.find((n) => n.name === 'Plain')?.kind).toBe('class');
+    });
+  });
+
   describe('C/C++ imports', () => {
     it('should extract system include', () => {
       const code = `#include <iostream>`;

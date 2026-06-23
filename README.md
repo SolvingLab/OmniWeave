@@ -12,7 +12,7 @@ The relationships that matter most to an agent are exactly the ones a language s
 [![Local](https://img.shields.io/badge/100%25-local-brightgreen.svg)](#performance)
 [![Node](https://img.shields.io/badge/node-%E2%89%A522.5-blue.svg)](https://nodejs.org/)
 [![MCP](https://img.shields.io/badge/MCP-native-blueviolet.svg)](#use-it-from-an-agent)
-[![Tests](https://img.shields.io/badge/tests-1498%20passing-success.svg)](#engineering)
+[![Tests](https://img.shields.io/badge/tests-1628%20passing-success.svg)](#engineering)
 [![Agent A/B](https://img.shields.io/badge/agent_A%2FB-6_rounds_measured-orange.svg)](#does-an-agent-actually-do-better-with-omniweave)
 
 </div>
@@ -99,6 +99,23 @@ The takeaway is the one stated up front: a real, measured efficiency edge in a *
 
 ---
 
+## Configuration
+
+OmniWeave is zero-config by default. If a repository uses a custom extension for a supported language, add a small `omniweave.json` at the project root:
+
+```json
+{
+  "extensions": {
+    ".dota_lua": "lua",
+    ".tpl": "php"
+  }
+}
+```
+
+Mappings apply to full indexing, incremental sync, and watching. They override built-ins only when explicitly declared.
+
+---
+
 ## Performance
 
 Performance is a design constraint here, not an afterthought.
@@ -130,7 +147,7 @@ callers(scripts/deseq.R) →  run_analysis           # every site that runs it
 
 It handles the idioms real code actually uses — array and flat-string forms, the `f"{sys.path[0]}/tool.py"` "this-directory" dispatcher pattern, top-level `__main__` entry points — and it *rejects* the ones it can't resolve (interpolated basenames, variable paths, an interpreter that's merely `echo`'d).
 
-### 2. Multiple-dispatch semantic graph
+### 2. Multiple-dispatch structural graph
 R's S4 object system dispatches at runtime. OmniWeave makes the static skeleton navigable: `setMethod` becomes a `method` node wired to its class (`contains`) and its generic (`overrides`), and a bare `dispersions(x)` call routes to the generic — with the concrete dispatch targets one hop away along the dispatch graph. The pattern generalizes to any multiple-dispatch or virtual-method language.
 
 ### 3. Workflow data-flow DAG
@@ -166,7 +183,11 @@ The five core tools — `explore`, `node`, `search`, `callers`, `impact` — are
 omniweave serve --mcp        # stdio MCP server
 omniweave init -i            # index the current repo
 omniweave callers <symbol>   # or query directly from the CLI
+omniweave snapshot export .omniweave-snapshot
+omniweave scip import index.scip --json
 ```
+
+`scip import` is intentionally artifact-only: it reads an existing `index.scip`, imports safe same-language facts with `provenance=scip`, and never runs a SCIP indexer or creates runtime/cross-boundary claims.
 
 ---
 
@@ -185,7 +206,7 @@ node dist/bin/omniweave.js serve --mcp
 ## Engineering
 
 - **Hand-written extractors, no `.scm`.** Each language is a focused TypeScript walker — adding a language or a relationship is a small, testable change, not a grammar rewrite.
-- **Eval-gated.** A recall/precision harness with edge, reachability, and **negative** assertions guards every capability — red before the feature, green after, with teeth that fail if a target regresses. **1498** unit tests, 25 evaluation gates, zero known false positives across six real repositories.
+- **Eval-gated.** A recall/precision harness with edge, reachability, and **negative** assertions guards every capability — red before the feature, green after, with teeth that fail if a target regresses. **1628** unit tests, 25 evaluation gates, zero known false positives across six real repositories.
 - **A §1.5 benchmark** (`npm run benchmark`) measures, honestly, the bounded class of queries where the graph wins, ties, or loses against `grep`/LSP — including the ones it loses.
 - **Adversarial agent A/B evaluation** (`scripts/agent-eval/`, six rounds in `eval-results/`). Rather than trust a self-reported metric, every value claim is measured by running a real coding agent **with vs without** the graph attached, on real repositories, with human-judged ground truth — and the discipline is to *go looking for where the tool loses*: correctness ties were confirmed by building traps meant to break them, a prior round's "~34 K overhead" claim was retracted after direct measurement (+682), and the cross-process-at-scale and in-process-mode bets were both retired as NO-GO on the evidence. The boundary in this README is drawn by that evaluation, not by marketing.
 

@@ -63,26 +63,18 @@ artifact (`scripts/agent-eval/redirect-read-hook.sh` + `ab-hook.sh`).
 
 ---
 
-**Symptom:** even with OmniWeave attached + the new steering, the agent reflexively `Read`s/`grep`s mid-implementation, and never reaches for the file-view. Descriptions can't fix this (low-salience wall).
+**Current truth:** the broad Read/Grep redirect hook was A/B'd and rejected above.
+Do not re-open it as a default or installer recommendation. The remaining levers
+are narrower and must be validated on Read-heavy implementation tasks:
 
-### Ideas, ranked by expected leverage
-
-1. **PreToolUse(Read/Grep) hook that redirects to OmniWeave** — *highest leverage; the only channel that actually changes behavior.*
-   - Claude Code **hooks** can intercept a tool call and inject context or block it — unlike descriptions, this is *not* low-salience. We already have `scripts/agent-eval/block-read-hook.sh` + `hook-settings.json` (used to force Read=0 in evals).
-   - Ship a **recommended (opt-in) hook**: on `Read` (or `Grep`) of a path that's *indexed*, inject "this file is indexed — `omniweave_node {file}` returns it + its blast radius for fewer tokens; treat its output as already-Read." Soft nudge (don't hard-block, or it'll frustrate users on configs/docs OmniWeave doesn't index).
-   - The installer (`src/installer/targets/claude.ts`) could offer to add this hook (opt-in, like the auto-allow permissions).
-   - **Validate** with `ab-new-vs-baseline.sh` (Read count, with vs without the hook). This is the experiment most likely to move the needle.
-   - Open Qs: how to know a path is indexed from inside a hook (query `omniweave files`/`status`, or a fast local check against `.omniweave`); avoiding noise on non-indexed files; per-language false positives.
-
-2. **Sufficiency: make the file-view the obvious Read replacement so the agent *wants* it.**
-   - The A/B showed the agent never passed a `file` to `omniweave_node`. Why? It doesn't think "Read this file" → "omniweave_node file=X". Investigate: is the file-view's value (symbols + dependents + bodies) actually *better than Read* for the agent's next step (an `Edit`)? It returns bodies — but does it return enough surrounding context to `Edit` confidently? If not, the agent Reads anyway.
-   - Consider: when the agent *does* Read an indexed file, is there a way to make OmniWeave's prior `explore`/`node` output have *already* given it what it needed? (i.e. fix the upstream sufficiency, not the Read itself.)
-
-3. **Coverage — the durable lever.** Every flow that connects statically is one the agent doesn't Read to reconstruct. Keep closing dynamic-dispatch gaps (`src/resolution/`). Less about "stop Reading," more about "never need to."
-
-4. **Naming / affordance experiments (low confidence, cheap).** The file-view is buried inside `omniweave_node`. A dedicated, obviously-named affordance might get picked more — *but* "new tools fare worse," so this likely loses. If tried, A/B it; don't assume.
-
-**Recommendation:** prototype **idea 1 (the Read-redirect hook)** and A/B it. It's the one lever with a real chance of moving behavior. Everything else is incremental.
+1. **Sufficiency first.** Make existing `explore` / `node` output complete enough
+   that a normal implementation step does not need a follow-up Read. The file-view
+   is useful only if it naturally gives the agent the exact edit context it needs.
+2. **Coverage second.** Every newly connected static flow is one less flow an
+   agent has to reconstruct with grep/read. This is the durable lever.
+3. **Only revisit hooks as a narrow experiment.** A hook may be worth testing for
+   large indexed files or after repeated Reads, but a blanket redirect has already
+   regressed tool count, turns, and wall-clock.
 
 ---
 
@@ -132,5 +124,7 @@ artifact (`scripts/agent-eval/redirect-read-hook.sh` + `ab-hook.sh`).
 
 ## Suggested start order for the fresh session
 1. **P2 idea 1** — verify whether `serve --mcp` answers `tools/list` locally/instantly; if not, decouple it from the daemon. (Highest-value, shippable, helps all users, no behavioral guesswork.)
-2. **P1 idea 1** — prototype the PreToolUse(Read) redirect hook; A/B it. (Highest-value behavioral lever.)
+2. **P1 sufficiency** — pick a Read-heavy implementation task and check whether
+   `explore` / `node` already returns enough context to edit without a fallback
+   Read; improve output only where the A/B shows a real gap.
 3. Ship the P2 SessionStart pre-warm hook as a mitigation; file the host-side wait/retry request.

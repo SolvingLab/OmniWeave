@@ -27,6 +27,7 @@ import type { ResolutionContext } from './types';
 import { isGeneratedFile } from '../extraction/generated-detection';
 import { stripCommentsForRegex } from './strip-comments';
 import { WORKFLOW_STEP_PREFIX, isWorkflowFile } from './frameworks/workflow';
+import { goframeRouteEdges } from './goframe-synthesizer';
 
 const REGISTRAR_NAME = /^(on[A-Z]\w*|subscribe|addListener|addEventListener|register|watch|listen|addCallback)$/;
 const DISPATCHER_NAME = /(emit|trigger|notify|dispatch|fire|publish|flush)/i;
@@ -2040,7 +2041,8 @@ function generalCrossLangEdges(ctx: ResolutionContext): Edge[] {
 /**
  * Synthesize dispatcher→callback edges (field observers + EventEmitters +
  * React re-render + JSX children + Vue templates + SvelteKit load + RN event
- * channel + Fabric native-impl + MyBatis Java↔XML + Gin middleware chain).
+ * channel + Fabric native-impl + MyBatis Java↔XML + Gin middleware chain +
+ * GoFrame reflective route binding).
  * Returns the count added. Never throws into indexing — callers wrap in try/catch.
  */
 export function synthesizeCallbackEdges(queries: QueryBuilder, ctx: ResolutionContext): number {
@@ -2084,6 +2086,7 @@ export function synthesizeCallbackEdges(queries: QueryBuilder, ctx: ResolutionCo
   const rnXPlatEdges = rnCrossPlatformEdges(queries);
   const mybatisEdges = mybatisJavaXmlEdges(queries);
   const ginEdges = ginMiddlewareChainEdges(queries, ctx);
+  const goframeEdges = goframeRouteEdges(ctx);
   const workflowEdges = workflowCrossLangEdges(queries, ctx);
   const generalCrossLang = generalCrossLangEdges(ctx);
 
@@ -2109,6 +2112,7 @@ export function synthesizeCallbackEdges(queries: QueryBuilder, ctx: ResolutionCo
     ...rnXPlatEdges,
     ...mybatisEdges,
     ...ginEdges,
+    ...goframeEdges,
     ...workflowEdges,
     ...generalCrossLang,
   ]) {

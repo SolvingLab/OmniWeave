@@ -28,7 +28,7 @@ import * as os from 'os';
 import { randomUUID } from 'crypto';
 
 export const TELEMETRY_ENDPOINT = 'https://telemetry.getomniweave.com/v1/events';
-export const TELEMETRY_DOCS = 'https://github.com/colbymchenry/codegraph/blob/main/TELEMETRY.md';
+export const TELEMETRY_DOCS = 'https://github.com/SolvingLab/OmniWeave/blob/main/TELEMETRY.md';
 
 const SCHEMA_VERSION = 1;
 const MAX_BUFFER_BYTES = 256 * 1024;

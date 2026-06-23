@@ -25,7 +25,16 @@ import { GraphTraverser } from '../graph';
 import { formatContextAsMarkdown, formatContextAsJson } from './formatter';
 import { logDebug } from '../errors';
 import { validatePathWithinRoot, isConfigLeafNode } from '../utils';
-import { isTestFile, extractSearchTerms, scorePathRelevance, getStemVariants, isDistinctiveIdentifier } from '../search/query-utils';
+import {
+  isLowSignalSourceFile,
+  isLowSignalSourceQuery,
+  isRepositorySnapshotFile,
+  isRepositorySnapshotQuery,
+  extractSearchTerms,
+  scorePathRelevance,
+  getStemVariants,
+  isDistinctiveIdentifier,
+} from '../search/query-utils';
 import { LOW_CONFIDENCE_MARKER } from './markers';
 
 /**
@@ -132,6 +141,36 @@ function extractSymbolsFromQuery(query: string): string[] {
   return Array.from(symbols).filter(s => !commonWords.has(s.toLowerCase()));
 }
 
+function narrowSymbolLookupTermsForBroadQuery(symbols: string[]): string[] {
+  if (symbols.length <= 3) return symbols;
+
+  const specific = symbols.filter((symbol) =>
+    /[.\/]|::/.test(symbol) || isDistinctiveIdentifier(symbol)
+  );
+  return specific.length > 0 ? specific : symbols;
+}
+
+function countDirectTermMatches(node: Node, terms: string[]): number {
+  const nameLower = node.name.toLowerCase();
+  const dirSegments = path.dirname(node.filePath).toLowerCase().split('/');
+  let hits = 0;
+  for (const term of terms) {
+    if (nameLower.includes(term) || dirSegments.includes(term)) {
+      hits++;
+    }
+  }
+  return hits;
+}
+
+function directQueryWordSet(query: string): Set<string> {
+  // Preserve what the user typed as standalone words; CamelCase subtokens are derived signal.
+  return new Set(
+    (query.match(/[A-Za-z_$][\w$]*/g) ?? [])
+      .map((word) => word.toLowerCase())
+      .filter((word) => word.length >= 3),
+  );
+}
+
 /**
  * Default options for context building
  *
@@ -181,8 +220,8 @@ export { LOW_CONFIDENCE_MARKER } from './markers';
 /**
  * Context Builder
  *
- * Coordinates semantic search and graph traversal to build
- * comprehensive context for tasks.
+ * Coordinates lexical/structural seed search and graph traversal to build
+ * comprehensive context for tasks. This is not embedding or vector search.
  */
 export class ContextBuilder {
   private projectRoot: string;
@@ -204,7 +243,7 @@ export class ContextBuilder {
    *
    * Pipeline:
    * 1. Parse task input (string or {title, description})
-   * 2. Run semantic search to find entry points
+   * 2. Run lexical/structural search to find entry points
    * 3. Expand graph around entry points
    * 4. Extract code blocks for key nodes
    * 5. Format output for Claude
@@ -222,7 +261,7 @@ export class ContextBuilder {
     // Parse input
     const query = typeof input === 'string' ? input : `${input.title}${input.description ? `: ${input.description}` : ''}`;
 
-    // Find relevant context (semantic search + graph expansion)
+    // Find relevant context (lexical/structural search + graph expansion)
     const subgraph = await this.findRelevantContext(query, {
       searchLimit: opts.searchLimit,
       traversalDepth: opts.traversalDepth,
@@ -230,7 +269,7 @@ export class ContextBuilder {
       minScore: opts.minScore,
     });
 
-    // Get entry points (nodes from semantic search)
+    // Get entry points (nodes from lexical/structural search)
     const entryPoints = this.getEntryPoints(subgraph);
 
     // Extract code blocks for key nodes
@@ -291,8 +330,8 @@ export class ContextBuilder {
       if (!seen.has(dir)) { seen.add(dir); dirs.push(dir); }
       if (dirs.length >= 4) break;
     }
-    const dirLine = dirs.length
-      ? `\n- \`omniweave_files\` a likely area: ${dirs.map(d => `\`${d}\``).join(', ')}`
+    const pathLine = dirs.length
+      ? `\n- Retry \`omniweave_explore\` with one likely path hint: ${dirs.map(d => `\`${d}\``).join(', ')}`
       : '';
     return `\n\n${LOW_CONFIDENCE_MARKER}\n\n`
       + 'This query matched mostly on common words, so the entry points above may '
@@ -301,7 +340,7 @@ export class ContextBuilder {
       + '- `omniweave_explore` with the **exact symbol names** you are after '
       + '(class / function / method names), or\n'
       + '- `omniweave_search <name>` for one specific symbol'
-      + dirLine
+      + pathLine
       + '\n\nDo not assume the list above is comprehensive.';
   }
 
@@ -418,10 +457,10 @@ export class ContextBuilder {
   /**
    * Find relevant subgraph for a query
    *
-   * Uses hybrid search combining exact symbol lookup with semantic search:
+   * Uses hybrid search combining exact symbol lookup with lexical text search:
    * 1. Extract potential symbol names from query
    * 2. Look up exact matches for those symbols (high confidence)
-   * 3. Use semantic search for concept matching
+   * 3. Use lexical text search for broader term matching
    * 4. Merge results, prioritizing exact matches
    * 5. Traverse graph from entry points
    *
@@ -449,14 +488,15 @@ export class ContextBuilder {
 
     // Step 1: Extract potential symbol names from query
     const symbolsFromQuery = extractSymbolsFromQuery(query);
-    logDebug('Extracted symbols from query', { query, symbols: symbolsFromQuery });
+    const symbolLookupTerms = narrowSymbolLookupTermsForBroadQuery(symbolsFromQuery);
+    logDebug('Extracted symbols from query', { query, symbols: symbolsFromQuery, lookupTerms: symbolLookupTerms });
 
     // Step 2: Look up exact matches for extracted symbols
     let exactMatches: SearchResult[] = [];
-    if (symbolsFromQuery.length > 0) {
+    if (symbolLookupTerms.length > 0) {
       try {
         // Get more results so we can apply co-location boosting before trimming
-        exactMatches = this.queries.findNodesByExactName(symbolsFromQuery, {
+        exactMatches = this.queries.findNodesByExactName(symbolLookupTerms, {
           limit: Math.ceil(opts.searchLimit * 5),
           kinds: opts.nodeKinds && opts.nodeKinds.length > 0 ? opts.nodeKinds : undefined,
         });
@@ -495,12 +535,12 @@ export class ContextBuilder {
     // When the user writes "REST", "bulk", or "allocation", they usually mean classes
     // like RestController, BulkRequest, AllocationService — not nodes named exactly that.
     // Also tries stem variants: "caching" → "cache" finds Cache, CacheBuilder.
-    if (symbolsFromQuery.length > 0) {
+    if (symbolLookupTerms.length > 0) {
       const definitionKinds: NodeKind[] = ['class', 'interface', 'struct', 'trait',
         'protocol', 'enum', 'type_alias'];
       // Expand symbols with stem variants for broader definition matching
-      const expandedSymbols = new Set(symbolsFromQuery);
-      for (const sym of symbolsFromQuery) {
+      const expandedSymbols = new Set(symbolLookupTerms);
+      for (const sym of symbolLookupTerms) {
         for (const variant of getStemVariants(sym)) {
           expandedSymbols.add(variant);
         }
@@ -536,8 +576,8 @@ export class ContextBuilder {
       exactMatches = exactMatches.slice(0, Math.ceil(opts.searchLimit * 3));
     }
 
-    // Step 3: Run text search for natural language term matching
-    // This catches file-name and node-name matches that semantic search may miss,
+    // Step 3: Run text search for natural language term matching.
+    // This catches file-name and node-name matches that exact symbol lookup may miss,
     // which is critical for template-heavy codebases (e.g., Liquid/Shopify themes)
     // where file names are the primary identifiers.
     let textResults: SearchResult[] = [];
@@ -613,13 +653,13 @@ export class ContextBuilder {
       }
     }
 
-    const queryLower = query.toLowerCase();
-    const isTestQuery = queryLower.includes('test') || queryLower.includes('spec');
+    const isLowSignalQuery = isLowSignalSourceQuery(query);
 
-    // Deprioritize test files early so they don't take multi-term boost slots
-    if (!isTestQuery) {
+    // Deprioritize test/example/research-snapshot files early so they don't take
+    // multi-term boost slots for ordinary first-party code questions.
+    if (!isLowSignalQuery) {
       for (const result of searchResults) {
-        if (isTestFile(result.node.filePath)) {
+        if (isLowSignalSourceFile(result.node.filePath)) {
           result.score *= 0.3;
         }
       }
@@ -698,7 +738,7 @@ export class ContextBuilder {
       // of a prose query with zero corroboration from any other term. Classify by
       // the QUERY token (what the user typed), not the matched symbol's name.
       const distinctiveTokens = new Set(
-        symbolsFromQuery.filter(isDistinctiveIdentifier).map(s => s.toLowerCase())
+        symbolLookupTerms.filter(isDistinctiveIdentifier).map(s => s.toLowerCase())
       );
       const distinctiveExactMatchIds = new Set(
         exactMatches
@@ -746,7 +786,7 @@ export class ContextBuilder {
     // FTS can't find "Search" inside "TransportSearchAction" (one FTS token).
     // LIKE reliably finds these substring matches. Results are appended with
     // guaranteed slots so they don't compete with higher-scoring prefix matches.
-    if (symbolsFromQuery.length > 0) {
+    if (symbolLookupTerms.length > 0) {
       const camelDefinitionKinds: NodeKind[] = ['class', 'interface', 'struct', 'trait',
         'protocol', 'enum', 'type_alias'];
       const camelSearchedTerms = new Set<string>();
@@ -755,7 +795,7 @@ export class ContextBuilder {
       const camelNodeTerms = new Map<string, { result: SearchResult; termCount: number }>();
       const maxCamelPerTerm = Math.ceil(opts.searchLimit / 2);
 
-      for (const sym of symbolsFromQuery) {
+      for (const sym of symbolLookupTerms) {
         const titleCased = sym.charAt(0).toUpperCase() + sym.slice(1).toLowerCase();
         if (titleCased.length < 3) continue;
         const termKey = titleCased.toLowerCase();
@@ -782,7 +822,7 @@ export class ContextBuilder {
           // acronym boundary (uppercase before match, e.g., RPCProtocol)
           if (!/[a-zA-Z]/.test(name.charAt(idx - 1))) continue;
           if (searchIdSet.has(r.node.id)) continue;
-          if (isTestFile(r.node.filePath) && !isTestQuery) continue;
+          if (isLowSignalSourceFile(r.node.filePath) && !isLowSignalQuery) continue;
 
           const pathScore = scorePathRelevance(r.node.filePath, query);
           const brevityBonus = Math.max(0, 6 - (name.length - titleCased.length) / 4);
@@ -833,11 +873,11 @@ export class ContextBuilder {
       // START with a query term (e.g., "SearchShardsRequest" starts with "Search").
       // For multi-word queries, a class matching multiple query terms in its name
       // is almost certainly relevant regardless of position.
-      if (symbolsFromQuery.length >= 2) {
+      if (symbolLookupTerms.length >= 2) {
         // Collect ALL LIKE results per term (reusing findNodesByNameSubstring)
         // but without the CamelCase boundary or prefix exclusion filters.
         const compoundTermMap = new Map<string, { node: Node; terms: Set<string> }>();
-        for (const sym of symbolsFromQuery) {
+        for (const sym of symbolLookupTerms) {
           const titleCased = sym.charAt(0).toUpperCase() + sym.slice(1).toLowerCase();
           if (titleCased.length < 3) continue;
 
@@ -849,7 +889,7 @@ export class ContextBuilder {
 
           for (const r of likeResults) {
             if (searchIdSet.has(r.node.id)) continue;
-            if (isTestFile(r.node.filePath) && !isTestQuery) continue;
+            if (isLowSignalSourceFile(r.node.filePath) && !isLowSignalQuery) continue;
             const entry = compoundTermMap.get(r.node.id);
             if (entry) {
               entry.terms.add(titleCased);
@@ -894,6 +934,66 @@ export class ContextBuilder {
     // they want the TerminalPanel class, not the import statement
     filteredResults = this.resolveImportsToDefinitions(filteredResults);
 
+    if (!isRepositorySnapshotQuery(query)) {
+      filteredResults = filteredResults.filter((r) => !isRepositorySnapshotFile(r.node.filePath));
+    }
+    if (!isLowSignalQuery) {
+      const firstPartyResults = filteredResults.filter((r) => !isLowSignalSourceFile(r.node.filePath));
+      if (firstPartyResults.length > 0) filteredResults = firstPartyResults;
+    }
+
+    const lookupTokenSet = new Set(symbolLookupTerms.map(s => s.toLowerCase()));
+    const droppedOrdinarySymbolNames = new Set(
+      symbolsFromQuery
+        .map(s => s.toLowerCase())
+        .filter(s => !lookupTokenSet.has(s))
+    );
+    if (droppedOrdinarySymbolNames.size > 0 && lookupTokenSet.size > 0) {
+      for (const name of [...droppedOrdinarySymbolNames]) {
+        for (const variant of getStemVariants(name)) {
+          droppedOrdinarySymbolNames.add(variant);
+        }
+      }
+      const directTerms = extractSearchTerms(query, { stems: false }).filter(t => t.length >= 3);
+      filteredResults = filteredResults.filter((result) => {
+        const nameLower = result.node.name.toLowerCase();
+        if (!droppedOrdinarySymbolNames.has(nameLower)) return true;
+
+        const dirSegments = path.dirname(result.node.filePath).toLowerCase().split('/');
+        let corroboratingHits = 0;
+        for (const term of directTerms) {
+          if (nameLower.includes(term) || dirSegments.includes(term)) {
+            corroboratingHits++;
+            if (corroboratingHits >= 2) return true;
+          }
+        }
+        return false;
+      });
+    }
+
+    const directQueryTerms = extractSearchTerms(query, { stems: false }).filter(t => t.length >= 3);
+    const hasDistinctiveQuerySymbol = symbolsFromQuery.some(isDistinctiveIdentifier);
+    if (hasDistinctiveQuerySymbol && directQueryTerms.length >= 3 && filteredResults.length > 1) {
+      const directWords = directQueryWordSet(query);
+      const narrowed = filteredResults.filter((result) => {
+        const nameLower = result.node.name.toLowerCase();
+        if (!directQueryTerms.includes(nameLower)) return true;
+        if (directWords.has(nameLower)) return true;
+        if (isDistinctiveIdentifier(result.node.name)) return true;
+        return countDirectTermMatches(result.node, directQueryTerms) >= 2;
+      });
+      if (narrowed.length >= 2) filteredResults = narrowed;
+    }
+    if (!hasDistinctiveQuerySymbol && directQueryTerms.length >= 4 && filteredResults.length > 1) {
+      const strongResults = filteredResults.filter((result) =>
+        countDirectTermMatches(result.node, directQueryTerms) >= 2
+      );
+      if (strongResults.length > 0) {
+        const strongIds = new Set(strongResults.map((result) => result.node.id));
+        filteredResults = filteredResults.filter((result) => strongIds.has(result.node.id));
+      }
+    }
+
     // Cap entry points so traversal budget isn't spread too thin.
     // With 36 entry points and maxNodes=120, each gets only 3 nodes — useless.
     // Cap to searchLimit so each entry point gets a meaningful traversal budget.
@@ -910,22 +1010,14 @@ export class ContextBuilder {
     // Single-keyword and symbol-name queries are exempt (their single match IS the
     // answer), so the handoff never fires on them.
     let confidence: 'high' | 'low' = 'high';
-    const confTerms = extractSearchTerms(query, { stems: false }).filter(t => t.length >= 3);
+    const confTerms = directQueryTerms;
     if (confTerms.length >= 2 && filteredResults.length > 0) {
       const distinctive = new Set(
         symbolsFromQuery.filter(isDistinctiveIdentifier).map(s => s.toLowerCase())
       );
       const anyStrong = filteredResults.some(r => {
         if (distinctive.has(r.node.name.toLowerCase())) return true;
-        const nameLower = r.node.name.toLowerCase();
-        const dirSegs = path.dirname(r.node.filePath).toLowerCase().split('/');
-        let hits = 0;
-        for (const t of confTerms) {
-          if (nameLower.includes(t) || dirSegs.includes(t)) {
-            if (++hits >= 2) return true;
-          }
-        }
-        return false;
+        return countDirectTermMatches(r.node, confTerms) >= 2;
       });
       if (!anyStrong) confidence = 'low';
     }
@@ -1091,16 +1183,16 @@ export class ContextBuilder {
         finalNodes.delete(id);
       }
     }
-    // Non-production node cap: limit test/sample/integration/example files to
+    // Non-production node cap: limit test/sample/integration/example/snapshot files to
     // at most 15% of the budget. Many codebases have dozens of near-identical
     // test implementations (e.g., 6 Guard classes in integration tests) that
     // individually survive score dampening but collectively flood the result.
     // Test entry points are NOT exempt — they should be evicted too.
-    if (!isTestQuery) {
+    if (!isLowSignalQuery) {
       const maxNonProd = Math.max(3, Math.ceil(opts.maxNodes * 0.15));
       const nonProdIds: string[] = [];
       for (const [id, node] of finalNodes) {
-        if (isTestFile(node.filePath)) {
+        if (isLowSignalSourceFile(node.filePath)) {
           nonProdIds.push(id);
         }
       }

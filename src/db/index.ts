@@ -44,11 +44,13 @@ export class DatabaseConnection {
   private db: SqliteDatabase;
   private dbPath: string;
   private backend: SqliteBackend;
+  private openedInode: string | null;
 
   private constructor(db: SqliteDatabase, dbPath: string, backend: SqliteBackend) {
     this.db = db;
     this.dbPath = dbPath;
     this.backend = backend;
+    this.openedInode = statInode(dbPath);
   }
 
   /**
@@ -229,6 +231,27 @@ export class DatabaseConnection {
    */
   isOpen(): boolean {
     return this.db.open;
+  }
+
+  /**
+   * True when the DB file at this path has been replaced since this connection
+   * opened it. On POSIX, a long-lived MCP process can keep reading an unlinked
+   * old inode after `.omniweave/` is removed and recreated at the same path.
+   */
+  isReplacedOnDisk(): boolean {
+    if (this.openedInode === null) return false;
+    const current = statInode(this.dbPath);
+    return current !== null && current !== this.openedInode;
+  }
+}
+
+function statInode(filePath: string): string | null {
+  if (process.platform === 'win32') return null;
+  try {
+    const stat = fs.statSync(filePath);
+    return `${stat.dev}:${stat.ino}`;
+  } catch {
+    return null;
   }
 }
 

@@ -1,7 +1,7 @@
 /**
  * OmniWeave Type Definitions
  *
- * Core types for the semantic knowledge graph system.
+ * Core types for the local structural code graph.
  */
 
 // =============================================================================
@@ -561,13 +561,13 @@ export interface BuildContextOptions {
   /** Output format (default: 'markdown') */
   format?: 'markdown' | 'json';
 
-  /** Number of semantic search results (default: 5) */
+  /** Number of lexical/structural seed search results (default: 5) */
   searchLimit?: number;
 
   /** Graph traversal depth from entry points (default: 2) */
   traversalDepth?: number;
 
-  /** Minimum semantic similarity score (default: 0.3) */
+  /** Minimum lexical/structural relevance score (default: 0.3) */
   minScore?: number;
 }
 
@@ -581,7 +581,7 @@ export interface TaskContext {
   /** Subgraph of relevant nodes and edges */
   subgraph: Subgraph;
 
-  /** Entry point nodes (from semantic search) */
+  /** Entry point nodes from lexical/structural seed search */
   entryPoints: Node[];
 
   /** Code blocks extracted from key nodes */
@@ -612,7 +612,7 @@ export interface TaskContext {
  * Options for finding relevant context
  */
 export interface FindRelevantContextOptions {
-  /** Number of semantic search results (default: 5) */
+  /** Number of lexical/structural seed search results (default: 5) */
   searchLimit?: number;
 
   /** Graph traversal depth (default: 2) */
@@ -621,7 +621,7 @@ export interface FindRelevantContextOptions {
   /** Maximum nodes in result (default: 50) */
   maxNodes?: number;
 
-  /** Minimum semantic similarity score (default: 0.3) */
+  /** Minimum lexical/structural relevance score (default: 0.3) */
   minScore?: number;
 
   /** Edge types to follow in traversal */

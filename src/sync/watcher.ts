@@ -38,6 +38,7 @@ import { logDebug, logWarn } from '../errors';
 import { normalizePath } from '../utils';
 import { isOmniWeaveDataDir } from '../directory';
 import { watchDisabledReason } from './watch-policy';
+import { loadExtensionOverrides } from '../project-config';
 
 /**
  * Native recursive `fs.watch` is only reliable on macOS and Windows; on Linux
@@ -398,7 +399,7 @@ export class FileWatcher {
     if (!rel || rel === '.' || rel.startsWith('..')) return;
     if (this.isAlwaysIgnored(rel)) return;
     if (this.ignoreMatcher && this.ignoreMatcher.ignores(rel)) return;
-    if (!isSourceFile(rel)) return;
+    if (!isSourceFile(rel, loadExtensionOverrides(this.projectRoot))) return;
 
     logDebug('File change detected', { file: rel });
     if (this.ready) {

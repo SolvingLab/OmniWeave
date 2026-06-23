@@ -108,6 +108,29 @@ describe('multi-repo workspaces (#514)', () => {
     expect(files).toContain('main.ts');
   });
 
+  it('skips a submodule worktree instead of indexing it as a duplicate', () => {
+    const upstream = fs.mkdtempSync(path.join(os.tmpdir(), 'omniweave-submodule-up-'));
+    try {
+      write(path.join(upstream, 'lib.ts'), 'export function libFn() { return 1; }\n');
+      makeRepo(upstream);
+
+      write(path.join(ws, 'src/app.ts'), 'export function app() { return 1; }\n');
+      write(path.join(ws, '.gitignore'), '.worktrees/\n');
+      git(ws, 'init', '-q');
+      git(ws, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', upstream, 'common');
+      git(ws, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'add submodule');
+
+      git(path.join(ws, 'common'), 'worktree', 'add', '-q', '../.worktrees/common-feature', '-b', 'feature');
+
+      const files = scanDirectory(ws);
+      expect(files).toContain('src/app.ts');
+      expect(files).toContain('common/lib.ts');
+      expect(files.some((f) => f.includes('.worktrees'))).toBe(false);
+    } finally {
+      fs.rmSync(upstream, { recursive: true, force: true });
+    }
+  });
+
   it('non-git workspace: walks children and respects each child own .gitignore', () => {
     write(path.join(ws, 'proj-a/src/auth.ts'), 'export function login() {}\n');
     write(path.join(ws, 'proj-a/build/out.ts'), 'export function generated() {}\n');
@@ -178,6 +201,17 @@ describe('multi-repo workspaces (#514)', () => {
     // Ordinary paths: unchanged semantics.
     expect(scope.ignores('node_modules/dep/index.ts')).toBe(true);
     expect(scope.ignores('src/app.ts')).toBe(false);
+  });
+
+  it('buildScopeIgnore handles an indexed root that is itself ignored by an enclosing repo', () => {
+    write(path.join(ws, 'child/src/a.ts'), 'export const x = 1;\n');
+    write(path.join(ws, '.gitignore'), '/child/\n');
+    makeRepo(ws);
+
+    const child = path.join(ws, 'child');
+    const scope = buildScopeIgnore(child);
+    expect(scope.ignores('src/a.ts')).toBe(false);
+    expect(discoverEmbeddedRepoRoots(child)).toEqual([]);
   });
 
   it('sync picks up a change inside a gitignored embedded repo', async () => {
