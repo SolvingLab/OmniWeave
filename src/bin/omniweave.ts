@@ -1441,6 +1441,21 @@ program
       const cg = await OmniWeave.open(projectPath);
       const limit = parseCliIntOption(options.limit, 20, 1, 100);
 
+      if (!options.json) {
+        const { ToolHandler } = await import('../mcp/tools');
+        const handler = new ToolHandler(cg);
+        const args: Record<string, unknown> = { symbol, limit };
+        if (options.file) args.file = options.file;
+        const result = await handler.execute('omniweave_callers', args, {
+          outputSurface: 'cli',
+          enforceToolAllowlist: false,
+        });
+        console.log(result.content[0]?.text ?? '');
+        cg.destroy();
+        if (result.isError) process.exit(1);
+        return;
+      }
+
       const matches = cg.searchNodes(symbol, { limit: 50 });
       if (matches.length === 0) {
         info(`Symbol "${symbol}" not found`);
@@ -1517,6 +1532,21 @@ program
       const cg = await OmniWeave.open(projectPath);
       const limit = parseCliIntOption(options.limit, 20, 1, 100);
 
+      if (!options.json) {
+        const { ToolHandler } = await import('../mcp/tools');
+        const handler = new ToolHandler(cg);
+        const args: Record<string, unknown> = { symbol, limit };
+        if (options.file) args.file = options.file;
+        const result = await handler.execute('omniweave_callees', args, {
+          outputSurface: 'cli',
+          enforceToolAllowlist: false,
+        });
+        console.log(result.content[0]?.text ?? '');
+        cg.destroy();
+        if (result.isError) process.exit(1);
+        return;
+      }
+
       const matches = cg.searchNodes(symbol, { limit: 50 });
       if (matches.length === 0) {
         info(`Symbol "${symbol}" not found`);
@@ -1590,6 +1620,21 @@ program
       const { default: OmniWeave } = await loadOmniWeave();
       const cg = await OmniWeave.open(projectPath);
       const depth = parseCliIntOption(options.depth, 2, 1, 10);
+
+      if (!options.json) {
+        const { ToolHandler } = await import('../mcp/tools');
+        const handler = new ToolHandler(cg);
+        const args: Record<string, unknown> = { symbol, depth };
+        if (options.file) args.file = options.file;
+        const result = await handler.execute('omniweave_impact', args, {
+          outputSurface: 'cli',
+          enforceToolAllowlist: false,
+        });
+        console.log(result.content[0]?.text ?? '');
+        cg.destroy();
+        if (result.isError) process.exit(1);
+        return;
+      }
 
       const matches = cg.searchNodes(symbol, { limit: 50 });
       if (matches.length === 0) {

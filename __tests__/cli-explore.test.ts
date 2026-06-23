@@ -43,6 +43,14 @@ function runCli(
   };
 }
 
+function sectionFrom(output: string, marker: string): string {
+  const start = output.indexOf(marker);
+  expect(start).toBeGreaterThanOrEqual(0);
+  const rest = output.slice(start);
+  const next = rest.indexOf('\n### ', 1);
+  return next >= 0 ? rest.slice(0, next) : rest;
+}
+
 describe('CLI explore unavailable-index policy', () => {
   let testDir: string;
 
@@ -451,7 +459,7 @@ export function snapshotCaller(): string {
     const result = runCli(testDir, ['callees', 'entryPoint']);
 
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain('Callees of "entryPoint"');
+    expect(result.stdout).toContain('Callees of entryPoint');
     expect(result.stdout).toContain('localStep');
     expect(result.stdout).not.toContain('FlowResult');
     expect(result.stdout).not.toContain('snapshotOnly');
@@ -463,7 +471,7 @@ export function snapshotCaller(): string {
     const result = runCli(testDir, ['callees', 'entryPoint', '--limit', '0']);
 
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain('Callees of "entryPoint"');
+    expect(result.stdout).toContain('Callees of entryPoint');
     expect(result.stdout).not.toContain('No callees found');
   });
 
@@ -473,6 +481,11 @@ export function snapshotCaller(): string {
 
     expect(broad.status).toBe(0);
     expect(narrowed.status).toBe(0);
+    expect(broad.stdout).toContain('2 distinct definitions');
+    const mcpSection = sectionFrom(broad.stdout, 'src/mcp/flow.ts');
+    const otherSection = sectionFrom(broad.stdout, 'src/other/flow.ts');
+    expect(mcpSection).not.toContain('otherStep');
+    expect(otherSection).toContain('otherStep');
     expect(broad.stdout).toContain('src/other/flow.ts');
     expect(narrowed.stdout).toContain('src/mcp/flow.ts');
     expect(narrowed.stdout).not.toContain('src/other/flow.ts');
@@ -483,7 +496,7 @@ export function snapshotCaller(): string {
     const result = runCli(testDir, ['callers', 'localStep']);
 
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain('Callers of "localStep"');
+    expect(result.stdout).toContain('Callers of localStep');
     expect(result.stdout).toContain('entryPoint');
     expect(result.stdout).not.toContain('snapshotCaller');
     expect(result.stdout).toContain('Omitted 1 low-signal relationship');
@@ -495,9 +508,30 @@ export function snapshotCaller(): string {
 
     expect(broad.status).toBe(0);
     expect(narrowed.status).toBe(0);
+    expect(broad.stdout).toContain('2 distinct definitions');
+    const mcpSection = sectionFrom(broad.stdout, 'src/mcp/flow.ts');
+    const otherSection = sectionFrom(broad.stdout, 'src/other/flow.ts');
+    expect(mcpSection).toContain('src/mcp/flow.ts');
+    expect(mcpSection).not.toContain('src/other/flow.ts');
+    expect(otherSection).toContain('src/other/flow.ts');
     expect(broad.stdout).toContain('src/other/flow.ts');
     expect(narrowed.stdout).toContain('src/mcp/flow.ts');
     expect(narrowed.stdout).not.toContain('src/other/flow.ts');
+  });
+
+  it('keeps CLI impact split across same-named definitions by default', () => {
+    const result = runCli(testDir, ['impact', 'entryPoint']);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('2 distinct definitions');
+    const mcpStart = result.stdout.indexOf('src/mcp/flow.ts');
+    const otherStart = result.stdout.indexOf('src/other/flow.ts');
+    expect(mcpStart).toBeGreaterThanOrEqual(0);
+    expect(otherStart).toBeGreaterThan(mcpStart);
+    const mcpSection = result.stdout.slice(mcpStart, otherStart);
+    const otherSection = result.stdout.slice(otherStart);
+    expect(mcpSection).not.toContain('src/other/flow.ts');
+    expect(otherSection).not.toContain('src/mcp/flow.ts');
   });
 
   it('narrows CLI impact to one same-named definition by file', () => {
