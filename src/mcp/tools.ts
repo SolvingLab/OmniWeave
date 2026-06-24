@@ -3867,7 +3867,7 @@ export class ToolHandler {
         code = await cg.getCode(node.id);
       }
     }
-    return this.formatNodeDetails(node, code, outline, outputSurface) + this.formatTrail(cg, node, outputSurface);
+    return this.formatNodeDetails(node, code, outline, outputSurface, this.formatTrail(cg, node, outputSurface));
   }
 
   /**
@@ -4652,6 +4652,7 @@ export class ToolHandler {
     code: string | null,
     outline?: string | null,
     outputSurface: OutputSurface = 'mcp',
+    trail = '',
   ): string {
     const location = node.startLine ? `:${node.startLine}` : '';
     const continuation = this.nodeContinuation(node, outputSurface);
@@ -4670,6 +4671,10 @@ export class ToolHandler {
     // Only include docstring if it's short and useful
     if (node.docstring && node.docstring.length < 200) {
       lines.push('', node.docstring);
+    }
+
+    if (trail) {
+      lines.push('', trail.trimStart());
     }
 
     if (outline) {

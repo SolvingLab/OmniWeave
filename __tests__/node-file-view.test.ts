@@ -42,6 +42,10 @@ describe('omniweave_node file-view (Read replacement)', () => {
         Array.from({ length: 2000 }, (_, i) => `  const v${i} = ${i};`).join('\n') +
         '\n  return 0;\n}\n',
     );
+    fs.writeFileSync(
+      path.join(dir, 'src', 'c.ts'),
+      "import { big } from './big';\n\nexport function useBig() { return big(); }\n",
+    );
     cg = OmniWeave.initSync(dir, { config: { include: ['**/*.ts', '**/*.properties'], exclude: [] } });
     await cg.indexAll();
     h = new ToolHandler(cg);
@@ -89,6 +93,16 @@ describe('omniweave_node file-view (Read replacement)', () => {
     expect(out).toMatch(/lines 1[–-]\d+ of \d+/); // explicit window note
     expect(out).not.toContain('(output truncated)'); // not the generic 15k chop
     expect(out).toMatch(/^1\texport function big/m); // the head of the window is real source
+  });
+
+  it('keeps a large symbol trail before the source body can be truncated', async () => {
+    const out = await text({ symbol: 'big', includeCode: true });
+
+    expect(out).toContain('### Trail');
+    expect(out).toContain('useBig (src/c.ts:3)');
+    expect(out.indexOf('### Trail')).toBeGreaterThanOrEqual(0);
+    expect(out.indexOf('### Trail')).toBeLessThan(out.indexOf('```typescript'));
+    expect(out).toContain('... (output truncated)');
   });
 
   it('does NOT dump a config/data file (yaml/properties) — #383 secret safety', async () => {
