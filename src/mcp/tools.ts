@@ -632,6 +632,11 @@ function isExploreNoResultText(text: string): boolean {
   return text.startsWith('No relevant code found for ');
 }
 
+function noResultAllowsLowSignalPending(text: string): boolean {
+  const match = text.match(/^No relevant code found for "([\s\S]*)"\./);
+  return match ? queryAllowsLowSignalSources(match[1]!) : false;
+}
+
 function responseMentionsPath(text: string, filePath: string): boolean {
   const isPathChar = (char: string | undefined): boolean =>
     char !== undefined && /[A-Za-z0-9._~+%/-]/.test(char);
@@ -1363,6 +1368,14 @@ export class ToolHandler {
     }
 
     if (pending.length > 0) {
+      const lowSignalPendingAllowed = isExploreNoResultText(text) && noResultAllowsLowSignalPending(text);
+      pending = pending.filter((entry) =>
+        !isLowSignalSourceFile(entry.path) ||
+        responseMentionsPath(text, entry.path) ||
+        lowSignalPendingAllowed
+      );
+      if (pending.length === 0) return result;
+
       if (isExploreNoResultText(text)) {
         const composed = [formatStaleNoResultNotice(pending, outputSurface), text].join('\n\n');
         return { ...result, content: [{ type: 'text', text: composed }, ...rest] };
