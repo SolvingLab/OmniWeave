@@ -25,7 +25,15 @@ import * as fs from 'fs';
 import { execFileSync } from 'child_process';
 import { pathToFileURL } from 'url';
 import { connectWithHello } from '../src/mcp/proxy';
-import { OmniWeavePackageVersion, OmniWeaveBuildFingerprint, parseBuildId } from '../src/mcp/version';
+import {
+  OmniWeavePackageVersion,
+  OmniWeaveBuildFingerprint,
+  formatBuildFingerprint,
+  parseBuildId,
+  readCurrentBuildFingerprint,
+  runtimeBuildSkew,
+  runtimeBuildSkewMessage,
+} from '../src/mcp/version';
 
 const REPO = path.resolve(__dirname, '..');
 let sockCounter = 0;
@@ -71,6 +79,23 @@ describe('parseBuildId — only a clean hex hash becomes a build id', () => {
     expect(parseBuildId('   \n  ')).toBe('');
     expect(parseBuildId('a'.repeat(200))).toBe(''); // beyond a sha256 hex length
     expect(parseBuildId('abcde')).toBe('');          // shorter than the 6-char floor
+  });
+});
+
+describe('runtime build skew helpers', () => {
+  it('formats bare source runs and stamped dist builds consistently', () => {
+    expect(formatBuildFingerprint('1.0.0', '')).toBe('1.0.0');
+    expect(formatBuildFingerprint('1.0.0', 'abc123def456')).toBe('1.0.0+abc123def456');
+  });
+
+  it('detects when a long-lived runtime no longer matches the disk build', () => {
+    expect(runtimeBuildSkew('1.0.0+abc123def456', '1.0.0+abc123def456')).toBeNull();
+    const skew = runtimeBuildSkew('1.0.0+abc123def456', '1.0.0+fff999eee888');
+    expect(skew).toEqual({
+      loaded: '1.0.0+abc123def456',
+      current: '1.0.0+fff999eee888',
+    });
+    expect(runtimeBuildSkewMessage(skew!)).toContain('OmniWeave MCP runtime is stale');
   });
 });
 
@@ -145,6 +170,7 @@ describe('build fingerprint — composition in the built artifact', () => {
     expect(buildId).toMatch(/^[0-9a-f]{12}$/);
     const mod = await import(pathToFileURL(versionMod).href);
     expect(mod.OmniWeaveBuildFingerprint).toBe(`${mod.OmniWeavePackageVersion}+${buildId}`);
+    expect(mod.readCurrentBuildFingerprint()).toBe(mod.OmniWeaveBuildFingerprint);
   });
 
   it('gen-build-id is deterministic — identical dist yields the same id (no false skew)', () => {
@@ -162,5 +188,6 @@ describe('build fingerprint — composition in the built artifact', () => {
     // preserving the pre-build-id handshake for non-built trees.
     expect(OmniWeavePackageVersion).toMatch(/^\d+\.\d+\.\d+/);
     expect(OmniWeaveBuildFingerprint).toBe(OmniWeavePackageVersion);
+    expect(readCurrentBuildFingerprint()).toBe(OmniWeavePackageVersion);
   });
 });

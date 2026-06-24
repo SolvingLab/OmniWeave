@@ -163,6 +163,15 @@ function withAdjacentConceptCompounds(tokens: string[], sourceTokens: string[] =
   return expanded;
 }
 
+const PRECEDING_PLAIN_NAMED_SEED_STOP_WORDS = new Set([
+  'bug', 'bugs', 'broken',
+  'crash', 'crashes', 'debug', 'debugging',
+  'error', 'errors', 'exception', 'exceptions',
+  'fail', 'fails', 'failed', 'failing', 'failure', 'failures',
+  'fix', 'fixes', 'fixed', 'fixing',
+  'internal', 'issue', 'issues', 'problem', 'problems',
+]);
+
 function extractExploreNameTokens(query: string, options: { includePrecedingPlainTokens?: boolean } = {}): string[] {
   const fileExt = /\.(?:java|kt|kts|ts|tsx|js|jsx|mjs|cjs|cs|py|go|rb|php|swift|rs|cpp|cc|cxx|c|h|hpp|scala|lua|dart|vue|svelte|astro)$/i;
   const tokens = [...new Set(
@@ -184,6 +193,7 @@ function extractExploreNameTokens(query: string, options: { includePrecedingPlai
     for (const index of specificIndexes) {
       let added = 0;
       for (let i = index - 1; i >= 0 && !isSpecific(tokens[i]!); i--) {
+        if (PRECEDING_PLAIN_NAMED_SEED_STOP_WORDS.has(tokens[i]!.toLowerCase())) continue;
         keep.add(i);
         added++;
         if (added >= 2) break;

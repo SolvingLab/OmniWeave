@@ -24,7 +24,7 @@ import { HOST_PPID_ENV } from '../extraction/wasm-runtime-flags';
 import { DaemonClientHello, DaemonHello, DAEMON_HELLO_PROTOCOL, MAX_HELLO_LINE_BYTES } from './daemon';
 import { supervisionLostReason } from './ppid-watchdog';
 import { treatStdinFailureAsShutdown } from './stdin-teardown';
-import { OmniWeaveBuildFingerprint } from './version';
+import { OmniWeaveBuildFingerprint, runtimeBuildSkew, runtimeBuildSkewMessage } from './version';
 import { SERVER_INFO, PROTOCOL_VERSION } from './session';
 import { SERVER_INSTRUCTIONS } from './server-instructions';
 import { getStaticTools } from './tools';
@@ -266,6 +266,17 @@ export async function runLocalHandshakeProxy(deps: LocalHandshakeDeps): Promise<
     try { engine?.stop(); } catch { /* ignore */ }
     process.exit(0);
   };
+  const rejectIfStaleRuntime = (id: unknown): boolean => {
+    const skew = runtimeBuildSkew();
+    if (!skew) return false;
+    const message = runtimeBuildSkewMessage(skew);
+    process.stderr.write(`[OmniWeave MCP] ${message}\n`);
+    if (id !== undefined) {
+      writeClient({ jsonrpc: '2.0', id, error: { code: -32603, message } });
+    }
+    setTimeout(shutdown, 0).unref?.();
+    return true;
+  };
   const ensureEngine = (): Promise<void> => {
     if (!engine) engine = deps.makeEngine();
     if (!engineReady) engineReady = engine.ensureInitialized(deps.root).catch(() => { /* degraded */ });
@@ -317,6 +328,7 @@ export async function runLocalHandshakeProxy(deps: LocalHandshakeDeps): Promise<
       stdinBuf = stdinBuf.slice(idx + 1);
       if (!line) continue;
       let msg: JsonRpc; try { msg = JSON.parse(line) as JsonRpc; } catch { routeToDaemon(line); continue; }
+      if (rejectIfStaleRuntime(msg.id)) continue;
       if (msg.method === 'initialize') {
         clientInitId = msg.id;
         const initParams = (msg.params ?? {}) as { clientInfo?: { name?: unknown; version?: unknown } };

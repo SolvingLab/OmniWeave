@@ -53,7 +53,12 @@ import {
   getDaemonPidPath,
   getDaemonSocketPath,
 } from './daemon-paths';
-import { OmniWeavePackageVersion, OmniWeaveBuildFingerprint } from './version';
+import {
+  OmniWeavePackageVersion,
+  OmniWeaveBuildFingerprint,
+  runtimeBuildSkew,
+  runtimeBuildSkewMessage,
+} from './version';
 
 /** Default idle linger after the last client disconnects. */
 const DEFAULT_IDLE_TIMEOUT_MS = 300_000;
@@ -256,6 +261,14 @@ export class Daemon {
   }
 
   private handleConnection(socket: net.Socket): void {
+    const skew = runtimeBuildSkew();
+    if (skew) {
+      process.stderr.write(`[OmniWeave daemon] ${runtimeBuildSkewMessage(skew)}\n`);
+      try { socket.destroy(); } catch { /* ignore */ }
+      void this.stop('stale build fingerprint');
+      return;
+    }
+
     // Hello first so the proxy can verify versions before piping any
     // application bytes. The proxy reads exactly one line, then forwards.
     const hello: DaemonHello = {

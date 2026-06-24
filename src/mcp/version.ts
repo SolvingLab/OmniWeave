@@ -19,7 +19,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-function readPackageVersion(): string {
+export function readPackageVersion(): string {
   try {
     const pkgPath = path.join(__dirname, '..', '..', 'package.json');
     const raw = fs.readFileSync(pkgPath, 'utf8');
@@ -60,7 +60,7 @@ export function parseBuildId(raw: string): string {
  * rendezvous (see {@link OmniWeaveBuildFingerprint}) would wave a stale daemon
  * through. The build id closes that hole.
  */
-function readBuildId(): string {
+export function readBuildId(): string {
   try {
     // `..` from dist/mcp/ → dist/.build-id (and from src/mcp/ → src/.build-id,
     // which never exists, so a src run degrades to version-only — correct: a
@@ -87,3 +87,27 @@ const buildId = readBuildId();
 export const OmniWeaveBuildFingerprint = buildId
   ? `${OmniWeavePackageVersion}+${buildId}`
   : OmniWeavePackageVersion;
+
+export interface RuntimeBuildSkew {
+  loaded: string;
+  current: string;
+}
+
+export function formatBuildFingerprint(version: string, buildId: string): string {
+  return buildId ? `${version}+${buildId}` : version;
+}
+
+export function readCurrentBuildFingerprint(): string {
+  return formatBuildFingerprint(readPackageVersion(), readBuildId());
+}
+
+export function runtimeBuildSkew(
+  loaded: string = OmniWeaveBuildFingerprint,
+  current: string = readCurrentBuildFingerprint(),
+): RuntimeBuildSkew | null {
+  return loaded === current ? null : { loaded, current };
+}
+
+export function runtimeBuildSkewMessage(skew: RuntimeBuildSkew): string {
+  return `OmniWeave MCP runtime is stale: running ${skew.loaded}, but current disk build is ${skew.current}. Restart the MCP server before trusting tool output.`;
+}

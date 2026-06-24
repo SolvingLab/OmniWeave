@@ -332,6 +332,17 @@ export function importSnapshot(): string {
 `
     );
     fs.writeFileSync(
+      path.join(firstPartySrc, 'errors.ts'),
+      `export function internal(): string {
+  return error();
+}
+
+export function error(): string {
+  return 'generic internal error';
+}
+`
+    );
+    fs.writeFileSync(
       path.join(firstPartyScip, 'importer.ts'),
       `export interface ImportScipResult {
   provenance: 'scip';
@@ -472,6 +483,20 @@ export function snapshotBuildExploreOutputCaller(): string {
     expect(text).toContain('src/context/ranking.ts');
     expect(text).not.toContain('site/src/lib/github.ts');
     expect(text).not.toContain('examples/helpers/dom.ts');
+  });
+
+  it('does not let narrative bug words become named source seeds', async () => {
+    const handler = new ToolHandler(cg);
+    const result = await handler.execute('omniweave_explore', {
+      query: 'buildExploreOutput internal error rankExploreCandidates',
+      maxFiles: 2,
+    });
+    const text = result.content.map((part) => part.text).join('\n');
+    const source = text.slice(text.indexOf('### Source Code'));
+
+    expect(source).toContain('#### src/mcp/tools.ts');
+    expect(source).toContain('#### src/context/ranking.ts');
+    expect(source).not.toContain('#### src/errors.ts');
   });
 
   it('keeps multi-term mechanism matches ahead of isolated ordinary-word hits', async () => {

@@ -17,7 +17,7 @@ import { JsonRpcRequest, JsonRpcNotification, JsonRpcTransport, ErrorCodes } fro
 import { MCPEngine } from './engine';
 import { tools } from './tools';
 import { SERVER_INSTRUCTIONS, SERVER_INSTRUCTIONS_UNINDEXED } from './server-instructions';
-import { OmniWeavePackageVersion } from './version';
+import { OmniWeavePackageVersion, runtimeBuildSkew, runtimeBuildSkewMessage } from './version';
 import { findNearestOmniWeaveRoot } from '../directory';
 import { getTelemetry, ClientInfo } from '../telemetry';
 
@@ -160,6 +160,16 @@ export class MCPSession {
     }
   }
 
+  private rejectIfStaleRuntime(request: JsonRpcRequest): boolean {
+    const skew = runtimeBuildSkew();
+    if (!skew) return false;
+    const message = runtimeBuildSkewMessage(skew);
+    process.stderr.write(`[OmniWeave MCP] ${message}\n`);
+    this.transport.sendError(request.id, ErrorCodes.InternalError, message);
+    setTimeout(() => this.stop(), 0).unref?.();
+    return true;
+  }
+
   private async handleInitialize(request: JsonRpcRequest): Promise<void> {
     const params = request.params as {
       rootUri?: string;
@@ -218,6 +228,7 @@ export class MCPSession {
   }
 
   private async handleToolsList(request: JsonRpcRequest): Promise<void> {
+    if (this.rejectIfStaleRuntime(request)) return;
     await this.retryInitIfNeeded();
     // An unindexed workspace serves an EMPTY tool list: absence is the one
     // signal an agent can't misread. Listing 8 tools that all fail wastes the
@@ -232,6 +243,7 @@ export class MCPSession {
   }
 
   private async handleToolsCall(request: JsonRpcRequest): Promise<void> {
+    if (this.rejectIfStaleRuntime(request)) return;
     const params = request.params as {
       name: string;
       arguments?: Record<string, unknown>;
