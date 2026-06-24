@@ -223,14 +223,41 @@ describe('omniweave_explore output respects the adaptive budget', () => {
     expect((text.match(/^#### /gm) ?? []).length).toBeLessThanOrEqual(getExploreOutputBudget(6).defaultMaxFiles);
   });
 
-  it('still includes the Relationships section — it is the cheapest structural signal', async () => {
-    const result = await handler.execute('omniweave_explore', { query: 'Session method helper' });
-    const text = result.content?.[0]?.text ?? '';
-    // Either there are relationships, or no edges were significant — both are fine.
-    // We just want to confirm we did not accidentally gate it off.
-    const hasRelationships = text.includes('### Relationships');
-    const sourceFollowsHeader = text.indexOf('### Source Code') > 0;
-    expect(hasRelationships || sourceFollowsHeader).toBe(true);
+  it('includes the current supporting-relationships section for medium projects', async () => {
+    const mediumDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omniweave-explore-budget-medium-'));
+    let mediumCg: OmniWeave | undefined;
+    try {
+      const srcDir = path.join(mediumDir, 'src');
+      const noiseDir = path.join(mediumDir, 'noise');
+      fs.mkdirSync(srcDir, { recursive: true });
+      fs.mkdirSync(noiseDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(srcDir, 'flow.ts'),
+        'export function alpha(): string { return beta(); }\nexport function beta(): string { return "ok"; }\n',
+      );
+      for (let i = 0; i < 505; i++) {
+        fs.writeFileSync(path.join(noiseDir, `noise${i}.ts`), `export const noise${i} = ${i};\n`);
+      }
+
+      mediumCg = OmniWeave.initSync(mediumDir, {
+        config: { include: ['**/*.ts'], exclude: [] },
+      });
+      await mediumCg.indexAll();
+      const mediumHandler = new ToolHandler(mediumCg);
+      const result = await mediumHandler.execute('omniweave_explore', { query: 'alpha beta', maxFiles: 4 });
+      const text = result.content?.[0]?.text ?? '';
+
+      const sourceIndex = text.indexOf('### Source Code');
+      const relationshipsIndex = text.indexOf('### Supporting relationships (not necessarily the call path)');
+      expect(sourceIndex).toBeGreaterThan(-1);
+      expect(relationshipsIndex).toBeGreaterThan(-1);
+      expect(sourceIndex).toBeLessThan(relationshipsIndex);
+      expect(text).not.toContain('### Relationships');
+      expect(text).toContain('alpha → beta');
+    } finally {
+      mediumCg?.destroy();
+      fs.rmSync(mediumDir, { recursive: true, force: true });
+    }
   });
 
   it('prefixes source lines with line numbers by default (cat -n style)', async () => {
