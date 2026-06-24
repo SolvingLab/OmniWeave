@@ -476,8 +476,17 @@ export class OmniWeave {
     return this.indexMutex.withLock(async () => {
       try {
         this.fileLock.acquire();
-      } catch {
-        return { filesChecked: 0, filesAdded: 0, filesModified: 0, filesRemoved: 0, nodesUpdated: 0, durationMs: 0 };
+      } catch (err) {
+        return {
+          filesChecked: 0,
+          filesAdded: 0,
+          filesModified: 0,
+          filesRemoved: 0,
+          nodesUpdated: 0,
+          durationMs: 0,
+          lockUnavailable: true,
+          lockMessage: err instanceof Error ? err.message : String(err),
+        };
       }
       try {
         const result = await this.orchestrator.sync(options.onProgress);
@@ -576,12 +585,9 @@ export class OmniWeave {
       this.projectRoot,
       async () => {
         const result = await this.sync();
-        // sync() returns this exact zero-shape iff it failed to acquire the
-        // file lock (a real empty sync always has filesChecked > 0 because
-        // scanDirectory ran). Surface that to the watcher as a typed error
-        // so it keeps pendingFiles + reschedules instead of clearing them
-        // (#449).
-        if (result.filesChecked === 0 && result.durationMs === 0) {
+        // Surface lock contention to the watcher as a typed error so it keeps
+        // pendingFiles + reschedules instead of clearing them (#449).
+        if (result.lockUnavailable) {
           throw new LockUnavailableError();
         }
         const filesChanged = result.filesAdded + result.filesModified + result.filesRemoved;

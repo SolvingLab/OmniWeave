@@ -86,6 +86,8 @@ export interface SyncResult {
   nodesUpdated: number;
   durationMs: number;
   changedFilePaths?: string[];
+  lockUnavailable?: boolean;
+  lockMessage?: string;
 }
 
 /**

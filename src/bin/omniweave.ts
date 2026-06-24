@@ -822,8 +822,9 @@ program
       const cg = await OmniWeave.open(projectPath);
 
       if (options.quiet) {
-        await cg.sync();
+        const result = await cg.sync();
         cg.destroy();
+        if (result.lockUnavailable) process.exit(1);
         return;
       }
 
@@ -837,6 +838,13 @@ program
       });
 
       await progress.stop();
+
+      if (result.lockUnavailable) {
+        clack.log.warn(`Sync skipped: ${result.lockMessage ?? 'OmniWeave database is locked by another process'}`);
+        clack.outro('Not synced');
+        cg.destroy();
+        process.exit(1);
+      }
 
       const totalChanges = result.filesAdded + result.filesModified + result.filesRemoved;
 

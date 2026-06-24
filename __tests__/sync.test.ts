@@ -12,6 +12,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { execFileSync } from 'child_process';
 import OmniWeave from '../src/index';
+import { FileLock } from '../src/utils';
 
 describe('Sync Module', () => {
   describe('Sync Functionality', () => {
@@ -148,6 +149,22 @@ describe('Sync Module', () => {
         expect(result.filesModified).toBe(0);
         expect(result.filesRemoved).toBe(0);
         expect(result.filesChecked).toBeGreaterThan(0);
+      });
+
+      it('reports lock contention instead of a clean zero-change sync', async () => {
+        const originalAcquire = FileLock.prototype.acquire;
+        FileLock.prototype.acquire = function acquireLocked(): void {
+          throw new Error('locked by test process');
+        };
+        try {
+          const result = await cg.sync();
+
+          expect(result.lockUnavailable).toBe(true);
+          expect(result.lockMessage).toContain('locked by test process');
+          expect(result.filesChecked).toBe(0);
+        } finally {
+          FileLock.prototype.acquire = originalAcquire;
+        }
       });
 
       it('should not repeatedly report oversized source files as added', async () => {
@@ -333,9 +350,9 @@ describe('Sync Module', () => {
     });
 
     it('should skip files with unsupported extensions', async () => {
-      // A .txt file has no supported grammar, so sync must not index it.
+      // A .bin file has no supported grammar and is not content-search text.
       fs.writeFileSync(
-        path.join(testDir, 'src', 'notes.txt'),
+        path.join(testDir, 'src', 'notes.bin'),
         `just some notes`
       );
 
