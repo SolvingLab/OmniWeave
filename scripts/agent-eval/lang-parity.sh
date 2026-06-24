@@ -47,7 +47,17 @@ for d in "${REPOS[@]}"; do
       const nodes=d.prepare("select count(*) c from nodes").get().c;
       const edges=d.prepare("select count(*) c from edges").get().c;
       const ek={}; for(const r of d.prepare("select kind,count(*) c from edges group by kind").all()) ek[r.kind]=r.c;
-      d.close(); return {nodes,edges,ek};
+      // FIRST-PARTY edge count: exclude edges touching a vendored/minified bundle
+      // (e.g. asciinema-player.min.js). Such files are not the analysed code; both
+      // tools mishandle them differently (codegraph name-resolves single-letter
+      // minified calls to coincidental same-name fns — false positives OmniWeave
+      // refuses), so a fair code-analysis parity excludes them. See
+      // eval-results/lang-parity-2026-06-24/. JS-side filter so no SQL string quotes
+      // collide with this -e script wrapper.
+      const NOISE=/[.]min[.]js$|[.]bundle[.]js$|[.]min[.]css$|[/]vendor[/]|[/]node_modules[/]/;
+      const fpRows=d.prepare("select s.file_path sf, t.file_path tf from edges e left join nodes s on s.id=e.source left join nodes t on t.id=e.target").all();
+      const edges_fp=fpRows.filter(r=>!NOISE.test(r.sf||"")&&!NOISE.test(r.tf||"")).length;
+      d.close(); return {nodes,edges,edges_fp,ek};
     }catch(e){return {err:e.message}} }
     const ow=g(dir+"/.omniweave/omniweave.db"), cg=g(dir+"/.codegraph/codegraph.db");
     const STD=["contains","calls","imports","exports","extends","implements","references","type_of","returns","instantiates","overrides","decorates"];
@@ -57,7 +67,7 @@ for d in "${REPOS[@]}"; do
     const owBridge=BRIDGE.reduce((a,k)=>a+(ow.ek?.[k]||0),0);
     const cgBridge=BRIDGE.reduce((a,k)=>a+(cg.ek?.[k]||0),0);
     const owOverrides=ow.ek?.overrides||0, cgOverrides=cg.ek?.overrides||0;
-    console.log(JSON.stringify({name,ow_nodes:ow.nodes,cg_nodes:cg.nodes,ow_edges:ow.edges,cg_edges:cg.edges,std_calls_diff:Math.abs((ow.ek?.calls||0)-(cg.ek?.calls||0)),std_total_diff:stdDiff,ow_bridge:owBridge,cg_bridge:cgBridge,ow_overrides:owOverrides,cg_overrides:cgOverrides,ow_err:ow.err||null,cg_err:cg.err||null}));
+    console.log(JSON.stringify({name,ow_nodes:ow.nodes,cg_nodes:cg.nodes,ow_edges:ow.edges,cg_edges:cg.edges,ow_edges_fp:ow.edges_fp,cg_edges_fp:cg.edges_fp,fp_diff:(ow.edges_fp||0)-(cg.edges_fp||0),std_calls_diff:Math.abs((ow.ek?.calls||0)-(cg.ek?.calls||0)),std_total_diff:stdDiff,ow_bridge:owBridge,cg_bridge:cgBridge,ow_overrides:owOverrides,cg_overrides:cgOverrides,ow_err:ow.err||null,cg_err:cg.err||null}));
   ' "$d" "$name" | tee -a "$OUT/parity.jsonl"
 done
 echo "PARITY_DONE → $OUT/parity.jsonl"
