@@ -577,94 +577,6 @@ function getGitVisibleFiles(rootDir: string): Set<string> | null {
 }
 
 /**
- * Result of git-based change detection.
- * Returns null when git is unavailable (non-git project or command failure),
- * signaling the caller to fall back to full filesystem scan.
- */
-interface GitChanges {
-  modified: string[];  // M, MM, AM — files to re-hash + re-index
-  added: string[];     // ?? — new untracked files to index
-  deleted: string[];   // D — files to remove from DB
-}
-
-/**
- * Use `git status` to detect changed files instead of scanning every file.
- * Returns null on failure so callers fall back to full scan.
- *
- * Recurses into embedded repos — both the untracked kind (#193: the parent's
- * status collapses them to an opaque `?? subdir/` entry) and the gitignored
- * kind (#514: they never appear in the parent's status at all) — running
- * `git status` inside each, so changes in a multi-repo workspace sync without
- * a full rescan. Deleting an ENTIRE embedded repo dir is the one case this
- * cannot see (the child status that would report the deletions is gone with
- * it); a full `omniweave index` reconciles that.
- */
-function getGitChangedFiles(rootDir: string): GitChanges | null {
-  try {
-    const changes: GitChanges = { modified: [], added: [], deleted: [] };
-    const overrides = loadExtensionOverrides(rootDir);
-    collectGitStatus(rootDir, '', changes, overrides);
-    return changes;
-  } catch {
-    return null;
-  }
-}
-
-function collectGitStatus(repoDir: string, prefix: string, out: GitChanges, overrides?: Record<string, Language>): void {
-  const output = execFileSync(
-    'git',
-    ['status', '--porcelain', '--no-renames'],
-    { cwd: repoDir, encoding: 'utf-8', timeout: 10000, maxBuffer: 50 * 1024 * 1024, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true }
-  );
-
-  const ig = buildDefaultIgnore(repoDir);
-  const untrackedDirs: string[] = [];
-  for (const line of output.split('\n')) {
-    if (line.length < 4) continue; // Minimum: "XY file"
-
-    const statusCode = line.substring(0, 2);
-    const rel = normalizePath(line.substring(3));
-
-    // Untracked directory entries (trailing slash) may hide an embedded repo —
-    // collect for the recursion below instead of treating as a file.
-    if (statusCode === '??' && rel.endsWith('/')) {
-      untrackedDirs.push(rel);
-      continue;
-    }
-
-    const filePath = normalizePath(prefix + rel);
-    if (!isSourceFile(filePath, overrides)) continue;
-
-    if (statusCode.includes('D')) {
-      if (!fs.existsSync(path.join(repoDir, rel))) {
-        out.deleted.push(filePath);
-      }
-      continue;
-    }
-
-    if (ig.ignores(rel)) continue;
-
-    if (statusCode === '??') {
-      out.added.push(filePath);
-    } else {
-      // M, MM, AM, A (staged), etc. — treat as modified
-      out.modified.push(filePath);
-    }
-  }
-
-  // Recurse embedded repos found under untracked dirs (at the dir itself or
-  // nested deeper) and under this repo's gitignored dirs.
-  for (const rel of untrackedDirs) {
-    for (const repoRel of findNestedGitRepos(path.join(repoDir, rel), rel)) {
-      collectGitStatus(path.join(repoDir, repoRel), prefix + repoRel, out, overrides);
-    }
-  }
-  for (const rel of findIgnoredEmbeddedRepos(repoDir)) {
-    collectGitStatus(path.join(repoDir, rel), prefix + rel, out, overrides);
-  }
-}
-
-/**
  * Recursively scan a directory for source files.
  *
  * In git repos, uses `git ls-files` (inherently respects .gitignore at all
@@ -1827,54 +1739,12 @@ export class ExtractionOrchestrator {
 
   /**
    * Get files that have changed since last index.
-   * Uses git status as a fast path when available, falling back to full scan.
+   * Mirrors sync()'s filesystem-backed reconcile so status/stale checks cannot
+   * diverge from the files a real sync would add, modify, or remove.
    */
   getChangedFiles(): { added: string[]; modified: string[]; removed: string[] } {
-    const gitChanges = getGitChangedFiles(this.rootDir);
-
-    if (gitChanges) {
-      // === Git fast path ===
-      const added: string[] = [];
-      const modified: string[] = [];
-      const removed: string[] = [];
-
-      // Deleted files — only report if tracked in DB
-      for (const filePath of gitChanges.deleted) {
-        const tracked = this.queries.getFileByPath(filePath);
-        if (tracked) {
-          removed.push(filePath);
-        }
-      }
-
-      // Modified + added files — read + hash, compare with DB. Untracked (`??`)
-      // files stay untracked in git even after indexing, so they must be
-      // hash-compared like modified files instead of always counting as added —
-      // otherwise status reports them as pending forever. (See issue #206.)
-      for (const filePath of [...gitChanges.modified, ...gitChanges.added]) {
-        const fullPath = path.join(this.rootDir, filePath);
-        let content: string;
-        try {
-          content = fs.readFileSync(fullPath, 'utf-8');
-        } catch (error) {
-          logDebug('Skipping unreadable file while detecting changes', { filePath, error: String(error) });
-          continue;
-        }
-
-        const contentHash = hashContent(content);
-        const tracked = this.queries.getFileByPath(filePath);
-
-        if (!tracked) {
-          added.push(filePath);
-        } else if (tracked.contentHash !== contentHash) {
-          modified.push(filePath);
-        }
-      }
-
-      return { added, modified, removed };
-    }
-
-    // === Fallback: full scan (non-git project or git failure) ===
-    const currentFiles = new Set(scanDirectory(this.rootDir));
+    const currentFiles = scanDirectory(this.rootDir);
+    const currentSet = new Set(currentFiles);
     const trackedFiles = this.queries.getAllFiles();
 
     // Build Map for O(1) lookups
@@ -1889,7 +1759,7 @@ export class ExtractionOrchestrator {
 
     // Find removed files
     for (const tracked of trackedFiles) {
-      if (!currentFiles.has(tracked.path)) {
+      if (!currentSet.has(tracked.path) || !fs.existsSync(path.join(this.rootDir, tracked.path))) {
         removed.push(tracked.path);
       }
     }
@@ -1897,6 +1767,20 @@ export class ExtractionOrchestrator {
     // Find added and modified files
     for (const filePath of currentFiles) {
       const fullPath = path.join(this.rootDir, filePath);
+      const tracked = trackedMap.get(filePath);
+
+      if (tracked) {
+        try {
+          const stat = fs.statSync(fullPath);
+          if (stat.size === tracked.size && Math.floor(stat.mtimeMs) === Math.floor(tracked.modifiedAt)) {
+            continue;
+          }
+        } catch (error) {
+          logDebug('Skipping unstattable file while detecting changes', { filePath, error: String(error) });
+          continue;
+        }
+      }
+
       let content: string;
       try {
         content = fs.readFileSync(fullPath, 'utf-8');
@@ -1906,7 +1790,6 @@ export class ExtractionOrchestrator {
       }
 
       const contentHash = hashContent(content);
-      const tracked = trackedMap.get(filePath);
 
       if (!tracked) {
         added.push(filePath);

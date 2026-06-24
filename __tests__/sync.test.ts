@@ -239,6 +239,27 @@ describe('Sync Module', () => {
       expect(nodes.length).toBeGreaterThan(0);
     });
 
+    it('should detect files in gitignored embedded repos even when root git status is clean', () => {
+      fs.writeFileSync(path.join(testDir, '.gitignore'), '.omniweave/\nresearch/\n');
+      git('add', '.gitignore');
+      git('commit', '-m', 'ignore research');
+
+      const embedded = path.join(testDir, 'research', 'repos', 'tool');
+      fs.mkdirSync(embedded, { recursive: true });
+      execFileSync('git', ['init'], { cwd: embedded, stdio: 'pipe' });
+      execFileSync('git', ['config', 'user.email', 'test@test.com'], { cwd: embedded, stdio: 'pipe' });
+      execFileSync('git', ['config', 'user.name', 'Test'], { cwd: embedded, stdio: 'pipe' });
+      fs.writeFileSync(path.join(embedded, 'index.ts'), `export function embeddedTool() { return 1; }`);
+      execFileSync('git', ['add', '-A'], { cwd: embedded, stdio: 'pipe' });
+      execFileSync('git', ['commit', '-m', 'initial'], { cwd: embedded, stdio: 'pipe' });
+
+      const rootStatus = execFileSync('git', ['status', '--short'], { cwd: testDir, encoding: 'utf-8' });
+      expect(rootStatus).toBe('');
+
+      const changes = cg.getChangedFiles();
+      expect(changes.added).toContain('research/repos/tool/index.ts');
+    });
+
     it('should stop reporting untracked files once they are indexed (issue #206)', async () => {
       // Untracked files stay `??` in git status even after omniweave indexes
       // them. Change detection must compare them against the DB by hash, not
