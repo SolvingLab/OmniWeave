@@ -2170,7 +2170,7 @@ function sourceLine(source: string, line: number): string {
 
 function lineMatchesObjectMember(source: string, line: number, memberName: string): boolean {
   const escaped = memberName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`(?:^\\s*|[,{]\\s*)['"\`]?${escaped}['"\`]?\\s*(?:[:(]|,)`).test(sourceLine(source, line));
+  return new RegExp(`(?:^\\s*|[,{]\\s*)(?:async\\s+)?['"\`]?${escaped}['"\`]?\\s*(?:[:(]|,)`).test(sourceLine(source, line));
 }
 
 function defineStoreLineRanges(source: string): Array<{ start: number; end: number }> {

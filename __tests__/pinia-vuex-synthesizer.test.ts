@@ -119,6 +119,67 @@ export async function submitLogin() {
     cg.close();
   });
 
+  it('bridges Pinia options-form async method actions without selecting helpers', async () => {
+    fs.mkdirSync(path.join(dir, 'stores'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'views'), { recursive: true });
+
+    fs.writeFileSync(
+      path.join(dir, 'stores', 'article.ts'),
+      `import { defineStore } from 'pinia';
+
+export async function fetchArticle(slug: string) {
+  return { slug };
+}
+
+export const useArticleStore = defineStore('article', {
+  actions: {
+    async fetchArticle(slug: string) {
+      return { slug };
+    },
+  },
+});
+`
+    );
+    fs.writeFileSync(
+      path.join(dir, 'views', 'article.ts'),
+      `import { useArticleStore } from '../stores/article';
+
+export async function loadArticle(slug: string) {
+  const articleStore = useArticleStore();
+  await articleStore.fetchArticle(slug);
+}
+`
+    );
+
+    const cg = await OmniWeave.init(dir, { silent: true });
+    await cg.indexAll();
+
+    const fns = cg.getNodesByKind('function');
+    const loadArticle = fns.find((n) => n.name === 'loadArticle');
+    const targets = fns.filter((n) => n.name === 'fetchArticle' && n.filePath.endsWith('stores/article.ts'));
+    const action = targets.find((n) => sourceLine(dir, n.filePath, n.startLine).includes('async fetchArticle'));
+    const helper = targets.find((n) => sourceLine(dir, n.filePath, n.startLine).includes('function fetchArticle'));
+
+    expect(loadArticle).toBeDefined();
+    expect(action).toBeDefined();
+    expect(helper).toBeDefined();
+
+    const bridge = cg
+      .getOutgoingEdges(loadArticle!.id)
+      .find(
+        (e) =>
+          e.target === action!.id &&
+          e.kind === 'calls' &&
+          e.provenance === 'heuristic' &&
+          (e.metadata as { synthesizedBy?: string } | undefined)?.synthesizedBy ===
+            'pinia-store'
+      );
+    expect(bridge).toBeDefined();
+    expect(bridge!.target).not.toBe(helper!.id);
+
+    cg.close();
+  });
+
   it('bridges Vuex string keys through $store and local store commits, but skips unrelated bare dispatch', async () => {
     fs.mkdirSync(path.join(dir, 'store', 'modules'), { recursive: true });
     fs.mkdirSync(path.join(dir, 'views'), { recursive: true });
