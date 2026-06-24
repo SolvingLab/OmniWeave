@@ -273,4 +273,64 @@ class PlaybackController {
     expect((edge!.metadata as { confidence?: number }).confidence).toBe(0.8);
     expect((edge!.metadata as { via?: string }).via).toBe('PlaybackStarted');
   });
+
+  it('bridges an RTK createAsyncThunk dispatch to a dispatched thunk constant (TS)', async () => {
+    write(
+      'src/users.ts',
+      `import { createAsyncThunk } from '@reduxjs/toolkit';
+
+export const fetchUser = createAsyncThunk('users/fetch', async (id: number) => {
+  return { id };
+});
+
+export const bootstrapUser = createAsyncThunk('users/bootstrap', async (id: number, { dispatch }) => {
+  await dispatch(fetchUser(id));
+});
+`
+    );
+
+    const cg = await OmniWeave.init(dir, { silent: true });
+    await cg.indexAll();
+
+    const constants = cg.getNodesByKind('constant');
+    const bootstrap = constants.find((n) => n.name === 'bootstrapUser');
+    const fetchUser = constants.find((n) => n.name === 'fetchUser');
+    expect(bootstrap).toBeDefined();
+    expect(fetchUser).toBeDefined();
+
+    const edge = bridge(cg.getOutgoingEdges(bootstrap!.id), fetchUser!.id, 'redux-thunk');
+    expect(edge).toBeDefined();
+    expect((edge!.metadata as { confidence?: number }).confidence).toBe(0.75);
+    expect((edge!.metadata as { via?: string }).via).toBe('fetchUser');
+  });
+
+  it('does not bridge RTK dispatch to a same-named ordinary service function', async () => {
+    write(
+      'src/api.ts',
+      `export function fetchUser(id: number) {
+  return Promise.resolve({ id });
+}
+`
+    );
+    write(
+      'src/users.ts',
+      `import { createAsyncThunk } from '@reduxjs/toolkit';
+import { fetchUser } from './api';
+
+export const bootstrapUser = createAsyncThunk('users/bootstrap', async (id: number, { dispatch }) => {
+  await dispatch(fetchUser(id));
+});
+`
+    );
+
+    const cg = await OmniWeave.init(dir, { silent: true });
+    await cg.indexAll();
+
+    const bootstrap = cg.getNodesByKind('constant').find((n) => n.name === 'bootstrapUser');
+    const service = cg.getNodesByKind('function').find((n) => n.name === 'fetchUser');
+    expect(bootstrap).toBeDefined();
+    expect(service).toBeDefined();
+
+    expect(bridge(cg.getOutgoingEdges(bootstrap!.id), service!.id, 'redux-thunk')).toBeUndefined();
+  });
 });

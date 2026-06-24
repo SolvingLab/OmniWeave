@@ -3227,6 +3227,60 @@ function laravelEventEdges(ctx: ResolutionContext): Edge[] {
   return edges;
 }
 
+// ── Redux-thunk dispatch chain (TS/JS) ────────────────────────────────────────
+// A `createAsyncThunk` thunk dispatches OTHER thunks/action-creators inside its body
+// (`dispatch(fetchUser(1))`), a runtime call static extraction can't follow. Bridge the
+// thunk constant → each dispatched thunk/action-creator constant. Both sides are gated on
+// RTK factory initializers captured in the constant `signature`, so a same-named service
+// function is never bridged.
+const THUNK_DECL_RE = /create(?:Async)?Thunk/;
+const THUNK_TARGET_DECL_RE = /create(?:Async)?Thunk|createAction/;
+const THUNK_DISPATCH_RE = /\bdispatch\s*\(\s*([A-Za-z_]\w*)\s*[(),]/g;
+const THUNK_FANOUT_CAP = 24;
+
+function reduxThunkEdges(queries: QueryBuilder, ctx: ResolutionContext): Edge[] {
+  const edges: Edge[] = [];
+  const seen = new Set<string>();
+  for (const node of queries.iterateNodesByKind('constant')) {
+    // Cheap gate: the initializer (captured in `signature`) must be a create(Async)Thunk call —
+    // avoids reading every constant's body on a large repo.
+    if (!node.signature || !THUNK_DECL_RE.test(node.signature)) continue;
+    const content = ctx.readFile(node.filePath);
+    const src = content && sliceLines(content, node.startLine, node.endLine);
+    if (!src) continue;
+    // Thunks are TS/JS-family (same // and /* */ comment syntax); map to a CommentLang.
+    const safe = stripCommentsForRegex(src, node.language === 'javascript' || node.language === 'jsx' ? 'javascript' : 'typescript');
+    THUNK_DISPATCH_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    let added = 0;
+    while ((m = THUNK_DISPATCH_RE.exec(safe)) && added < THUNK_FANOUT_CAP) {
+      const name = m[1]!;
+      if (name === node.name) continue; // self-dispatch (recursive thunk) — skip
+      const targets = ctx
+        .getNodesByName(name)
+        .filter((n) => n.kind === 'constant' && !!n.signature && THUNK_TARGET_DECL_RE.test(n.signature));
+      const target =
+        targets.find((n) => n.filePath === node.filePath) ??
+        (targets.length === 1 ? targets[0] : null);
+      if (!target || target.id === node.id) continue;
+      const key = `${node.id}>${target.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const line = node.startLine + safe.slice(0, m.index).split('\n').length - 1;
+      edges.push({
+        source: node.id,
+        target: target.id,
+        kind: 'calls',
+        line,
+        provenance: 'heuristic',
+        metadata: { synthesizedBy: 'redux-thunk', via: name, confidence: 0.75, registeredAt: `${node.filePath}:${line}` },
+      });
+      added++;
+    }
+  }
+  return edges;
+}
+
 export function synthesizeCallbackEdges(queries: QueryBuilder, ctx: ResolutionContext): number {
   // Cross-file Go method→type `contains` edges must be synthesized AND persisted
   // FIRST: a method declared in a different file from its receiver type is
@@ -3277,6 +3331,7 @@ export function synthesizeCallbackEdges(queries: QueryBuilder, ctx: ResolutionCo
   const mediatrEdges = mediatrDispatchEdges(ctx);
   const sidekiqEdges = sidekiqDispatchEdges(ctx);
   const laravelEdges = laravelEventEdges(ctx);
+  const reduxThunk = reduxThunkEdges(queries, ctx);
   const workflowEdges = workflowCrossLangEdges(queries, ctx);
   const generalCrossLang = generalCrossLangEdges(ctx);
 
@@ -3311,6 +3366,7 @@ export function synthesizeCallbackEdges(queries: QueryBuilder, ctx: ResolutionCo
     ...mediatrEdges,
     ...sidekiqEdges,
     ...laravelEdges,
+    ...reduxThunk,
     ...workflowEdges,
     ...generalCrossLang,
   ]) {
