@@ -2869,16 +2869,26 @@ function javaPackageName(content: string): string | null {
   return /^\s*package\s+([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*;/m.exec(content)?.[1] ?? null;
 }
 
-function javaImports(content: string): Map<string, string> {
-  const out = new Map<string, string>();
-  const re = /^\s*import\s+(?:static\s+)?([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*;/gm;
+interface JavaImports {
+  explicit: Map<string, string>;
+  wildcardPackages: Set<string>;
+}
+
+function javaImports(content: string): JavaImports {
+  const explicit = new Map<string, string>();
+  const wildcardPackages = new Set<string>();
+  const re = /^\s*import\s+(static\s+)?([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*(?:\.\*)?)\s*;/gm;
   let m: RegExpExecArray | null;
   while ((m = re.exec(content))) {
-    const fq = m[1]!;
-    if (fq.endsWith('.*')) continue;
-    out.set(fq.split('.').pop()!, fq);
+    if (m[1]) continue;
+    const fq = m[2]!;
+    if (fq.endsWith('.*')) {
+      wildcardPackages.add(fq.slice(0, -2));
+    } else {
+      explicit.set(fq.split('.').pop()!, fq);
+    }
   }
-  return out;
+  return { explicit, wildcardPackages };
 }
 
 function buildJavaTypePackages(ctx: ResolutionContext): Map<string, Set<string>> {
@@ -2897,16 +2907,18 @@ function buildJavaTypePackages(ctx: ResolutionContext): Map<string, Set<string>>
 function javaTypeKey(
   type: string,
   filePackage: string | null,
-  imports: Map<string, string>,
+  imports: JavaImports,
   knownTypes: Map<string, Set<string>>
 ): string | null {
   if (type.includes('.')) return type;
-  const imported = imports.get(type);
+  const imported = imports.explicit.get(type);
   if (imported) return imported;
   const packages = knownTypes.get(type);
   if (!packages || packages.size === 0) return type;
   const pkg = filePackage ?? '';
   if (packages.has(pkg)) return pkg ? `${pkg}.${type}` : type;
+  const wildcardMatches = [...imports.wildcardPackages].filter((candidate) => packages.has(candidate));
+  if (wildcardMatches.length === 1) return `${wildcardMatches[0]}.${type}`;
   return null;
 }
 
@@ -3052,15 +3064,24 @@ function csharpNamespaceName(content: string): string | null {
   return /^\s*namespace\s+([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*[;{]/m.exec(content)?.[1] ?? null;
 }
 
-function csharpImports(content: string): Map<string, string> {
-  const out = new Map<string, string>();
-  const re = /^\s*using\s+(?:[A-Za-z_]\w*\s*=\s*)?([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*;/gm;
+interface CsharpImports {
+  aliases: Map<string, string>;
+  namespaces: Set<string>;
+}
+
+function csharpImports(content: string): CsharpImports {
+  const aliases = new Map<string, string>();
+  const namespaces = new Set<string>();
+  const re = /^\s*using\s+(?:(?:([A-Za-z_]\w*)\s*=\s*)?([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)|static\s+[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*;/gm;
   let m: RegExpExecArray | null;
   while ((m = re.exec(content))) {
-    const fq = m[1]!;
-    out.set(fq.split('.').pop()!, fq);
+    const alias = m[1];
+    const fq = m[2];
+    if (!fq) continue;
+    if (alias) aliases.set(alias, fq);
+    else namespaces.add(fq);
   }
-  return out;
+  return { aliases, namespaces };
 }
 
 function buildCsharpTypeNamespaces(ctx: ResolutionContext): Map<string, Set<string>> {
@@ -3079,16 +3100,18 @@ function buildCsharpTypeNamespaces(ctx: ResolutionContext): Map<string, Set<stri
 function csharpTypeKey(
   type: string,
   fileNamespace: string | null,
-  imports: Map<string, string>,
+  imports: CsharpImports,
   knownTypes: Map<string, Set<string>>
 ): string | null {
   if (type.includes('.')) return type;
-  const imported = imports.get(type);
+  const imported = imports.aliases.get(type);
   if (imported) return imported;
   const namespaces = knownTypes.get(type);
   if (!namespaces || namespaces.size === 0) return type;
   const ns = fileNamespace ?? '';
   if (namespaces.has(ns)) return ns ? `${ns}.${type}` : type;
+  const importedNamespaces = [...imports.namespaces].filter((candidate) => namespaces.has(candidate));
+  if (importedNamespaces.length === 1) return `${importedNamespaces[0]}.${type}`;
   return null;
 }
 

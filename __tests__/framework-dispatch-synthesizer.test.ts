@@ -141,6 +141,49 @@ public class EmailListener {
     expect((edge!.metadata as { via?: string }).via).toBe('OrderPlaced');
   });
 
+  it('bridges Spring events through a unique Java wildcard import', async () => {
+    write(
+      'src/shop/events/OrderPlaced.java',
+      `package shop.events;
+public class OrderPlaced {}
+`
+    );
+    write(
+      'src/shop/listeners/EmailListener.java',
+      `package shop.listeners;
+import org.springframework.context.event.EventListener;
+import shop.events.*;
+public class EmailListener {
+    @EventListener
+    public void onOrderPlaced(OrderPlaced event) {}
+}
+`
+    );
+    write(
+      'src/shop/service/OrderService.java',
+      `package shop.service;
+import shop.events.*;
+public class OrderService {
+    public void placeOrder() {
+        publisher.publishEvent(new OrderPlaced());
+    }
+}
+`
+    );
+
+    const cg = await OmniWeave.init(dir, { silent: true });
+    await cg.indexAll();
+
+    const methods = cg.getNodesByKind('method');
+    const placeOrder = methods.find((n) => n.name === 'placeOrder');
+    const listener = methods.find((n) => n.name === 'onOrderPlaced');
+    expect(placeOrder).toBeDefined();
+    expect(listener).toBeDefined();
+
+    const edge = bridge(cg.getOutgoingEdges(placeOrder!.id), listener!.id, 'spring-event');
+    expect(edge).toBeDefined();
+  });
+
   it('bridges a MediatR _mediator.Send(command) to the IRequestHandler Handle (C#)', async () => {
     write(
       'src/CancelOrderCommand.cs',
@@ -193,6 +236,55 @@ namespace Shop {
     expect(edge).toBeDefined();
     expect((edge!.metadata as { confidence?: number }).confidence).toBe(0.8);
     expect((edge!.metadata as { via?: string }).via).toBe('CancelOrderCommand');
+  });
+
+  it('bridges MediatR dispatch through a unique C# namespace using', async () => {
+    write(
+      'src/Commands/CancelOrderCommand.cs',
+      `namespace Shop.Commands {
+    public class CancelOrderCommand {}
+}
+`
+    );
+    write(
+      'src/Handlers/CancelOrderCommandHandler.cs',
+      `using MediatR;
+using Shop.Commands;
+namespace Shop.Handlers {
+    public class CancelOrderCommandHandler : IRequestHandler<CancelOrderCommand, bool> {
+        public Task<bool> Handle(CancelOrderCommand request, CancellationToken ct) {
+            return Task.FromResult(true);
+        }
+    }
+}
+`
+    );
+    write(
+      'src/OrdersController.cs',
+      `using Shop.Commands;
+namespace Shop.Api {
+    public class OrdersController {
+        private readonly IMediator _mediator;
+        public Task Cancel() {
+            var command = new CancelOrderCommand();
+            return _mediator.Send(command);
+        }
+    }
+}
+`
+    );
+
+    const cg = await OmniWeave.init(dir, { silent: true });
+    await cg.indexAll();
+
+    const methods = cg.getNodesByKind('method');
+    const cancel = methods.find((n) => n.name === 'Cancel');
+    const handle = methods.find((n) => n.name === 'Handle');
+    expect(cancel).toBeDefined();
+    expect(handle).toBeDefined();
+
+    const edge = bridge(cg.getOutgoingEdges(cancel!.id), handle!.id, 'mediatr-dispatch');
+    expect(edge).toBeDefined();
   });
 
   it('bridges a Sidekiq Worker.perform_async to the worker #perform (Ruby)', async () => {
@@ -539,6 +631,41 @@ class OrderService {
     expect(synthesizedEdges(cg.getOutgoingEdges(placeOrder!.id), 'spring-event')).toHaveLength(0);
   });
 
+  it('does not bridge Spring events when wildcard imports make the event type ambiguous', async () => {
+    write('src/shop/events/OrderPlaced.java', 'package shop.events;\nclass OrderPlaced {}\n');
+    write('src/billing/events/OrderPlaced.java', 'package billing.events;\nclass OrderPlaced {}\n');
+    write(
+      'src/shop/listeners/EmailListener.java',
+      `package shop.listeners;
+import org.springframework.context.event.EventListener;
+import shop.events.*;
+class EmailListener {
+    @EventListener
+    public void onOrderPlaced(OrderPlaced event) {}
+}
+`
+    );
+    write(
+      'src/shop/service/OrderService.java',
+      `package shop.service;
+import shop.events.*;
+import billing.events.*;
+class OrderService {
+    public void placeOrder() {
+        publisher.publishEvent(new OrderPlaced());
+    }
+}
+`
+    );
+
+    const cg = await OmniWeave.init(dir, { silent: true });
+    await cg.indexAll();
+
+    const placeOrder = cg.getNodesByKind('method').find((n) => n.name === 'placeOrder');
+    expect(placeOrder).toBeDefined();
+    expect(synthesizedEdges(cg.getOutgoingEdges(placeOrder!.id), 'spring-event')).toHaveLength(0);
+  });
+
   it('requires Spring ApplicationListener methods to belong to the implementing class', async () => {
     write(
       'src/Events.java',
@@ -638,6 +765,46 @@ namespace Billing {
     write(
       'src/OrdersController.cs',
       `namespace Shop {
+    public class OrdersController {
+        private readonly IMediator _mediator;
+        public Task Cancel() {
+            var command = new CancelOrderCommand();
+            return _mediator.Send(command);
+        }
+    }
+}
+`
+    );
+
+    const cg = await OmniWeave.init(dir, { silent: true });
+    await cg.indexAll();
+
+    const cancel = cg.getNodesByKind('method').find((n) => n.name === 'Cancel');
+    expect(cancel).toBeDefined();
+    expect(synthesizedEdges(cg.getOutgoingEdges(cancel!.id), 'mediatr-dispatch')).toHaveLength(0);
+  });
+
+  it('does not bridge MediatR when namespace usings make the request type ambiguous', async () => {
+    write('src/ShopCommand.cs', 'namespace Shop.Commands { public class CancelOrderCommand {} }\n');
+    write('src/BillingCommand.cs', 'namespace Billing.Commands { public class CancelOrderCommand {} }\n');
+    write(
+      'src/BillingHandler.cs',
+      `using MediatR;
+using Billing.Commands;
+namespace Billing.Handlers {
+    public class CancelOrderCommandHandler : IRequestHandler<CancelOrderCommand, bool> {
+        public Task<bool> Handle(CancelOrderCommand request, CancellationToken ct) {
+            return Task.FromResult(true);
+        }
+    }
+}
+`
+    );
+    write(
+      'src/OrdersController.cs',
+      `using Shop.Commands;
+using Billing.Commands;
+namespace Shop.Api {
     public class OrdersController {
         private readonly IMediator _mediator;
         public Task Cancel() {
