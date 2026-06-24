@@ -1,0 +1,65 @@
+[
+  {
+    "id": "NE-rtk-hook",
+    "type": "differentiation",
+    "target": "rtk",
+    "question": "This React app uses the RTK Query auto-generated hook `useGetRecordsQuery`, which has no function definition of its own (createApi generates it). The createApi it comes from configures a `baseUrl`. What is that baseUrl string? Reply with just the baseUrl value.",
+    "groundTruth": "/api",
+    "gtSource": "src/api.ts:5 baseQuery: fetchBaseQuery({ baseUrl: '/api' }); src/api.ts:16 useGetRecordsQuery destructured from recordsApi. OmniWeave bridges useGetRecordsQuery->recordsApi (module-var-ref) and ->getRecords (rtk-query), so an agent can walk the generated hook back to the createApi config.",
+    "predicted": "Discriminating (baseUrl is an arbitrary config value, NOT derivable from the RTK naming convention — the agent must reach the createApi definition). Structural tools bridge the generated hook to recordsApi/getRecords; grep finds the hook usage but no definition and must know the RTK convention to find the createApi. OW=CG parity (both synthesize the hook->endpoint edge)."
+  },
+  {
+    "id": "NE-pinia-login",
+    "type": "differentiation",
+    "target": "vue-realworld",
+    "question": "In src/views/Login.vue the form submit handler calls `.login(...)`. That `login` is a Pinia store action defined in one of the store modules. Which repo-relative store file defines it? Reply with just the file path.",
+    "groundTruth": "src/store/auth.js",
+    "gtSource": "src/views/Login.vue:74 .login({email,password}); src/store/auth.js:37 async login(credentials) — OmniWeave pinia-store edge onSubmit->login(auth.js:37)",
+    "predicted": "Structural tools bridge the component handler to the store action across files (pinia-store edge); grep on `login` is noisy (common word) and must disambiguate which store. OW=CG parity (both synthesize pinia/store dispatch edges)."
+  },
+  {
+    "id": "NE-sidekiq-worker",
+    "type": "differentiation",
+    "target": "sidekiq",
+    "question": "When `UserService#destroy` runs it enqueues a Sidekiq background job. Which worker class's `perform` method will run that job asynchronously? Reply with just the worker class name.",
+    "groundTruth": "DestroyUserWorker",
+    "gtSource": "app/user_service.rb:3 DestroyUserWorker.perform_async(user.id); app/destroy_user_worker.rb:3 def perform — OmniWeave sidekiq-dispatch edge destroy->perform(destroy_user_worker.rb:3)",
+    "predicted": "Cross-file indirect enqueue. Structural tools synthesize destroy->perform; grep finds perform_async literally so the delta is small on a tiny fixture. OW=CG parity."
+  },
+  {
+    "id": "NE-celery-task",
+    "type": "differentiation",
+    "target": "celery",
+    "question": "When the `signup` view runs, which Celery task does it dispatch to run asynchronously? Reply with just the task function name.",
+    "groundTruth": "send_welcome_email",
+    "gtSource": "app/views.py:5 send_welcome_email.delay(user_id); app/tasks.py:4 @shared_task def send_welcome_email — OmniWeave celery-dispatch edge signup->send_welcome_email(tasks.py:4)",
+    "predicted": "Task name is literal (.delay), so grep follows it; honest small/zero delta on a tiny fixture. OW=CG parity (both have the celery synthesizer)."
+  },
+  {
+    "id": "NE-modvar-impact",
+    "type": "honesty-tie",
+    "target": "requests",
+    "question": "Within src/requests/__init__.py, which function reads the module-level version constant `charset_normalizer_version`? Reply with just the function name.",
+    "groundTruth": "check_compatibility",
+    "gtSource": "src/requests/__init__.py:52 def check_compatibility uses charset_normalizer_version — OmniWeave module-var-ref edge check_compatibility->charset_normalizer_version",
+    "predicted": "TIE: same-file reference is grep's home turf. OmniWeave's module-var-ref edge answers the impact direction but does not beat a one-line grep; this is parity-restoration, not a moat over grep."
+  },
+  {
+    "id": "NE-singlepoint-tie",
+    "type": "honesty-tie",
+    "target": "requests",
+    "question": "Where is the function `check_compatibility` defined? Reply with just the repo-relative file path.",
+    "groundTruth": "src/requests/__init__.py",
+    "gtSource": "src/requests/__init__.py:52 def check_compatibility",
+    "predicted": "TIE: single literal definition lookup is one grep line; structural tools tie, do not win."
+  },
+  {
+    "id": "NE-nohelp",
+    "type": "no-help",
+    "target": "requests",
+    "question": "Does the `requests` library ship a built-in real-time connection-pool metrics dashboard UI? Answer yes or no and explain in one sentence.",
+    "groundTruth": "No — requests is an HTTP client library with no built-in metrics dashboard/UI.",
+    "gtSource": "requests has no dashboard/UI code; this is a negative-feature question, not a structural-graph question.",
+    "predicted": "NO-HELP: no edge or structural fact helps; the honest answer is No. Structural tools must not fabricate one; tie with grep."
+  }
+]
