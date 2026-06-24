@@ -40,26 +40,34 @@ store-file fn node, so the conservative pinia-store bridge (`14ecd5a`) had **0**
 | total nodes | **342** | 342 | **OK** |
 | function+method nodes | **71** | 71 | **OK** |
 | **store-file fn/method nodes** | **27** | 27 | **OK** |
-| edges synthesizedBy=pinia-store | **0** | 25 | **still OW WEAKER** |
+| component nodes | **20** | 20 | **OK** |
+| edges synthesizedBy=pinia-store | 0 → **6** (after alias fix `744dd4a`) | 25 | **still OW WEAKER** |
 | edges synthesizedBy=vue-handler | 17 | 17 | OK |
 
 **Extraction half is closed** — OmniWeave now extracts all 27 store-action nodes (Pinia options +
-setup + Vuex-module forms; `38636ed`, locked by `store-collection-extraction.test.ts`). The 27
-targets the pinia-store bridge needs now exist.
+setup + Vuex-module forms; `38636ed`, locked by `store-collection-extraction.test.ts`). Component
+nodes (20==20) and the dispatcher methods (`onSubmit`, `toggleFavorite`, `follow`, …) are
+**byte-identical to codegraph** — extraction is at full parity.
 
-**The remaining 0-vs-25 EDGE gap is the SYNTHESIZER, not extraction — and it is the parallel
-stream's `callback-synthesizer.ts`.** Diagnosis: vue-realworld dispatches are real
-(`Login.vue`: `import { useAuthStore } from "@/store/auth"` → `const authStore = useAuthStore()`
-→ `authStore.login({…})`). codegraph's name-based factory→store-file mapping (precise via the
-store-file gate) catches all 25. The parallel stream's conservative `piniaStoreEdges` gates on
-`visiblePiniaFactories`, which resolves the factory import via `resolveRelativeJsImport`
-(**relative-only**) — it cannot resolve the `@/` path alias, so the factory is "not visible" and
-**0 edges** are emitted. The dispatches are genuine, so this is missed recall, not avoided
-false positives. **Closing it needs the synthesizer's import resolution to handle path aliases
-(`@/` → indexed store file, by tsconfig paths or suffix-match), or a globally-unique-factory-name
-fallback** — done within the parallel stream's precision apparatus (`isPiniaActionTarget` /
-masking gates preserved), not by reverting to the looser name-based bind. Left to that stream /
-a coordinated change rather than unilaterally relaxing its false-positive guards here.
+**The remaining EDGE gap is purely the SYNTHESIZER (parallel stream's `callback-synthesizer.ts`),
+and it has two parts:**
+
+1. **Alias import resolution (FIXED, `744dd4a`, 0→6).** vue-realworld dispatches are real
+   (`Login.vue`: `import { useAuthStore } from "@/store/auth"` → `const authStore = useAuthStore()`
+   → `authStore.login({…})`). `visiblePiniaFactories` resolved the factory import relative-only
+   and rejected the `@/` alias, so the factory was invisible. Added `resolveAliasJsImportToFactoryFile`
+   (suffix-match the import tail to a unique known store-factory file) — a clear-miss fix, not a
+   precision relaxation. Recovered the 6 directly-bound aliased dispatches.
+
+2. **Conservative precision/recall gates (OPEN, by design — not relaxed here).** The other 19
+   edges codegraph emits (`Article→fetchArticle`, `onSubmit→login`, `toggleFavorite→addFavorite`,
+   …) are real dispatches whose dispatcher + target nodes **all exist in OmniWeave's graph**, but
+   the parallel stream's conservative gates (`isPiniaActionTarget`, the binding/call regexes,
+   masking) reject them where codegraph's looser name-based bind includes them. This is the genuine
+   ⑥-vs-错边比漏边 tension: codegraph chose recall (25, some possibly loose), the parallel stream
+   chose precision (no false positives). Matching codegraph's 25 means accepting its recall
+   heuristic — a precision/recall **design decision that belongs to the synthesizer's owner**, not
+   a clear bug to fix unilaterally. **Left open and characterized rather than forced.**
 
 ## Result 2 — react-redux-realworld: **OW ≈ CG (no material gap)**
 
@@ -86,17 +94,19 @@ The ⑥ debt was **real and concentrated in the Pinia options-form gap**, and it
    regression: `store-collection-extraction.test.ts` (4), `extraction.test.ts` (378), frameworks /
    frameworks-integration / closure-collection / vue-template (122), eval capstone 10/10.
 
-2. **Synthesizer (OPEN, parallel stream's file):** the pinia-store dispatch bridge still emits
-   0 vs 25 edges because `visiblePiniaFactories` resolves the factory import relative-only and
-   rejects the `@/` path alias vue-realworld uses. The dispatches are genuine, so this is missed
-   recall. The fix lives in `callback-synthesizer.ts` (alias-aware import resolution or a
-   unique-factory fallback, inside the existing precision gates) and is left to that stream /
-   a coordinated change — not closed here, to avoid unilaterally relaxing its false-positive guards.
+2. **Synthesizer (parallel stream's file) — alias half FIXED (`744dd4a`, 0→6), gate half OPEN by
+   design.** The clear miss — `visiblePiniaFactories` rejecting the `@/` path alias — is fixed with
+   a suffix-match alias resolver, recovering the 6 directly-bound aliased dispatches. The remaining
+   19 are real dispatches whose dispatcher + target nodes all exist in the graph but the conservative
+   gates (`isPiniaActionTarget`, binding/call regexes, masking) reject where codegraph's looser
+   name-based bind includes. That is the genuine ⑥-vs-错边比漏边 tension (recall vs precision) and a
+   **design decision for the synthesizer's owner**, deliberately not forced here.
 
 react-redux-realworld stays at parity (Result 2 unchanged), so no Redux work is implied by this.
 
-**Honest status line:** ⑥ extraction debt repaid and verified; ⑥ pinia-store *edge* debt diagnosed
-to a one-helper alias-resolution gap and handed off, not yet repaid.
+**Honest status line:** ⑥ extraction debt repaid and verified (nodes at full parity); ⑥ pinia-store
+*edge* debt partially repaid (alias-import miss fixed, 0→6) with the residual 6→25 isolated to the
+conservative synthesizer's precision/recall gates — characterized, not unilaterally relaxed.
 
 ## Reproduce
 
