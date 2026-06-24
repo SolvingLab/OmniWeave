@@ -652,7 +652,7 @@ export class TreeSitterExtractor {
     }
     // Check for variable declarations (const, let, var, etc.)
     // Only extract top-level variables (not inside functions/methods)
-    else if (this.extractor.variableTypes.includes(nodeType) && !this.isInsideClassLikeNode()) {
+    else if (this.extractor.variableTypes.includes(nodeType) && (!this.isInsideClassLikeNode() || this.isClassScopeConstantAssignment(node))) {
       this.extractVariable(node);
       // extractVariable doesn't walk every initializer shape (object literals
       // are deliberately skipped; Python/Ruby don't walk at all), so scan the
@@ -992,6 +992,20 @@ export class TreeSitterExtractor {
       parentNode.kind === 'enum' ||
       parentNode.kind === 'module'
     );
+  }
+
+  /**
+   * Ruby `CONST = …` whose LHS is a `constant` node — a class/module (or
+   * top-level) constant worth extracting as a symbol even inside a class, where
+   * the ordinary top-level-only variable gate would otherwise drop it. Other
+   * languages don't give an assignment a `constant`-typed LHS, so this is
+   * effectively Ruby-only and closes a node deficit vs the fork base.
+   */
+  private isClassScopeConstantAssignment(node: SyntaxNode): boolean {
+    if (this.language !== 'ruby') return false;
+    if (node.type !== 'assignment') return false;
+    const left = getChildByField(node, 'left') ?? node.namedChild(0);
+    return left?.type === 'constant';
   }
 
   /**
@@ -1747,14 +1761,19 @@ export class TreeSitterExtractor {
       const left = getChildByField(node, 'left') || node.namedChild(0);
       const right = getChildByField(node, 'right') || node.namedChild(1);
 
-      if (left && left.type === 'identifier') {
+      // Ruby `CONST = …` gives the assignment a `constant`-typed LHS (not
+      // `identifier`); without it, class/module constants were never extracted.
+      if (left && (left.type === 'identifier' || left.type === 'constant')) {
         const name = getNodeText(left, this.source);
+        const variableKind: NodeKind = this.language === 'ruby' && left.type === 'constant'
+          ? 'constant'
+          : kind;
         // Skip if name starts with lowercase and looks like a function call result
         // Python constants are usually UPPER_CASE
         const initValue = right ? getNodeText(right, this.source).slice(0, 100) : undefined;
         const initSignature = initValue ? `= ${initValue}${initValue.length >= 100 ? '...' : ''}` : undefined;
 
-        this.createNode(kind, name, node, {
+        this.createNode(variableKind, name, node, {
           docstring,
           signature: initSignature,
         });
