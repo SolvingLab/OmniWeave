@@ -716,7 +716,9 @@ function validateSnapshotTargetImportPolicy(projectRoot: string, db: SqliteDatab
     }
     const actualLanguage = detectLanguage(file.path, content, extensionOverrides);
     if (actualLanguage !== file.language) {
-      languageMismatches.push(`${file.path} (snapshot ${file.language}, target ${actualLanguage})`);
+      languageMismatches.push(
+        `${file.path} (snapshot ${formatSnapshotDiagnosticValue(file.language)}, target ${formatSnapshotDiagnosticValue(actualLanguage)})`
+      );
     }
   }
 
@@ -806,7 +808,9 @@ function validateSnapshotLanguageMembership(
   const mismatches = rows
     .filter((row) => typeof row.path === 'string')
     .filter((row) => filesByPath.get(row.path as string) !== row.language)
-    .map((row) => `${displayPathValue(row.path)} (snapshot ${String(row.language)}, files ${String(filesByPath.get(row.path as string))})`);
+    .map((row) => (
+      `${displayPathValue(row.path)} (snapshot ${formatSnapshotDiagnosticValue(row.language)}, files ${formatSnapshotDiagnosticValue(filesByPath.get(row.path as string))})`
+    ));
   if (mismatches.length > 0) {
     errors.push(`Snapshot database contains ${label} values that do not match files.language: ${summarizePaths(mismatches)}`);
   }
@@ -886,9 +890,39 @@ function validateSnapshotPathMembership(
 }
 
 function validateSnapshotGraphText(db: SqliteDatabase, errors: string[]): void {
+  validateSnapshotFileGraphText(db, errors);
   validateSnapshotNodeGraphText(db, errors);
   validateSnapshotEdgeGraphText(db, errors);
   validateSnapshotUnresolvedRefGraphText(db, errors);
+}
+
+function validateSnapshotFileGraphText(db: SqliteDatabase, errors: string[]): void {
+  let rows: Array<{
+    rowid: unknown;
+    language: unknown;
+  }>;
+  try {
+    rows = db.prepare(`
+      SELECT rowid, language
+      FROM files
+    `).all() as Array<{
+      rowid: unknown;
+      language: unknown;
+    }>;
+  } catch (err) {
+    errors.push(`Snapshot database cannot validate files graph text: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+
+  const invalidInline: string[] = [];
+  for (const row of rows) {
+    const label = snapshotRowLabel('files', row.rowid);
+    if (!isSafeSnapshotInlineGraphText(row.language)) invalidInline.push(`files.language ${label}`);
+  }
+
+  if (invalidInline.length > 0) {
+    errors.push(`Snapshot database contains unsafe graph display text: ${summarizePaths(invalidInline)}`);
+  }
 }
 
 function validateSnapshotNodeGraphText(db: SqliteDatabase, errors: string[]): void {
@@ -897,19 +931,21 @@ function validateSnapshotNodeGraphText(db: SqliteDatabase, errors: string[]): vo
     id: unknown;
     kind: unknown;
     name: unknown;
+    language: unknown;
     qualifiedName: unknown;
     signature: unknown;
     docstring: unknown;
   }>;
   try {
     rows = db.prepare(`
-      SELECT rowid, id, kind, name, qualified_name AS qualifiedName, signature, docstring
+      SELECT rowid, id, kind, name, language, qualified_name AS qualifiedName, signature, docstring
       FROM nodes
     `).all() as Array<{
       rowid: unknown;
       id: unknown;
       kind: unknown;
       name: unknown;
+      language: unknown;
       qualifiedName: unknown;
       signature: unknown;
       docstring: unknown;
@@ -926,6 +962,7 @@ function validateSnapshotNodeGraphText(db: SqliteDatabase, errors: string[]): vo
     if (!isSafeSnapshotInlineGraphText(row.id)) invalidInline.push(`nodes.id ${label}`);
     if (!isSafeSnapshotInlineGraphText(row.kind)) invalidInline.push(`nodes.kind ${label}`);
     if (!isSafeSnapshotInlineGraphText(row.name)) invalidInline.push(`nodes.name ${label}`);
+    if (!isSafeSnapshotInlineGraphText(row.language)) invalidInline.push(`nodes.language ${label}`);
     if (!isSafeSnapshotInlineGraphText(row.qualifiedName)) invalidInline.push(`nodes.qualified_name ${label}`);
     if (row.signature !== null && row.signature !== undefined && !isSafeSnapshotInlineGraphText(row.signature)) {
       invalidInline.push(`nodes.signature ${label}`);
@@ -991,16 +1028,18 @@ function validateSnapshotUnresolvedRefGraphText(db: SqliteDatabase, errors: stri
     rowid: unknown;
     referenceName: unknown;
     referenceKind: unknown;
+    language: unknown;
     candidates: unknown;
   }>;
   try {
     rows = db.prepare(`
-      SELECT rowid, reference_name AS referenceName, reference_kind AS referenceKind, candidates
+      SELECT rowid, reference_name AS referenceName, reference_kind AS referenceKind, language, candidates
       FROM unresolved_refs
     `).all() as Array<{
       rowid: unknown;
       referenceName: unknown;
       referenceKind: unknown;
+      language: unknown;
       candidates: unknown;
     }>;
   } catch (err) {
@@ -1014,6 +1053,7 @@ function validateSnapshotUnresolvedRefGraphText(db: SqliteDatabase, errors: stri
     const label = snapshotRowLabel('unresolved_refs', row.rowid);
     if (!isSafeSnapshotInlineGraphText(row.referenceName)) invalidInline.push(`unresolved_refs.reference_name ${label}`);
     if (!isSafeSnapshotInlineGraphText(row.referenceKind)) invalidInline.push(`unresolved_refs.reference_kind ${label}`);
+    if (!isSafeSnapshotInlineGraphText(row.language)) invalidInline.push(`unresolved_refs.language ${label}`);
     if (row.candidates !== null && row.candidates !== undefined && !isSafeSnapshotGraphJsonText(row.candidates, 'array')) {
       invalidJson.push(`unresolved_refs.candidates ${label}`);
     }
