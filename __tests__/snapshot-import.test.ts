@@ -590,6 +590,68 @@ describe('snapshot import and verify', () => {
     expect(snapshotDbCalls.every((call) => call.options.migrate === false && call.options.readOnly === true)).toBe(true);
   });
 
+  it('rejects snapshots whose staged database fails integrity_check', async () => {
+    const originalOpen = DatabaseConnection.open;
+    DatabaseConnection.open = ((dbPath: string, options: OpenDatabaseOptions = {}) => {
+      const conn = originalOpen.call(DatabaseConnection, dbPath, options);
+      if (path.basename(dbPath) !== SNAPSHOT_DATABASE_FILENAME || options.readOnly !== true) {
+        return conn;
+      }
+
+      const db = conn.getDb();
+      const proxyDb = new Proxy(db, {
+        get(target, prop, receiver) {
+          if (prop === 'prepare') {
+            return (sql: string) => {
+              if (sql.trim().toUpperCase() === 'PRAGMA INTEGRITY_CHECK') {
+                return { all: () => [{ integrity_check: 'database disk image is malformed' }] };
+              }
+              return target.prepare(sql);
+            };
+          }
+          const value = Reflect.get(target, prop, receiver);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      }) as typeof db;
+      conn.getDb = (() => proxyDb) as typeof conn.getDb;
+      return conn;
+    }) as typeof DatabaseConnection.open;
+
+    try {
+      const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+      expect(verification.ok).toBe(false);
+      expect(verification.errors.join('\n')).toContain('failed integrity_check');
+      await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
+    } finally {
+      DatabaseConnection.open = originalOpen;
+    }
+
+    expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+  });
+
+  it('rejects snapshots whose database fails foreign_key_check', async () => {
+    const conn = DatabaseConnection.open(path.join(outputDir, SNAPSHOT_DATABASE_FILENAME));
+    try {
+      conn.getDb().exec('PRAGMA foreign_keys = OFF');
+      conn.getDb().prepare(
+        `INSERT INTO edges (source, target, kind, metadata, line, col, provenance)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      ).run('missing-source-node', 'missing-target-node', 'calls', '{}', 1, 1, 'tree-sitter');
+      conn.getDb().exec('PRAGMA foreign_keys = ON');
+      conn.getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      conn.close();
+    }
+    refreshSnapshotDatabaseManifest(outputDir);
+
+    const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+
+    expect(verification.ok).toBe(false);
+    expect(verification.errors.join('\n')).toContain('failed foreign_key_check');
+    await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
+    expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+  });
+
   it('rejects snapshots with unexpected sqlite schema objects', async () => {
     const conn = DatabaseConnection.open(path.join(outputDir, SNAPSHOT_DATABASE_FILENAME));
     try {
