@@ -130,7 +130,10 @@ describe('snapshot import and verify', () => {
     writeProject(sourceRoot);
     writeProject(targetRoot);
     await indexProject(sourceRoot);
-    await exportSnapshot(sourceRoot, outputDir, { omniweaveVersion: '9.9.9-test' });
+    await exportSnapshot(sourceRoot, outputDir, {
+      omniweaveVersion: '9.9.9-test',
+      omniweaveBuildFingerprint: '9.9.9-test+buildabc',
+    });
   });
 
   afterEach(() => {
@@ -251,6 +254,7 @@ describe('snapshot import and verify', () => {
   it('rejects non-string scalar manifest fields before installing bytes', async () => {
     updateSnapshotManifestForTest(outputDir, (manifest) => {
       manifest.omniweaveVersion = { value: 'bad' };
+      manifest.omniweaveBuildFingerprint = { value: 'bad' };
       manifest.createdAt = 123;
     });
 
@@ -258,6 +262,7 @@ describe('snapshot import and verify', () => {
 
     expect(verification.ok).toBe(false);
     expect(verification.errors.join('\n')).toContain('omniweaveVersion must be a string');
+    expect(verification.errors.join('\n')).toContain('omniweaveBuildFingerprint must be a string');
     expect(verification.errors.join('\n')).toContain('createdAt must be a string');
     await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
     expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
@@ -296,6 +301,7 @@ describe('snapshot import and verify', () => {
         manifestHash: expect.stringMatching(/^[a-f0-9]{64}$/),
         sourceFingerprint: result.manifest.sourceRoot.fingerprint,
         sourceOmniWeaveVersion: '9.9.9-test',
+        sourceOmniWeaveBuildFingerprint: '9.9.9-test+buildabc',
         allowStale: false,
       }));
       const matches = cg.searchNodes('entry', { limit: 5 });

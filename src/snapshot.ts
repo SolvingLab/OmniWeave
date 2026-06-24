@@ -60,6 +60,7 @@ export interface SnapshotManifest {
   format: typeof SNAPSHOT_FORMAT;
   formatVersion: typeof SNAPSHOT_FORMAT_VERSION;
   omniweaveVersion: string;
+  omniweaveBuildFingerprint?: string;
   createdAt: string;
   schemaVersion: number | null;
   sourceRoot: {
@@ -92,6 +93,7 @@ export interface SnapshotFileEntry {
 export interface ExportSnapshotOptions {
   force?: boolean;
   omniweaveVersion: string;
+  omniweaveBuildFingerprint?: string;
 }
 
 export interface ExportSnapshotResult {
@@ -225,6 +227,9 @@ export async function exportSnapshot(
       format: SNAPSHOT_FORMAT,
       formatVersion: SNAPSHOT_FORMAT_VERSION,
       omniweaveVersion: options.omniweaveVersion,
+      ...(options.omniweaveBuildFingerprint
+        ? { omniweaveBuildFingerprint: options.omniweaveBuildFingerprint }
+        : {}),
       createdAt: new Date().toISOString(),
       schemaVersion: schema?.version ?? null,
       sourceRoot: {
@@ -539,6 +544,12 @@ function validateSnapshotManifest(
   }
   if (typeof manifest.omniweaveVersion !== 'string') {
     errors.push('Snapshot manifest omniweaveVersion must be a string');
+  }
+  if (
+    raw.omniweaveBuildFingerprint !== undefined &&
+    typeof raw.omniweaveBuildFingerprint !== 'string'
+  ) {
+    errors.push('Snapshot manifest omniweaveBuildFingerprint must be a string when present');
   }
   if (typeof manifest.createdAt !== 'string') {
     errors.push('Snapshot manifest createdAt must be a string');
@@ -1550,6 +1561,12 @@ async function recordSnapshotImportMetadata(
     queries.setMetadata(SNAPSHOT_IMPORT_METADATA_KEYS.manifestHash, manifestHash);
     queries.setMetadata(SNAPSHOT_IMPORT_METADATA_KEYS.sourceFingerprint, manifest.sourceRoot.fingerprint);
     queries.setMetadata(SNAPSHOT_IMPORT_METADATA_KEYS.sourceOmniWeaveVersion, manifest.omniweaveVersion);
+    if (typeof manifest.omniweaveBuildFingerprint === 'string') {
+      queries.setMetadata(
+        SNAPSHOT_IMPORT_METADATA_KEYS.sourceOmniWeaveBuildFingerprint,
+        manifest.omniweaveBuildFingerprint,
+      );
+    }
     queries.setMetadata(SNAPSHOT_IMPORT_METADATA_KEYS.allowStale, options.allowStale === true ? 'true' : 'false');
     queries.setMetadata(SNAPSHOT_IMPORT_METADATA_KEYS.staleness, JSON.stringify({
       stale: staleness?.stale === true,

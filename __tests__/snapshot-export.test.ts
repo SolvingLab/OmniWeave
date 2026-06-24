@@ -51,6 +51,7 @@ describe('snapshot export', () => {
   it('writes a schema-versioned manifest with hashed graph files', async () => {
     const result = await exportSnapshot(projectRoot, outputDir, {
       omniweaveVersion: '9.9.9-test',
+      omniweaveBuildFingerprint: '9.9.9-test+buildabc',
     });
 
     const manifest = JSON.parse(fs.readFileSync(result.manifestPath, 'utf-8')) as SnapshotManifest;
@@ -60,6 +61,7 @@ describe('snapshot export', () => {
     expect(manifest.format).toBe(SNAPSHOT_FORMAT);
     expect(manifest.formatVersion).toBe(SNAPSHOT_FORMAT_VERSION);
     expect(manifest.omniweaveVersion).toBe('9.9.9-test');
+    expect(manifest.omniweaveBuildFingerprint).toBe('9.9.9-test+buildabc');
     expect(manifest.schemaVersion).toEqual(expect.any(Number));
     expect(manifest.sourceRoot.path).toBeUndefined();
     expect(manifest.sourceRoot.fingerprint).toMatch(/^[a-f0-9]{64}$/);
@@ -133,6 +135,7 @@ describe('snapshot export', () => {
     expect(result.status).toBe(0);
     const manifest = JSON.parse(result.stdout) as SnapshotManifest;
     expect(manifest.format).toBe(SNAPSHOT_FORMAT);
+    expect(manifest.omniweaveBuildFingerprint).toMatch(/^.+\+[0-9a-f]{6,64}$/);
     expect(manifest.files.database.sha256).toBe(sha256(path.join(cliOut, SNAPSHOT_DATABASE_FILENAME)));
   });
 });

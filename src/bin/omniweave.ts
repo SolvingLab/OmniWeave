@@ -43,6 +43,7 @@ import { EXTRACTION_VERSION } from '../extraction/extraction-version';
 import { getTelemetry, TELEMETRY_DOCS, recordIndexEvent } from '../telemetry';
 import { describeSnapshotImportWarning } from '../snapshot-metadata';
 import { CALL_SURFACE_EDGE_KINDS } from '../call-surface';
+import { OmniWeaveBuildFingerprint } from '../mcp/version';
 
 // Lazy-load heavy modules (OmniWeave, runInstaller) to keep CLI startup fast.
 async function loadOmniWeave(): Promise<typeof import('../index')> {
@@ -1893,6 +1894,7 @@ snapshotCommand
       const result = await exportSnapshot(projectPath, outputDir, {
         force: options.force === true,
         omniweaveVersion: packageJson.version,
+        omniweaveBuildFingerprint: OmniWeaveBuildFingerprint,
       });
 
       if (options.json) {

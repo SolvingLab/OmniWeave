@@ -4,6 +4,7 @@ export const SNAPSHOT_IMPORT_METADATA_KEYS = {
   manifestHash: 'snapshot.manifest_hash',
   sourceFingerprint: 'snapshot.source_fingerprint',
   sourceOmniWeaveVersion: 'snapshot.source_omniweave_version',
+  sourceOmniWeaveBuildFingerprint: 'snapshot.source_omniweave_build_fingerprint',
   allowStale: 'snapshot.allow_stale',
   staleness: 'snapshot.staleness',
 } as const;
@@ -13,6 +14,7 @@ export interface SnapshotImportInfo {
   manifestHash: string | null;
   sourceFingerprint: string | null;
   sourceOmniWeaveVersion: string | null;
+  sourceOmniWeaveBuildFingerprint: string | null;
   allowStale: boolean;
   staleness: {
     stale: boolean;
@@ -32,6 +34,7 @@ export function readSnapshotImportInfo(read: (key: string) => string | null): Sn
     manifestHash: read(SNAPSHOT_IMPORT_METADATA_KEYS.manifestHash),
     sourceFingerprint: read(SNAPSHOT_IMPORT_METADATA_KEYS.sourceFingerprint),
     sourceOmniWeaveVersion: read(SNAPSHOT_IMPORT_METADATA_KEYS.sourceOmniWeaveVersion),
+    sourceOmniWeaveBuildFingerprint: read(SNAPSHOT_IMPORT_METADATA_KEYS.sourceOmniWeaveBuildFingerprint),
     allowStale: read(SNAPSHOT_IMPORT_METADATA_KEYS.allowStale) === 'true',
     staleness: parseStaleness(read(SNAPSHOT_IMPORT_METADATA_KEYS.staleness)),
   };
