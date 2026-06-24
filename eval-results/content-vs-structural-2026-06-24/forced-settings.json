@@ -1,0 +1,1 @@
+{"hooks":{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"bash /Users/liuzaoqu/Desktop/develop/sogen/OmniWeave/scripts/agent-eval/force-mcp-hook.sh"}]}]}}

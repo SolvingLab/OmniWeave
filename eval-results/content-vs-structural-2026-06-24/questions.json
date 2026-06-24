@@ -1,0 +1,62 @@
+[
+  {
+    "id": "S1-extends",
+    "axis": "structural",
+    "subtype": "extends",
+    "question": "In this Django source tree, what is the direct base class of the class `CsrfViewMiddleware`? Answer with just the base class name.",
+    "groundTruth": "MiddlewareMixin",
+    "gtRegex": "MiddlewareMixin",
+    "gtSource": "django/middleware/csrf.py:165  `class CsrfViewMiddleware(MiddlewareMixin):`",
+    "rationale": "Structural extends edge. OmniWeave/codegraph answer from the graph; grep also finds a class def, but this anchors the structural control."
+  },
+  {
+    "id": "S2-callers",
+    "axis": "structural",
+    "subtype": "reverse/callers",
+    "question": "In this Django source tree, which middleware class's code calls the function `get_random_string`? Answer with the class name.",
+    "groundTruth": "CsrfViewMiddleware",
+    "gtRegex": "CsrfViewMiddleware",
+    "gtSource": "django/middleware/csrf.py calls get_random_string (one of 6 cross-file callers; the only one that is a middleware class).",
+    "rationale": "Reverse/caller question across files — the structural moat. grep must scan call sites and then map each to its enclosing class."
+  },
+  {
+    "id": "S3-callees",
+    "axis": "structural",
+    "subtype": "callees/flow",
+    "question": "In this Django source tree, the function `salted_hmac` in django/utils/crypto.py builds an HMAC. Which Python standard-library module does it call to construct the HMAC object? Answer with the module name.",
+    "groundTruth": "hmac",
+    "gtRegex": "\\bhmac\\b",
+    "gtSource": "django/utils/crypto.py:61  `return hmac.new(key, msg=force_bytes(value), digestmod=hasher)`",
+    "rationale": "Callee/flow question. Both surfaces can answer by reading the one function; control for 'small bounded read'."
+  },
+  {
+    "id": "C1-literal",
+    "axis": "content",
+    "subtype": "literal-string",
+    "question": "In this Django source tree, which SOURCE file (a .py file, not a translation .po file) contains the user-facing error text \"CSRF verification failed\"? Answer with the file path.",
+    "groundTruth": "django/views/csrf.py",
+    "gtRegex": "views/csrf\\.py",
+    "gtSource": "django/views/csrf.py contains the literal 'CSRF verification failed' (the .po files are translations).",
+    "rationale": "Pure content: a string literal, not a symbol. The structural graph (symbol-only FTS) cannot answer; the agent must fall back to Bash grep. THE content-index treatment."
+  },
+  {
+    "id": "C2-literal",
+    "axis": "content",
+    "subtype": "literal-string",
+    "question": "In this Django source tree, which SOURCE file (.py, not a .po translation) defines the validator error message \"Enter a valid email address\"? Answer with the file path.",
+    "groundTruth": "django/core/validators.py",
+    "gtRegex": "core/validators\\.py",
+    "gtSource": "django/core/validators.py:211  `message = _(\"Enter a valid email address.\")`",
+    "rationale": "Pure content: a string literal. Same content treatment as C1, different subsystem."
+  },
+  {
+    "id": "CEIL-comprehension",
+    "axis": "ceiling",
+    "subtype": "no-tool-advantage",
+    "question": "In this Django source tree, what hash algorithm does `salted_hmac` (django/utils/crypto.py) default to TODAY when no algorithm argument is passed? Answer with the algorithm name.",
+    "groundTruth": "sha1",
+    "gtRegex": "sha1",
+    "gtSource": "django/utils/crypto.py:42  `algorithm = \"sha1\"` (the default before the Django 7.0 change to sha256).",
+    "rationale": "Ceiling / anti-cherry-pick: neither structural graph nor content index gives an advantage — every arm locates the one function and reads it. A tie is the EXPECTED and honest outcome; included so the bank is not stacked toward OmniWeave."
+  }
+]
