@@ -73,10 +73,21 @@ total** edge count. The debt for these five is closed — OmniWeave is no longer
 - **Scope is the declared idiom, not the whole framework.** ActiveJob's `perform_later`,
   MediatR pipeline behaviors, queued Laravel jobs, and runtime-string event names are out
   of scope by construction — they yield 0, not a guess.
-- **Remaining CG-only synthesizers** (`rtkQueryEdges`, `cFnPointerDispatchEdges`) are
-  tracked separately; redux-thunk is already closed (committed) and stricter than CG's
-  (it requires the dispatched name to resolve to a thunk constant, not any same-named
-  callable — precision over CG's `cands[0]` fallback).
+- **redux-thunk and c-fnptr are also closed** (committed separately). redux-thunk is
+  stricter than CG's (it requires the dispatched name to resolve to a thunk constant, not
+  any same-named callable — precision over CG's `cands[0]` fallback). c-fnptr (C/C++
+  `struct.fn`-pointer command-table dispatch) emits the same `fn-pointer-dispatch` bridge
+  edges as CG; its lone residual total-edge delta on the fixture is one `contains` edge for
+  a file-scope array variable OmniWeave's C extractor doesn't mint — a known extraction
+  long-tail, NOT a synthesizer gap (the bridge itself is at parity).
+- **`rtkQuery` is the one CG-only synthesizer DEFERRED** (with evidence, not "差不多"). A
+  worktree spike confirmed the generated-hook extraction (`extractRtkHookBindings` sentinel)
+  + the `rtkQueryEdges` synthesizer port cleanly, but the hook→endpoint bridge cannot fire
+  without a SECOND, deeper extraction port: RTK endpoints (`getX: build.query({...})`) are
+  not extracted as function nodes, so the bridge has no target. CG's endpoint extraction
+  (`findRtkEndpointsObject` + `extractRtkEndpoints` + `rtkEndpointHandler`, ~100 lines in the
+  hot `tree-sitter.ts`) is disproportionate to RTK Query's narrow value with 7/8 synthesizers
+  already at parity. Tracked as a characterized deferral.
 
 Behavior is locked by `__tests__/framework-dispatch-synthesizer.test.ts` (one assertion per
 framework + a redux precision negative-case).
