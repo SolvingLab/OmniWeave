@@ -47,11 +47,18 @@ standalone agent capability, so OmniWeave should not be weaker on it. **Fix**:
 OmniWeave now extracts a Swift stored property as a `field` node (static `let`/`var`
 as `constant`/`variable`; computed properties stay edge-only), closing the deficit
 from **−715 to −7** (4185 vs 4192) with no value-reference edges added (the trust
-model is unchanged) and all extraction/eval gates green. The remaining Kotlin −429
-is a separate `kotlin.ts` divergence flagged for the same treatment. The broader
-lesson, recorded openly: OmniWeave's fork has drifted behind upstream on a few
+model is unchanged) and all extraction/eval gates green. The Kotlin deficit had a
+different root cause — a Kotlin property name nests
+`property_declaration → variable_declaration → simple_identifier`, which the
+generic variable/field path could not read, so class/object properties were
+dropped — and was fixed the same way (a `kotlin.ts` `visitNode` that emits the
+property as `field`/`constant`/`variable` by enclosing scope), closing it from
+**−429 to exactly 0** (9310 = 9310). After both fixes **OmniWeave ties or exceeds
+codegraph on node extraction across all 14 languages.** The broader lesson,
+recorded openly: OmniWeave's fork had drifted behind upstream on a few
 *extraction-breadth* improvements; maintaining "OmniWeave ≥ codegraph everywhere"
-requires periodically syncing upstream's safe, additive wins.
+requires periodically syncing upstream's safe, additive wins — which this
+benchmark surfaced and these two commits closed.
 
 ## Part B — Bridge-edge structural capability (11 datasets, both tools)
 

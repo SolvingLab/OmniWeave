@@ -85,6 +85,46 @@ export const kotlinExtractor: LanguageExtractor = {
   nameField: 'simple_identifier',
   bodyField: 'function_body',
   visitNode: (node, ctx) => {
+    // Kotlin properties (`val` / `var` / `const val`). The name nests as
+    // property_declaration → variable_declaration → simple_identifier, which the
+    // generic variable/field path can't read — so nothing was extracted before
+    // (the node deficit vs the fork base). Kind by enclosing scope: a singleton
+    // `object` / `companion object` (and a top-level property) holds *shared*
+    // values — `val`→`constant`, `var`→`variable` (a `const val` is a `val`). A
+    // `class`/`interface`/`enum` instance `val`/`var` is per-instance state →
+    // `field`. A property inside a function body / `init` / lambda is a local,
+    // skipped entirely. No value-reference edge is added — node only.
+    if (node.type === 'property_declaration') {
+      const varDecl = node.namedChildren.find((c: SyntaxNode) => c.type === 'variable_declaration');
+      const nameNode = varDecl?.namedChildren.find((c: SyntaxNode) => c.type === 'simple_identifier');
+      if (!nameNode) return false; // destructuring `val (a,b)` etc. — leave to default
+      const name = getNodeText(nameNode, ctx.source);
+      if (!name) return false;
+
+      let scope: 'local' | 'const' | 'instance' = 'const';
+      for (let p = node.parent; p; p = p.parent) {
+        const pt = p.type;
+        if (
+          pt === 'function_body' || pt === 'function_declaration' ||
+          pt === 'lambda_literal' || pt === 'anonymous_initializer' ||
+          pt === 'control_structure_body' || pt === 'getter' || pt === 'setter'
+        ) { scope = 'local'; break; }
+        if (pt === 'companion_object' || pt === 'object_declaration') { scope = 'const'; break; }
+        if (pt === 'class_declaration') { scope = 'instance'; break; }
+      }
+      if (scope === 'local') return true; // a local — don't extract
+
+      const binding = node.namedChildren.find((c: SyntaxNode) => c.type === 'binding_pattern_kind');
+      const isVal = binding != null && getNodeText(binding, ctx.source) === 'val';
+      const kind = scope === 'instance' ? 'field' : isVal ? 'constant' : 'variable';
+      const typeNode = node.childForFieldName('type');
+      const sig = typeNode
+        ? `${isVal ? 'val' : 'var'} ${name}: ${getNodeText(typeNode, ctx.source)}`
+        : undefined;
+      ctx.createNode(kind, name, node, { signature: sig });
+      return true;
+    }
+
     // Handle Kotlin `fun interface` declarations.
     // Tree-sitter-kotlin doesn't support `fun interface` syntax (Kotlin 1.4+).
     // It produces two different misparse patterns:
