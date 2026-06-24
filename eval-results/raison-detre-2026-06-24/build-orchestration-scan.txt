@@ -1,0 +1,134 @@
+# Build-orchestration edge-density pilot
+# repos dir: /Users/liuzaoqu/Desktop/develop/sogen/OmniWeave/research/2026-06-23-codegraph-ecosystem/repos
+# date: 2026-06-24T03:10Z
+
+## aider
+  orchestration files: CI=10 Dockerfile=3 Makefile=0 package.json=0
+  distinct local-script edges from orchestration: 1
+    - scripts/issues.py
+
+## blarify
+  orchestration files: CI=2 Dockerfile=0 Makefile=0 package.json=0
+  distinct local-script edges from orchestration: 0
+
+## cgc
+  orchestration files: CI=12 Dockerfile=1 Makefile=1 package.json=4
+  distinct local-script edges from orchestration: 2
+    - src/codegraphcontext/tools/indexing/embeddings.py
+    - src/codegraphcontext/tools/indexing/vector_resolver.py
+
+## claude-context
+  orchestration files: CI=2 Dockerfile=0 Makefile=0 package.json=6
+  distinct local-script edges from orchestration: 0
+
+## codanna-clean
+  orchestration files: CI=6 Dockerfile=0 Makefile=0 package.json=1
+  distinct local-script edges from orchestration: 0
+
+## codanna
+  orchestration files: CI=6 Dockerfile=0 Makefile=0 package.json=0
+  distinct local-script edges from orchestration: 0
+
+## code-graph-mcp-2
+  orchestration files: CI=4 Dockerfile=0 Makefile=0 package.json=6
+  distinct local-script edges from orchestration: 25
+    - claude-plugin/scripts/adopt.test.js
+    - claude-plugin/scripts/auto-update.test.js
+    - claude-plugin/scripts/cg-answer.test.js
+    - claude-plugin/scripts/claude-config.test.js
+    - claude-plugin/scripts/doctor.test.js
+    - claude-plugin/scripts/find-binary.test.js
+    - claude-plugin/scripts/hooks.test.js
+    - claude-plugin/scripts/incremental-index.test.js
+    - claude-plugin/scripts/lifecycle.e2e.test.js
+    - claude-plugin/scripts/lifecycle.test.js
+    - claude-plugin/scripts/pr-impact-comment.js
+    - claude-plugin/scripts/pr-impact-comment.test.js
+    - claude-plugin/scripts/pre-edit-guide.test.js
+    - claude-plugin/scripts/pre-grep-guide.test.js
+    - claude-plugin/scripts/pre-read-guide.test.js
+    - claude-plugin/scripts/project-detect.test.js
+    - claude-plugin/scripts/recommendation-log.test.js
+    - claude-plugin/scripts/session-init.test.js
+    - claude-plugin/scripts/tmp-dir.test.js
+    - claude-plugin/scripts/user-prompt-context.test.js
+    - claude-plugin/scripts/version-utils.test.js
+    - scripts/install-e2e.test.js
+    - scripts/release-smoke.test.js
+    - scripts/sync-versions.js
+    - scripts/sync-versions.test.js
+
+## code-graph-mcp
+  orchestration files: CI=0 Dockerfile=0 Makefile=0 package.json=0
+  distinct local-script edges from orchestration: 0
+
+## code-review-graph
+  orchestration files: CI=4 Dockerfile=0 Makefile=0 package.json=1
+  distinct local-script edges from orchestration: 2
+    - tool/mcp.js
+    - tool/settings.js
+
+## codebase-memory
+  orchestration files: CI=14 Dockerfile=6 Makefile=0 package.json=4
+  distinct local-script edges from orchestration: 20
+    - scripts/audit-license-provenance.py
+    - scripts/build.sh
+    - scripts/check-dco.sh
+    - scripts/check-no-test-skips.sh
+    - scripts/ci/check-glibc-compat.sh
+    - scripts/ci/check-virustotal.sh
+    - scripts/gen-third-party-notices.sh
+    - scripts/license-gate.sh
+    - scripts/lint.sh
+    - scripts/security-audit.sh
+    - scripts/security-fuzz-random.sh
+    - scripts/security-fuzz.sh
+    - scripts/security-install.sh
+    - scripts/security-network.sh
+    - scripts/security-strings.sh
+    - scripts/security-ui.sh
+    - scripts/security-vendored.sh
+    - scripts/smoke-test.sh
+    - scripts/soak-test.sh
+    - scripts/test.sh
+
+## codegraph
+  orchestration files: CI=2 Dockerfile=0 Makefile=0 package.json=3
+  distinct local-script edges from orchestration: 2
+    - scripts/build-bundle.sh
+    - scripts/pack-npm.sh
+
+## coderag-bench
+  orchestration files: CI=0 Dockerfile=0 Makefile=0 package.json=0
+  distinct local-script edges from orchestration: 0
+
+## graphify
+  orchestration files: CI=2 Dockerfile=1 Makefile=0 package.json=0
+  distinct local-script edges from orchestration: 0
+
+## repograph
+  orchestration files: CI=0 Dockerfile=1 Makefile=0 package.json=1
+  distinct local-script edges from orchestration: 0
+
+## scip
+  orchestration files: CI=5 Dockerfile=0 Makefile=0 package.json=2
+  distinct local-script edges from orchestration: 2
+    - script/package-lock.js
+    - script/package.js
+
+## semantic-search-mcp
+  orchestration files: CI=0 Dockerfile=0 Makefile=0 package.json=0
+  distinct local-script edges from orchestration: 0
+
+## serena
+  orchestration files: CI=9 Dockerfile=2 Makefile=0 package.json=3
+  distinct local-script edges from orchestration: 0
+
+## understand-anything
+  orchestration files: CI=2 Dockerfile=3 Makefile=0 package.json=6
+  distinct local-script edges from orchestration: 0
+
+# Interpretation: this pilot is a coarse edge-density scan, not a benchmark.
+# Sparse repos and dense plugin-script repos both appear; raw regex counts alone
+# do not prove either a traversal moat or a NO-GO. A real decision needs
+# semantic classification plus GT-locked agent A/B.
