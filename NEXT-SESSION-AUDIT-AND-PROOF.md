@@ -41,7 +41,7 @@
 
 **已有基线（别重复、要超越）**：rounds 1–7 agent A/B（~140 run / 15+ 仓 / 5 语言 / 2–3 模型），benchmark 5/1/1。结论：正确性全档**平手 grep**，护城河 = **努力**（工具数/token/turn/latency）+ **信任**（诚实输出）+ 随仓放大 + 模型越弱越宽。
 
-**竞品就在仓里**：`research/2026-06-23-codegraph-ecosystem/repos/` —— `codegraph`（上游正牌，TS/tree-sitter、**无 R / 无跨进程 / 无 workflow DAG**）、`codebase-memory`、`serena`、`codanna`、`aider`、`scip`、`blarify`、`repograph`、`graphify` … head-to-head 的真实弹药。
+**竞品就在仓里**：`research/2026-06-23-codegraph-ecosystem/repos/` —— `codegraph`（上游正牌，TS/tree-sitter；**有 R 抽取**，但 `setMethod` 塌成同名 `function` 节点、**无 S4 分派图**；EdgeKind 仅 12 类、**无 crossLang/produces/consumes/invokes**；`.smk/.nf` 不映射、**无 workflow DAG**——2026-06-24 实证见 `eval-results/vs-codegraph-2026-06-24/`，「无 R」旧说法已退役）、`codebase-memory`、`serena`、`codanna`、`aider`、`scip`、`blarify`、`repograph`、`graphify` … head-to-head 的真实弹药。
 
 **要做更深的**：
 
