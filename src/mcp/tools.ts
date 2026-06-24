@@ -3022,7 +3022,12 @@ export class ToolHandler {
       if (rank !== 0) return rank;
       const aHeuristic = a.provenance === 'heuristic' ? 1 : 0;
       const bHeuristic = b.provenance === 'heuristic' ? 1 : 0;
-      if (aHeuristic !== bHeuristic) return bHeuristic - aHeuristic;
+      if (aHeuristic !== bHeuristic) return aHeuristic - bHeuristic;
+      if (aHeuristic && bHeuristic) {
+        const aConfidence = typeof a.metadata?.confidence === 'number' ? a.metadata.confidence : -1;
+        const bConfidence = typeof b.metadata?.confidence === 'number' ? b.metadata.confidence : -1;
+        if (aConfidence !== bConfidence) return bConfidence - aConfidence;
+      }
       const aLine = a.line ?? Number.MAX_SAFE_INTEGER;
       const bLine = b.line ?? Number.MAX_SAFE_INTEGER;
       return aLine - bLine;

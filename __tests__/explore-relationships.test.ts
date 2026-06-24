@@ -168,6 +168,13 @@ export function runPythonReport(name: string): string {
     if (referencesIndex >= 0) expect(callsIndex).toBeLessThan(referencesIndex);
     if (importsIndex >= 0) expect(callsIndex).toBeLessThan(importsIndex);
 
+    const callsSection = text.slice(callsIndex);
+    const deterministicCallIndex = callsSection.indexOf('entryPoint → runWorkflow');
+    const heuristicCallIndex = callsSection.indexOf('emitDone → handleDone');
+    expect(deterministicCallIndex).toBeGreaterThan(-1);
+    expect(heuristicCallIndex).toBeGreaterThan(-1);
+    expect(deterministicCallIndex).toBeLessThan(heuristicCallIndex);
+
     expect(text).toMatch(
       /emitDone → handleDone\s+\[src\/entry\.ts:8; dynamic: event `done` @src\/wiring\.ts:12; confidence 0\.75\]/
     );
