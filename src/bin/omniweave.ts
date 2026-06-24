@@ -42,6 +42,7 @@ import { silenceEnvNoiseWarnings } from './quiet-warnings';
 import { EXTRACTION_VERSION } from '../extraction/extraction-version';
 import { getTelemetry, TELEMETRY_DOCS, recordIndexEvent } from '../telemetry';
 import { describeSnapshotImportWarning } from '../snapshot-metadata';
+import { CALL_SURFACE_EDGE_KINDS } from '../call-surface';
 
 // Lazy-load heavy modules (OmniWeave, runInstaller) to keep CLI startup fast.
 async function loadOmniWeave(): Promise<typeof import('../index')> {
@@ -80,8 +81,6 @@ function shortenHome(p: string): string {
   const home = process.env.HOME || process.env.USERPROFILE || '';
   return home && p.startsWith(home) ? `~${p.slice(home.length)}` : p;
 }
-
-const CLI_CALL_SURFACE_EDGE_KINDS = new Set<EdgeKind>(['calls', 'crossLang', 'invokes', 'instantiates']);
 
 interface CliRelationshipNode {
   name: string;
@@ -151,7 +150,7 @@ function collectCliCallSurface(
   for (const match of narrowed.matches) {
     const definitionIsLowSignal = isLowSignalSourceFile(match.node.filePath);
     for (const relationship of getRelationships(match.node.id)) {
-      if (!CLI_CALL_SURFACE_EDGE_KINDS.has(relationship.edge.kind)) {
+      if (!CALL_SURFACE_EDGE_KINDS.has(relationship.edge.kind)) {
         omittedWeak++;
         continue;
       }

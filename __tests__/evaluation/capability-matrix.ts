@@ -44,7 +44,14 @@ function ensureIndexed(dir: string): void {
 /** Run a real grep and return {calls, outputLines} — the lines an agent consumes. */
 function grep(cwd: string, args: string[]): number {
   try {
-    const out = execFileSync('grep', args, { cwd, encoding: 'utf-8' });
+    const sourceOnlyArgs = [
+      '--binary-files=without-match',
+      '--exclude-dir=.git',
+      '--exclude-dir=.omniweave',
+      '--exclude-dir=.codegraph',
+      ...args,
+    ];
+    const out = execFileSync('grep', sourceOnlyArgs, { cwd, encoding: 'utf-8' });
     return out.split('\n').filter((l) => l.length > 0).length;
   } catch (e: unknown) {
     // grep exits 1 with no stdout when there are no matches — that's 0 lines.
@@ -349,8 +356,9 @@ const md = [
   `- **Q7 is GREP-WINS** — full-text presence is grep's home turf; the symbol index is the`,
   `  wrong tool. Included to keep the benchmark honest.`,
   ``,
-  `OmniWeave's crossLang/dispatch edges are \`provenance: heuristic\` with a \`confidence\``,
-  `score (surfaced, not hidden) — they are inferred, not compiler-verified. The claim is`,
+  `OmniWeave's process-boundary \`crossLang\` edges are \`provenance: heuristic\` with a`,
+  `surfaced \`confidence\` score; S4 dispatch-table edges are deterministic structure`,
+  `(no heuristic provenance/confidence). The claim is`,
   `narrow and defensible: *these boundary/composition query shapes collapse to one typed,`,
   `traversable call*, which is exactly the zone grep degrades in and LSP cannot enter.`,
   ``,

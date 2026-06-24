@@ -37,6 +37,7 @@ import { clamp, validatePathWithinRoot, validateProjectPath, isConfigLeafNode, C
 import { isGeneratedFile } from '../extraction/generated-detection';
 import { scanDynamicDispatch } from './dynamic-boundaries';
 import { describeSnapshotImportWarning } from '../snapshot-metadata';
+import { CALL_SURFACE_EDGE_KINDS } from '../call-surface';
 
 /**
  * An expected, recoverable "omniweave can't serve this" condition — most
@@ -98,8 +99,6 @@ const RUST_PATH_PREFIXES = new Set(['crate', 'super', 'self']);
 const CONTAINER_NODE_KINDS = new Set<NodeKind>([
   'class', 'struct', 'interface', 'trait', 'protocol', 'enum', 'namespace', 'module',
 ]);
-
-const CALL_SURFACE_EDGE_KINDS = new Set<EdgeKind>(['calls', 'crossLang', 'invokes', 'instantiates']);
 
 function queryAllowsLowSignalSources(query: string): boolean {
   return /\b(test|tests|testing|spec|specs)\b/i.test(query)
