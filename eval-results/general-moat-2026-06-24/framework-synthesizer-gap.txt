@@ -1,0 +1,27 @@
+# CG framework synthesizers OW lacks (verified 2026-06-24T04:18Z)
+## CG callback-synthesizer.ts has:
+celeryDispatchEdges
+celeryEdges
+laravelEdges
+laravelEventEdges
+piniaEdges
+piniaStoreEdges
+reduxThunkEdges
+rtkEdges
+rtkQueryEdges
+sidekiqDispatchEdges
+sidekiqEdges
+springEdges
+springEventEdges
+vuexDispatchEdges
+vuexEdges
+## CG standalone synthesizer files:
+research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/resolution/c-fnptr-synthesizer.ts
+research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/resolution/callback-synthesizer.ts
+research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/resolution/goframe-synthesizer.ts
+## OW callback-synthesizer.ts framework matches: (none)
+0
+## line counts:
+    2751 research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/resolution/callback-synthesizer.ts
+    2126 src/resolution/callback-synthesizer.ts
+    4877 total
