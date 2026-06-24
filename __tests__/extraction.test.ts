@@ -1381,6 +1381,34 @@ public struct User {
     expect(structNode?.name).toBe('User');
   });
 
+  it('should extract stored properties without treating computed or protocol properties as fields', () => {
+    const code = `
+protocol Repository {
+    var requiredName: String { get }
+}
+
+struct User {
+    let id: UUID
+    var name: String
+    static let cacheKey = "user"
+    static var total = 0
+
+    var displayName: String {
+        name.uppercased()
+    }
+}
+`;
+    const result = extractFromSource('StoredProperties.swift', code);
+    const byName = new Map(result.nodes.map((n) => [n.name, n]));
+
+    expect(byName.get('id')?.kind).toBe('field');
+    expect(byName.get('name')?.kind).toBe('field');
+    expect(byName.get('cacheKey')?.kind).toBe('constant');
+    expect(byName.get('total')?.kind).toBe('variable');
+    expect(byName.has('displayName')).toBe(false);
+    expect(byName.has('requiredName')).toBe(false);
+  });
+
   it('should extract protocol declarations', () => {
     const code = `
 public protocol Repository {
