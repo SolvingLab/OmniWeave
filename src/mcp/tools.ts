@@ -2768,6 +2768,27 @@ export class ToolHandler {
       }
     }
 
+    // findRelevantContext recovers inter-node edges before explore injects exact
+    // named seeds. Recover once more over the selected node set so a symbol the
+    // agent explicitly named can bring its real calls/overrides/crossLang facts
+    // into the supporting-relationships section without widening the node set.
+    if (namedSeedIds.size > 0) {
+      const recoveryKinds: EdgeKind[] = [
+        'calls', 'extends', 'implements', 'references', 'overrides',
+        'crossLang', 'produces', 'consumes', 'invokes',
+      ];
+      const existingEdgeKeys = new Set(
+        subgraph.edges.map((e) => `${e.source}:${e.target}:${e.kind}`)
+      );
+      for (const edge of cg.findEdgesBetweenNodes([...subgraph.nodes.keys()], recoveryKinds)) {
+        const key = `${edge.source}:${edge.target}:${edge.kind}`;
+        if (!existingEdgeKeys.has(key)) {
+          subgraph.edges.push(edge);
+          existingEdgeKeys.add(key);
+        }
+      }
+    }
+
     // Step 2: Group nodes by file, score by relevance
     const fileGroups = new Map<string, { nodes: Node[]; score: number }>();
     const entryNodeIds = new Set([...subgraph.roots, ...namedSeedIds]);
@@ -3026,6 +3047,9 @@ export class ToolHandler {
         const bConfidence = typeof b.metadata?.confidence === 'number' ? b.metadata.confidence : -1;
         if (aConfidence !== bConfidence) return bConfidence - aConfidence;
       }
+      const aNamedEndpoints = (namedSeedIds.has(a.source) ? 1 : 0) + (namedSeedIds.has(a.target) ? 1 : 0);
+      const bNamedEndpoints = (namedSeedIds.has(b.source) ? 1 : 0) + (namedSeedIds.has(b.target) ? 1 : 0);
+      if (aNamedEndpoints !== bNamedEndpoints) return bNamedEndpoints - aNamedEndpoints;
       const aLine = a.line ?? Number.MAX_SAFE_INTEGER;
       const bLine = b.line ?? Number.MAX_SAFE_INTEGER;
       return aLine - bLine;

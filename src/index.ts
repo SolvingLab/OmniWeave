@@ -21,6 +21,7 @@ import {
   TaskContext,
   BuildContextOptions,
   FindRelevantContextOptions,
+  EdgeKind,
 } from './types';
 import { DatabaseConnection, getDatabasePath } from './db';
 import { QueryBuilder } from './db/queries';
@@ -889,6 +890,13 @@ export class OmniWeave {
    */
   getIncomingEdges(nodeId: string): Edge[] {
     return this.queries.getIncomingEdges(nodeId);
+  }
+
+  /**
+   * Find existing edges whose endpoints are both in the selected node set.
+   */
+  findEdgesBetweenNodes(nodeIds: string[], kinds?: EdgeKind[]): Edge[] {
+    return this.queries.findEdgesBetweenNodes(nodeIds, kinds);
   }
 
   // ===========================================================================

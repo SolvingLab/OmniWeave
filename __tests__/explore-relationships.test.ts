@@ -80,6 +80,19 @@ export function runPythonReport(name: string): string {
 }
 `
     );
+    const manySeedHelpers = Array.from(
+      { length: 40 },
+      (_, i) => `export function helper${i + 1}() { return ${i + 1}; }\n`,
+    ).join('');
+    fs.writeFileSync(
+      path.join(src, 'many-seeds.ts'),
+      Array.from({ length: 7 }, (_, i) => `export function seed${i + 1}() { return ${i + 1}; }\n`).join('') +
+      `export function seed8() {\n` +
+      `  return ${Array.from({ length: 40 }, (_, i) => `helper${i + 1}()`).join(' + ')} + seed9();\n` +
+      `}\n\n` +
+      `export function seed9() { return 9; }\n\n` +
+      manySeedHelpers,
+    );
     fs.writeFileSync(
       path.join(src, 'handler.ts'),
       `export function handleDone(): string {
@@ -201,6 +214,31 @@ export function runPythonReport(name: string): string {
 
     expect(text).toContain('## Flow (call path among the symbols you queried)');
     expect(text).toMatch(/1\. runWorkflow[\s\S]*↓ calls[\s\S]*2\. stepOne/);
+  });
+
+  it('recovers supporting relationships for named seeds injected after root selection', async () => {
+    const query = 'seed1 seed2 seed3 seed4 seed5 seed6 seed7 seed8 seed9';
+    const seed8 = cg.getNodesByName('seed8').find((n) => n.kind === 'function');
+    const seed9 = cg.getNodesByName('seed9').find((n) => n.kind === 'function');
+    expect(seed8).toBeTruthy();
+    expect(seed9).toBeTruthy();
+
+    const sg = await cg.findRelevantContext(query, {
+      searchLimit: 8,
+      traversalDepth: 3,
+      maxNodes: 200,
+      minScore: 0.2,
+    });
+    expect(sg.roots.map((id) => sg.nodes.get(id)?.name)).not.toContain('seed9');
+    expect(
+      sg.edges.some((edge) => edge.source === seed8!.id && edge.target === seed9!.id && edge.kind === 'calls'),
+    ).toBe(false);
+
+    const result = await handler.execute('omniweave_explore', { query, maxFiles: 8 });
+    const text = result.content[0].text;
+
+    expect(text).toContain('### Supporting relationships (not necessarily the call path)');
+    expect(text).toContain('seed8 → seed9');
   });
 
   it('bridges endpoint-only flow queries across two unnamed intermediates', async () => {
