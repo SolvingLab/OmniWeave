@@ -68,6 +68,12 @@ semantic-search-mcp  | 1048   | 1021   | 1048           | 1021           | +27  
   deficit (the references) was *useful* and OmniWeave genuinely lacked it. This pass builds it, so
   OmniWeave is not merely "not weaker" but a real superset on first-party code.
 
+## Full 14-language rerun
+
+The follow-up full corpus rerun is recorded in `RESULTS-full14-2026-06-24.md`, with raw lines in
+`parity-full14-2026-06-24.jsonl` and per-kind decomposition in
+`per-kind-decomposition-2026-06-24.json`.
+
 ## Reproduce
 
 ```bash

@@ -1,0 +1,77 @@
+{
+  "lang-java": {
+    "ow": {
+      "calls": 7117,
+      "contains": 8296,
+      "decorates": 119,
+      "extends": 288,
+      "implements": 84,
+      "imports": 2628,
+      "instantiates": 2394,
+      "references": 2299
+    },
+    "cg": {
+      "calls": 7117,
+      "contains": 8296,
+      "decorates": 119,
+      "extends": 288,
+      "implements": 84,
+      "imports": 2628,
+      "instantiates": 2394,
+      "references": 2686
+    }
+  },
+  "lang-ts": {
+    "ow": {
+      "calls": 13099,
+      "contains": 4666,
+      "extends": 43,
+      "implements": 1,
+      "imports": 1719,
+      "instantiates": 338,
+      "references": 5122
+    },
+    "cg": {
+      "calls": 13065,
+      "contains": 4666,
+      "extends": 43,
+      "implements": 1,
+      "imports": 1719,
+      "instantiates": 341,
+      "references": 5515
+    }
+  },
+  "lang-swift": {
+    "ow": {
+      "calls": 5188,
+      "contains": 4093,
+      "extends": 217,
+      "implements": 17,
+      "imports": 183,
+      "instantiates": 2016,
+      "references": 1826
+    },
+    "cg": {
+      "calls": 5410,
+      "contains": 4100,
+      "extends": 217,
+      "implements": 17,
+      "imports": 183,
+      "instantiates": 2019,
+      "references": 1782
+    }
+  },
+  "lang-c": {
+    "ow": {
+      "calls": 204,
+      "contains": 71,
+      "imports": 14
+    },
+    "cg": {
+      "calls": 204,
+      "contains": 75,
+      "imports": 14,
+      "references": 1
+    }
+  }
+}
