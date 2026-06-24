@@ -1025,8 +1025,9 @@ export class ToolHandler {
   getTools(): ToolDefinition[] {
     const allow = this.toolAllowlist();
     // No explicit allowlist → the default 5-tool surface (see
-    // DEFAULT_MCP_TOOLS for the evidence). An allowlist replaces the
-    // default entirely, so any defined tool can be re-enabled.
+    // DEFAULT_MCP_TOOLS for the evidence). An allowlist replaces the default
+    // before project-size shaping; tiny repos still get the smaller ListTools
+    // surface below, while execute() remains guarded only by the allowlist.
     let visible = visibleToolsForAllowlist(allow);
     if (!this.cg) return visible;
 

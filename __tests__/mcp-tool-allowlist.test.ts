@@ -126,6 +126,21 @@ describe('OMNIWEAVE_MCP_TOOLS allowlist', () => {
     );
   });
 
+  it('keeps the tiny-repo ListTools surface to the core trio even with an allowlist', () => {
+    process.env[ENV] = 'explore,search,node,callers,impact,files,status';
+    const names = getStaticTools(42).map(t => t.name).sort();
+
+    expect(names).toEqual([
+      'omniweave_explore',
+      'omniweave_node',
+      'omniweave_search',
+    ]);
+    expect(names).not.toContain('omniweave_callers');
+    expect(names).not.toContain('omniweave_impact');
+    expect(names).not.toContain('omniweave_files');
+    expect(names).not.toContain('omniweave_status');
+  });
+
   it('discloses bounded numeric parameters in the static tool schemas', () => {
     delete process.env[ENV];
     const byName = new Map(getStaticTools().map(t => [t.name, t]));
