@@ -16,8 +16,8 @@ restores it.
 
 ## Why it was deferred (evidence-consistent, not a quality judgement)
 
-The handoff (`NEXT-SESSION-OW-RAISON-DETRE.md` §3④) explicitly lists "sync the full upstream
-value-ref patch?" as a **product decision for this session that needs an A/B**, and states the
+The prior raison-detre session handoff explicitly listed "sync the full upstream
+value-ref patch?" as a **product decision that needs an A/B**, and states the
 prior session ported only the *node* part (properties/constants), **not** value-ref edges. This
 WIP was started after that handoff commit (`e4787bb`) — i.e. mid-experiment, contradicting the
 handoff's own stated position. The decision was handed to this session; here it is, with reasons:

@@ -63,9 +63,8 @@ Apply once the repo is quiescent:
 - `framework-parity-2026-06-24/`: it has both `RESULTS.md` and `RESULTS-dispatch.md` +
   `measure.mjs`/`measure-dispatch.mjs` — fine as two distinct measurements (Pinia/Vuex vs
   dispatch), but cross-link them from one entry doc.
-- Root `NEXT-SESSION-*.md`: four exist, but `NEXT-SESSION-GENERAL-MOAT.md` self-declares the
-  **sole** authority. The other three (`-AUDIT-AND-PROOF`, `-GOAL`, `-OW-RAISON-DETRE`) are
-  superseded earlier-loop handoffs whose substance lives in `spec-audit-*`/`raison-detre-*`;
-  consolidate to the one authoritative handoff (and repoint the lone
-  `value-ref-decision/README.md` → `NEXT-SESSION-OW-RAISON-DETRE` citation to
-  `raison-detre-2026-06-24/`).
+- Root `NEXT-SESSION-*.md`: **DONE this session** — collapsed four competing handoffs to the
+  one `NEXT-SESSION-GENERAL-MOAT.md` (self-declared sole authority); the three superseded
+  earlier-loop handoffs (`-AUDIT-AND-PROOF`, `-GOAL`, `-OW-RAISON-DETRE`) were removed (their
+  substance lives in `spec-audit-*`/`raison-detre-*`, and git preserves the originals), and the
+  lone `value-ref-decision/README.md` citation was de-pointed.
