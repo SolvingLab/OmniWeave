@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__codegraph__codegraph_explore",
+      "mcp__omniweave__omniweave_explore",
+      "mcp__omniweave__omniweave_node",
+      "mcp__omniweave__omniweave_search",
+      "mcp__omniweave__omniweave_callers",
+      "mcp__omniweave__omniweave_impact"
+    ]
+  }
+}
