@@ -1,0 +1,52 @@
+[
+  {
+    "id": "U1-i18n-json",
+    "axis": "content",
+    "subtype": "symbol-uncorrelated",
+    "question": "In this excalidraw source tree, which file contains the exact UI string \"Wireframe to code\"? Answer with the file path.",
+    "groundTruth": "packages/excalidraw/locales/en.json",
+    "gtRegex": "locales/en\\.json|en\\.json",
+    "gtSource": "en.json (i18n value) — file-unique (grep: only en.json).",
+    "rationale": "Symbol-UNCORRELATED content: a JSON i18n value with no symbol in the graph and a query whose words ('wireframe','code') do not name the file. The structural graph is blind here, so omniweave-structural must fall back to grep — the case that DIFFERENTIATES the arms."
+  },
+  {
+    "id": "U2-i18n-json",
+    "axis": "content",
+    "subtype": "symbol-uncorrelated",
+    "question": "In this excalidraw source tree, which file contains the exact UI string \"Embeddable element\"? Answer with the file path.",
+    "groundTruth": "packages/excalidraw/locales/en.json",
+    "gtRegex": "locales/en\\.json|en\\.json",
+    "gtSource": "en.json (i18n value) — file-unique (grep: only en.json).",
+    "rationale": "Second symbol-uncorrelated JSON value (robustness): same blind spot for the structural graph, a different string."
+  },
+  {
+    "id": "U3-comment-ts",
+    "axis": "content",
+    "subtype": "symbol-uncorrelated",
+    "question": "In this excalidraw source tree, which source file contains a code COMMENT with the phrase \"the most correct\"? Answer with the file path.",
+    "groundTruth": "packages/excalidraw/deburr.ts",
+    "gtRegex": "deburr\\.ts",
+    "gtSource": "packages/excalidraw/deburr.ts:21 (a comment) — file-unique (grep: only deburr.ts).",
+    "rationale": "Symbol-uncorrelated content of a DIFFERENT kind — a comment phrase in a .ts file whose words ('the most correct') do not match the file's symbols (deburr/deburredLetters), so the graph cannot guide the agent to it. Diversifies beyond JSON."
+  },
+  {
+    "id": "C-correlated",
+    "axis": "content",
+    "subtype": "symbol-correlated-control",
+    "question": "In this excalidraw source tree, which source file contains the literal default error message \"Couldn't export canvas.\"? Answer with the file path.",
+    "groundTruth": "packages/excalidraw/errors.ts",
+    "gtRegex": "errors\\.ts",
+    "gtSource": "packages/excalidraw/errors.ts:4 (CanvasError default) — file-unique.",
+    "rationale": "Symbol-CORRELATED control: the string lives in errors.ts beside *Error symbols, so the structural graph can reach the right file by proximity. Expected to TIE cheaply — the honest control that shows content_fts is NOT always needed (anti-cherry-pick)."
+  },
+  {
+    "id": "CEIL-comprehension",
+    "axis": "ceiling",
+    "subtype": "no-tool-advantage",
+    "question": "In this excalidraw source tree, what is the default value of the `name` parameter of the `CanvasError` constructor? Answer with the string value.",
+    "groundTruth": "CANVAS_ERROR",
+    "gtRegex": "CANVAS_ERROR\\b",
+    "gtSource": "packages/excalidraw/errors.ts:5  `name: CANVAS_ERROR_NAMES = \"CANVAS_ERROR\"`.",
+    "rationale": "Ceiling / anti-cherry-pick: every arm locates CanvasError and reads the constructor — no tool has an edge. A tie is the expected, honest outcome."
+  }
+]

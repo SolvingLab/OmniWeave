@@ -59,6 +59,19 @@ separate: it edits the hot `tools.ts`).
 5. **Not a correctness/outcome lever.** Per Step A (`eval-results/content-vs-structural-2026-06-24/`),
    on a real LLM the content index is an adoption-gated *economy* convenience, never marketed as
    more-correct.
+6. **COVERAGE GAP (found 2026-06-24 via the "no-区分度" push — `coverage-probe.mjs`):** content_fts
+   is populated in `storeExtractionResult`, which runs **only for files OmniWeave EXTRACTS** — the
+   recognized source languages **plus** the few config grammars it indexes (`.yaml`/`.yml`). It does
+   **NOT** cover `.json`, `.md`, `.txt`, or any other non-indexed text type. Firsthand: indexing a
+   dir with `locales/en.json`, `readme.md`, `app.ts`, `config.yaml`, content_fts covers only
+   `app.ts` + `config.yaml`; the i18n `en.json` and the markdown are absent, so
+   `searchContent("Wireframe to code")` cannot find the i18n value. **This is the symbol-UNcorrelated
+   content (i18n / docs / generic JSON config) where a content index would matter MOST — and the
+   current implementation does not reach it.** It diverges from the war plan's stated intent
+   ("populate for files ≤ MAX_FILE_SIZE" = all files). Closing it means a content-only pass over the
+   scanned file list (binary-skipped) decoupled from extraction — which raises content storage and
+   pressures the `< 1 GB for < 50k files` gate on doc/translation-heavy repos. **That tension
+   (coverage vs the storage gate) is a product decision, recorded here rather than silently resolved.**
 
 ## Reproduce
 

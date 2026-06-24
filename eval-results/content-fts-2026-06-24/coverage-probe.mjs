@@ -1,0 +1,16 @@
+import { OmniWeave } from '/Users/liuzaoqu/Desktop/develop/sogen/OmniWeave/dist/index.js';
+import * as fs from 'node:fs'; import * as path from 'node:path'; import * as os from 'node:os';
+const dir = fs.mkdtempSync(path.join(os.tmpdir(),'cov-'));
+fs.mkdirSync(path.join(dir,'locales'),{recursive:true});
+fs.writeFileSync(path.join(dir,'locales','en.json'), '{"wireframeToCode":"Wireframe to code"}\n');
+fs.writeFileSync(path.join(dir,'app.ts'), 'export const x = "Wireframe to code in TS too";\n');
+fs.writeFileSync(path.join(dir,'readme.md'), '# Wireframe to code in markdown\n');
+fs.writeFileSync(path.join(dir,'config.yaml'), 'msg: Wireframe to code in yaml\n');
+const ow = await OmniWeave.init(dir,{silent:true}); await ow.indexAll();
+const db = ow.db.db;
+const files = db.prepare("SELECT path, language FROM files ORDER BY path").all();
+console.log('OW 索引的文件:'); for(const f of files) console.log('  ', f.path, '('+f.language+')');
+const cfiles = db.prepare("SELECT DISTINCT path FROM content_fts ORDER BY path").all();
+console.log('content_fts 覆盖的文件:'); for(const f of cfiles) console.log('  ', f.path);
+console.log('content_fts 查「Wireframe to code」:', JSON.stringify(ow.searchContent('Wireframe to code',10).results.map(r=>r.path)));
+ow.close?.(); fs.rmSync(dir,{recursive:true,force:true});
