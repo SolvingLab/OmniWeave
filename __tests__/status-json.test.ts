@@ -36,6 +36,11 @@ function expectChangeCounts(value: unknown, expected: { added: number; modified:
   expect(value).toEqual(expected);
 }
 
+function expectBuildFingerprint(value: unknown): void {
+  expect(typeof value).toBe('string');
+  expect(value as string).toMatch(new RegExp(`^${PKG_VERSION}(?:\\+[0-9a-f]{6,64})?$`));
+}
+
 describe('omniweave status --json — CI fields (#329)', () => {
   let tempDir: string;
 
@@ -67,6 +72,7 @@ describe('omniweave status --json — CI fields (#329)', () => {
     const out = runStatusJson(tempDir);
     expect(out.initialized).toBe(false);
     expect(out.version).toBe(PKG_VERSION);
+    expectBuildFingerprint(out.buildFingerprint);
     expect(typeof out.indexPath).toBe('string');
     expect(out.indexPath as string).toContain('.omniweave');
     expect(out.lastIndexed).toBeNull();
@@ -83,6 +89,7 @@ describe('omniweave status --json — CI fields (#329)', () => {
     const out = runStatusJson(tempDir);
     expect(out.initialized).toBe(true);
     expect(out.version).toBe(PKG_VERSION);
+    expectBuildFingerprint(out.buildFingerprint);
     expect(out.indexPath as string).toContain('.omniweave');
     expect(typeof out.lastIndexed).toBe('string');
     // ISO string that round-trips back into the index window.

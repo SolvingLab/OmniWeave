@@ -916,6 +916,7 @@ program
           console.log(JSON.stringify({
             initialized: false,
             version: packageJson.version,
+            buildFingerprint: OmniWeaveBuildFingerprint,
             projectPath,
             indexPath: getOmniWeaveDir(projectPath),
             lastIndexed: null,
@@ -951,6 +952,7 @@ program
         console.log(JSON.stringify({
           initialized: true,
           version: packageJson.version,
+          buildFingerprint: OmniWeaveBuildFingerprint,
           projectPath,
           indexPath: getOmniWeaveDir(projectPath),
           lastIndexed: lastIndexedMs != null ? new Date(lastIndexedMs).toISOString() : null,
@@ -1000,6 +1002,7 @@ program
       // SQLite, full WAL + FTS5, no native build).
       const backendLabel = chalk.green(`node:sqlite ${getGlyphs().dash} built-in (full WAL)`);
       console.log(`  Backend:   ${backendLabel}`);
+      console.log(`  Build:     ${OmniWeaveBuildFingerprint}`);
       // Effective journal mode: 'wal' means concurrent reads never block on a
       // writer; anything else means they can ("database is locked"). node:sqlite
       // supports WAL everywhere, so a non-wal mode means the filesystem can't

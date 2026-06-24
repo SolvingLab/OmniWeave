@@ -40,6 +40,7 @@ import { isGeneratedFile } from '../extraction/generated-detection';
 import { scanDynamicDispatch } from './dynamic-boundaries';
 import { describeSnapshotImportWarning } from '../snapshot-metadata';
 import { CALL_SURFACE_EDGE_KINDS } from '../call-surface';
+import { OmniWeaveBuildFingerprint } from './version';
 
 /**
  * An expected, recoverable "omniweave can't serve this" condition — most
@@ -4095,6 +4096,7 @@ export class ToolHandler {
       `**Total nodes:** ${stats.nodeCount}`,
       `**Total edges:** ${stats.edgeCount}`,
       `**Database size:** ${(stats.dbSizeBytes / 1024 / 1024).toFixed(2)} MB`,
+      `**Runtime build:** ${OmniWeaveBuildFingerprint}`,
     );
 
     // Surface the active SQLite backend (node:sqlite, Node's built-in real
