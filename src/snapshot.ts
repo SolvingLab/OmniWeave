@@ -380,10 +380,10 @@ export async function importSnapshot(
         );
       }
 
-      installSnapshotArtifacts(verification.stagingDir!, targetDir, verification.manifest!);
-
       const databasePath = getDatabasePath(root);
-      await recordSnapshotImportMetadata(databasePath, verification.manifest!, verification.manifestHash!, staleness, options);
+      await installSnapshotArtifacts(verification.stagingDir!, targetDir, verification.manifest!, async () => {
+        await recordSnapshotImportMetadata(databasePath, verification.manifest!, verification.manifestHash!, staleness, options);
+      });
       return {
         directory: verification.directory,
         projectRoot: root,
@@ -1301,11 +1301,17 @@ async function computeSnapshotStaleness(projectRoot: string, dbPath: string): Pr
   };
 }
 
-function installSnapshotArtifacts(stagingDir: string, targetDir: string, manifest: SnapshotManifest): void {
+async function installSnapshotArtifacts(
+  stagingDir: string,
+  targetDir: string,
+  manifest: SnapshotManifest,
+  afterInstall: () => Promise<void>,
+): Promise<void> {
   const backupDir = fs.mkdtempSync(path.join(targetDir, '.snapshot-import-backup-'));
   try {
     moveKnownGraphFiles(targetDir, backupDir);
     moveSnapshotArtifacts(stagingDir, targetDir, manifest);
+    await afterInstall();
   } catch (err) {
     removeKnownGraphFiles(targetDir);
     restoreKnownGraphFiles(backupDir, targetDir);

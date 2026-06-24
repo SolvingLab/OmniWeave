@@ -398,6 +398,37 @@ describe('snapshot import and verify', () => {
     }
   });
 
+  it('restores the previous graph if snapshot import metadata cannot be recorded', async () => {
+    await indexProject(targetRoot);
+    const targetDbPath = getDatabasePath(targetRoot);
+    const targetHashBefore = hashFileForTest(targetDbPath);
+
+    const conn = DatabaseConnection.open(path.join(outputDir, SNAPSHOT_DATABASE_FILENAME));
+    try {
+      conn.getDb().exec(`
+        CREATE TRIGGER snapshot_metadata_blocker
+        BEFORE INSERT ON project_metadata
+        BEGIN
+          SELECT RAISE(ABORT, 'metadata blocked by snapshot');
+        END;
+      `);
+      conn.getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      conn.close();
+    }
+    refreshSnapshotDatabaseManifest(outputDir);
+
+    await expect(importSnapshot(outputDir, targetRoot, { force: true })).rejects.toThrow(/metadata blocked by snapshot/);
+    expect(hashFileForTest(targetDbPath)).toBe(targetHashBefore);
+
+    const cg = OmniWeave.openSync(targetRoot);
+    try {
+      expect(cg.getSnapshotImportInfo()).toBeNull();
+    } finally {
+      cg.destroy();
+    }
+  });
+
   it('verifies staged snapshot databases through read-only connections', async () => {
     const originalOpen = DatabaseConnection.open;
     const calls: Array<{ dbPath: string; options: OpenDatabaseOptions }> = [];
