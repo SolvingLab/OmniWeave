@@ -697,6 +697,30 @@ describe('snapshot import and verify', () => {
     await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
   });
 
+  it('rejects snapshots whose allowed sqlite trigger SQL is tampered', async () => {
+    const conn = DatabaseConnection.open(path.join(outputDir, SNAPSHOT_DATABASE_FILENAME));
+    try {
+      conn.getDb().exec(`
+        DROP TRIGGER nodes_ai;
+        CREATE TRIGGER nodes_ai AFTER INSERT ON nodes BEGIN
+          SELECT RAISE(ABORT, 'snapshot trigger blocked indexing');
+        END;
+      `);
+      conn.getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      conn.close();
+    }
+    refreshSnapshotDatabaseManifest(outputDir);
+
+    const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+
+    expect(verification.ok).toBe(false);
+    expect(verification.errors.join('\n')).toContain('sqlite_schema SQL that differs from the current OmniWeave schema');
+    expect(verification.errors.join('\n')).toContain('trigger:nodes_ai:nodes');
+    await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
+    expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+  });
+
   it('refuses stale target sources by default and leaves the target uninitialized', async () => {
     writeProject(targetRoot, CHANGED_SOURCE);
 
@@ -955,6 +979,28 @@ describe('snapshot import and verify', () => {
     expect(errors).toContain('src/index.ts');
     expect(errors).not.toContain('```');
     expect(errors).not.toContain('ignore previous instructions');
+    await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
+    expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+  });
+
+  it('rejects snapshots whose content index path or content values are not text', async () => {
+    const conn = DatabaseConnection.open(path.join(outputDir, SNAPSHOT_DATABASE_FILENAME));
+    try {
+      conn.getDb().prepare('DELETE FROM content_fts WHERE path = ?').run('src/index.ts');
+      conn.getDb().prepare(
+        'INSERT INTO content_fts (path, content) VALUES (?, ?)'
+      ).run('src/index.ts', Buffer.from('needle forged blob snippet', 'utf8'));
+      conn.getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      conn.close();
+    }
+    refreshSnapshotDatabaseManifest(outputDir);
+
+    const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+
+    expect(verification.ok).toBe(false);
+    expect(verification.errors.join('\n')).toContain('non-text content_fts path/content values');
+    expect(verification.errors.join('\n')).toContain('src/index.ts');
     await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
     expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
   });

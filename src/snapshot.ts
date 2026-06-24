@@ -63,6 +63,31 @@ const ALLOWED_SNAPSHOT_SCHEMA_OBJECTS = new Set([
   'trigger:nodes_ai:nodes',
   'trigger:nodes_au:nodes',
 ]);
+const SNAPSHOT_SCHEMA_EXACT_SQL_OBJECTS = new Set([
+  'index:idx_edges_kind:edges',
+  'index:idx_edges_provenance:edges',
+  'index:idx_edges_source_kind:edges',
+  'index:idx_edges_target_kind:edges',
+  'index:idx_files_language:files',
+  'index:idx_files_modified_at:files',
+  'index:idx_nodes_file_line:nodes',
+  'index:idx_nodes_file_path:nodes',
+  'index:idx_nodes_kind:nodes',
+  'index:idx_nodes_language:nodes',
+  'index:idx_nodes_lower_name:nodes',
+  'index:idx_nodes_name:nodes',
+  'index:idx_nodes_qualified_name:nodes',
+  'index:idx_unresolved_file_path:unresolved_refs',
+  'index:idx_unresolved_from_name:unresolved_refs',
+  'index:idx_unresolved_from_node:unresolved_refs',
+  'index:idx_unresolved_name:unresolved_refs',
+  'table:content_fts:content_fts',
+  'table:nodes_fts:nodes_fts',
+  'trigger:nodes_ad:nodes',
+  'trigger:nodes_ai:nodes',
+  'trigger:nodes_au:nodes',
+]);
+let trustedSnapshotSchemaSql: Map<string, string | null> | null = null;
 
 export interface SnapshotManifest {
   format: typeof SNAPSHOT_FORMAT;
@@ -922,24 +947,75 @@ function validateSnapshotDatabasePragmas(db: SqliteDatabase, errors: string[]): 
 }
 
 function validateSnapshotSqliteSchema(db: SqliteDatabase, errors: string[]): void {
-  let rows: Array<{ type: string; name: string; tblName: string }>;
+  let rows: Array<{ type: string; name: string; tblName: string; sql: string | null }>;
   try {
     rows = db.prepare(`
-      SELECT type, name, tbl_name AS tblName
+      SELECT type, name, tbl_name AS tblName, sql
       FROM sqlite_schema
       WHERE name NOT LIKE 'sqlite_%'
-    `).all() as Array<{ type: string; name: string; tblName: string }>;
+    `).all() as Array<{ type: string; name: string; tblName: string; sql: string | null }>;
   } catch (err) {
     errors.push(`Snapshot database cannot validate sqlite_schema: ${err instanceof Error ? err.message : String(err)}`);
     return;
   }
 
   const unexpected = rows
-    .map((row) => `${row.type}:${row.name}:${row.tblName}`)
+    .map(snapshotSchemaObjectKey)
     .filter((key) => !ALLOWED_SNAPSHOT_SCHEMA_OBJECTS.has(key));
   if (unexpected.length > 0) {
     errors.push(`Snapshot database contains unexpected sqlite_schema objects: ${summarizePaths(unexpected)}`);
   }
+
+  let trustedSql: Map<string, string | null>;
+  try {
+    trustedSql = getTrustedSnapshotSchemaSql();
+  } catch (err) {
+    errors.push(`Snapshot database cannot load trusted sqlite_schema: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+
+  const actual = new Map(rows.map((row) => [snapshotSchemaObjectKey(row), normalizeSqliteSchemaSql(row.sql)]));
+  const mismatched: string[] = [];
+  for (const key of SNAPSHOT_SCHEMA_EXACT_SQL_OBJECTS) {
+    const expectedSql = trustedSql.get(key);
+    const actualSql = actual.get(key);
+    if (actualSql !== expectedSql) mismatched.push(key);
+  }
+  if (mismatched.length > 0) {
+    errors.push(`Snapshot database contains sqlite_schema SQL that differs from the current OmniWeave schema: ${summarizePaths(mismatched)}`);
+  }
+}
+
+function getTrustedSnapshotSchemaSql(): Map<string, string | null> {
+  if (trustedSnapshotSchemaSql) return trustedSnapshotSchemaSql;
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'omniweave-trusted-schema-'));
+  const dbPath = path.join(dir, SNAPSHOT_DATABASE_FILENAME);
+  let conn: DatabaseConnection | undefined;
+  try {
+    conn = DatabaseConnection.initialize(dbPath);
+    const rows = conn.getDb().prepare(`
+      SELECT type, name, tbl_name AS tblName, sql
+      FROM sqlite_schema
+      WHERE name NOT LIKE 'sqlite_%'
+    `).all() as Array<{ type: string; name: string; tblName: string; sql: string | null }>;
+    trustedSnapshotSchemaSql = new Map(rows.map((row) => [
+      snapshotSchemaObjectKey(row),
+      normalizeSqliteSchemaSql(row.sql),
+    ]));
+    return trustedSnapshotSchemaSql;
+  } finally {
+    conn?.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function snapshotSchemaObjectKey(row: { type: string; name: string; tblName: string }): string {
+  return `${row.type}:${row.name}:${row.tblName}`;
+}
+
+function normalizeSqliteSchemaSql(sql: string | null): string | null {
+  return typeof sql === 'string' ? sql.replace(/\r\n/g, '\n') : null;
 }
 
 function validateSnapshotIndexedPathMembership(db: SqliteDatabase, errors: string[]): void {
@@ -977,19 +1053,40 @@ function validateSnapshotPathMembership(
 }
 
 function validateSnapshotContentIndex(db: SqliteDatabase, errors: string[], targetRoot?: string): void {
-  let rows: Array<{ path: unknown; content: unknown; contentHash: unknown; language: unknown }>;
+  let rows: Array<{
+    path: unknown;
+    pathType: unknown;
+    content: unknown;
+    contentType: unknown;
+    contentHash: unknown;
+    language: unknown;
+  }>;
   try {
     rows = db.prepare(`
-      SELECT content_fts.path AS path, content_fts.content AS content, files.content_hash AS contentHash, files.language AS language
+      SELECT
+        content_fts.path AS path,
+        typeof(content_fts.path) AS pathType,
+        content_fts.content AS content,
+        typeof(content_fts.content) AS contentType,
+        files.content_hash AS contentHash,
+        files.language AS language
       FROM content_fts
       LEFT JOIN files ON files.path = content_fts.path
-    `).all() as Array<{ path: unknown; content: unknown; contentHash: unknown; language: unknown }>;
+    `).all() as Array<{
+      path: unknown;
+      pathType: unknown;
+      content: unknown;
+      contentType: unknown;
+      contentHash: unknown;
+      language: unknown;
+    }>;
   } catch (err) {
     errors.push(`Snapshot database cannot validate content_fts hashes: ${err instanceof Error ? err.message : String(err)}`);
     return;
   }
 
   const sourceMismatches: string[] = [];
+  const nonTextRows: string[] = [];
   const unsafeSourcePaths: string[] = [];
   const targetMismatches: string[] = [];
   const invalidTargetPaths: string[] = [];
@@ -997,7 +1094,13 @@ function validateSnapshotContentIndex(db: SqliteDatabase, errors: string[], targ
   const targetSourcePaths = targetRoot ? new Set(scanDirectory(targetRoot)) : null;
 
   for (const row of rows) {
-    if (typeof row.path !== 'string' || typeof row.content !== 'string') {
+    if (
+      typeof row.path !== 'string' ||
+      row.pathType !== 'text' ||
+      typeof row.content !== 'string' ||
+      row.contentType !== 'text'
+    ) {
+      nonTextRows.push(displayPathValue(row.path));
       continue;
     }
     if (typeof row.contentHash === 'string') {
@@ -1025,6 +1128,9 @@ function validateSnapshotContentIndex(db: SqliteDatabase, errors: string[], targ
     if (hashContent(targetContent) !== hashContent(row.content)) {
       targetMismatches.push(displayPathValue(row.path));
     }
+  }
+  if (nonTextRows.length > 0) {
+    errors.push(`Snapshot database contains non-text content_fts path/content values: ${summarizePaths(nonTextRows)}`);
   }
   if (sourceMismatches.length > 0) {
     errors.push(`Snapshot database contains source content_fts rows whose content does not match files.content_hash: ${summarizePaths(sourceMismatches)}`);
