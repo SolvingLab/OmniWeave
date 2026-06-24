@@ -43,7 +43,7 @@ import { EXTRACTION_VERSION } from '../extraction/extraction-version';
 import { getTelemetry, TELEMETRY_DOCS, recordIndexEvent } from '../telemetry';
 import { describeSnapshotImportWarning, type SnapshotImportInfo } from '../snapshot-metadata';
 import { CALL_SURFACE_EDGE_KINDS } from '../call-surface';
-import { OmniWeaveBuildFingerprint } from '../mcp/version';
+import { OmniWeaveBuildFingerprint, readCurrentBuildFingerprint, runtimeBuildSkew } from '../mcp/version';
 
 // Lazy-load heavy modules (OmniWeave, runInstaller) to keep CLI startup fast.
 async function loadOmniWeave(): Promise<typeof import('../index')> {
@@ -101,6 +101,20 @@ function subtractChanges(all: ChangeSet, source: ChangeSet): ChangeSet {
     modified: all.modified.filter((p) => !sourceModified.has(p)),
     removed: all.removed.filter((p) => !sourceRemoved.has(p)),
   };
+}
+
+function partitionLowSignalChanges(changes: ChangeSet): { firstParty: ChangeSet; lowSignal: ChangeSet } {
+  const out = {
+    firstParty: { added: [] as string[], modified: [] as string[], removed: [] as string[] },
+    lowSignal: { added: [] as string[], modified: [] as string[], removed: [] as string[] },
+  };
+  for (const kind of ['added', 'modified', 'removed'] as const) {
+    for (const filePath of changes[kind]) {
+      const bucket = isLowSignalSourceFile(filePath) ? out.lowSignal : out.firstParty;
+      bucket[kind].push(filePath);
+    }
+  }
+  return out;
 }
 
 /** Collapse the home directory to `~` for a compact dashboard subtitle. */
@@ -904,6 +918,8 @@ program
   .option('-j, --json', 'Output as JSON')
   .action(async (pathArg: string | undefined, options: { json?: boolean }) => {
     const projectPath = resolveProjectPath(pathArg);
+    const currentBuildFingerprint = readCurrentBuildFingerprint();
+    const buildSkew = runtimeBuildSkew(OmniWeaveBuildFingerprint, currentBuildFingerprint);
     // The directory the user actually ran from, before walking up to the index
     // root. Used to detect when the resolved index lives in a different git
     // working tree (e.g. a nested worktree borrowing the main checkout's index).
@@ -917,6 +933,8 @@ program
             initialized: false,
             version: packageJson.version,
             buildFingerprint: OmniWeaveBuildFingerprint,
+            currentBuildFingerprint,
+            runtimeSkew: buildSkew,
             projectPath,
             indexPath: getOmniWeaveDir(projectPath),
             lastIndexed: null,
@@ -935,9 +953,12 @@ program
       const stats = cg.getStats();
       const changes = cg.getChangedFiles();
       const sourceChanges = cg.getChangedSourceFiles();
+      const sourcePartitions = partitionLowSignalChanges(sourceChanges);
       const rawContentMaintenance = subtractChanges(changes, sourceChanges);
       const pendingCounts = countChanges(changes);
       const sourceCounts = countChanges(sourceChanges);
+      const firstPartySourceCounts = countChanges(sourcePartitions.firstParty);
+      const lowSignalSourceCounts = countChanges(sourcePartitions.lowSignal);
       const rawContentCounts = countChanges(rawContentMaintenance);
       const backend = cg.getBackend();
       const journalMode = cg.getJournalMode();
@@ -953,6 +974,8 @@ program
           initialized: true,
           version: packageJson.version,
           buildFingerprint: OmniWeaveBuildFingerprint,
+          currentBuildFingerprint,
+          runtimeSkew: buildSkew,
           projectPath,
           indexPath: getOmniWeaveDir(projectPath),
           lastIndexed: lastIndexedMs != null ? new Date(lastIndexedMs).toISOString() : null,
@@ -966,6 +989,8 @@ program
           languages: Object.entries(stats.filesByLanguage).filter(([, count]) => count > 0).map(([lang]) => lang),
           pendingChanges: pendingCounts,
           sourcePendingChanges: sourceCounts,
+          firstPartySourcePendingChanges: firstPartySourceCounts,
+          lowSignalSourceMaintenance: lowSignalSourceCounts,
           rawContentMaintenance: rawContentCounts,
           worktreeMismatch: worktreeMismatch
             ? { worktreeRoot: worktreeMismatch.worktreeRoot, indexRoot: worktreeMismatch.indexRoot }
@@ -1003,6 +1028,10 @@ program
       const backendLabel = chalk.green(`node:sqlite ${getGlyphs().dash} built-in (full WAL)`);
       console.log(`  Backend:   ${backendLabel}`);
       console.log(`  Build:     ${OmniWeaveBuildFingerprint}`);
+      if (buildSkew) {
+        console.log(`  Current:   ${currentBuildFingerprint}`);
+        warn(`Runtime build is stale: loaded ${buildSkew.loaded}, disk ${buildSkew.current}`);
+      }
       // Effective journal mode: 'wal' means concurrent reads never block on a
       // writer; anything else means they can ("database is locked"). node:sqlite
       // supports WAL everywhere, so a non-wal mode means the filesystem can't
@@ -1035,24 +1064,39 @@ program
 
       // Pending changes
       const totalChanges = totalChangeCount(pendingCounts);
-      const totalSourceChanges = totalChangeCount(sourceCounts);
+      const totalSourceChanges = totalChangeCount(firstPartySourceCounts);
+      const totalLowSignalSourceMaintenance = totalChangeCount(lowSignalSourceCounts);
       const totalRawContentMaintenance = totalChangeCount(rawContentCounts);
       if (totalChanges > 0) {
         if (totalSourceChanges > 0) {
           console.log(chalk.bold('Pending Source Graph Changes:'));
-          if (sourceCounts.added > 0) {
-            console.log(`  Added:     ${sourceCounts.added} files`);
+          if (firstPartySourceCounts.added > 0) {
+            console.log(`  Added:     ${firstPartySourceCounts.added} files`);
           }
-          if (sourceCounts.modified > 0) {
-            console.log(`  Modified:  ${sourceCounts.modified} files`);
+          if (firstPartySourceCounts.modified > 0) {
+            console.log(`  Modified:  ${firstPartySourceCounts.modified} files`);
           }
-          if (sourceCounts.removed > 0) {
-            console.log(`  Removed:   ${sourceCounts.removed} files`);
+          if (firstPartySourceCounts.removed > 0) {
+            console.log(`  Removed:   ${firstPartySourceCounts.removed} files`);
           }
           info('Run "omniweave sync" before trusting structural relationships');
         }
-        if (totalRawContentMaintenance > 0) {
+        if (totalLowSignalSourceMaintenance > 0) {
           if (totalSourceChanges > 0) console.log();
+          console.log(chalk.bold('Low-signal Source Maintenance:'));
+          if (lowSignalSourceCounts.added > 0) {
+            console.log(`  Added:     ${lowSignalSourceCounts.added} files`);
+          }
+          if (lowSignalSourceCounts.modified > 0) {
+            console.log(`  Modified:  ${lowSignalSourceCounts.modified} files`);
+          }
+          if (lowSignalSourceCounts.removed > 0) {
+            console.log(`  Removed:   ${lowSignalSourceCounts.removed} files`);
+          }
+          info('These are test/example/research snapshot sources filtered out of default retrieval');
+        }
+        if (totalRawContentMaintenance > 0) {
+          if (totalSourceChanges > 0 || totalLowSignalSourceMaintenance > 0) console.log();
           console.log(chalk.bold('Raw-content Index Maintenance:'));
           if (rawContentCounts.added > 0) {
             console.log(`  Added:     ${rawContentCounts.added} files`);

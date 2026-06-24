@@ -73,6 +73,8 @@ describe('omniweave status --json — CI fields (#329)', () => {
     expect(out.initialized).toBe(false);
     expect(out.version).toBe(PKG_VERSION);
     expectBuildFingerprint(out.buildFingerprint);
+    expectBuildFingerprint(out.currentBuildFingerprint);
+    expect(out.runtimeSkew).toBeNull();
     expect(typeof out.indexPath).toBe('string');
     expect(out.indexPath as string).toContain('.omniweave');
     expect(out.lastIndexed).toBeNull();
@@ -90,6 +92,8 @@ describe('omniweave status --json — CI fields (#329)', () => {
     expect(out.initialized).toBe(true);
     expect(out.version).toBe(PKG_VERSION);
     expectBuildFingerprint(out.buildFingerprint);
+    expectBuildFingerprint(out.currentBuildFingerprint);
+    expect(out.runtimeSkew).toBeNull();
     expect(out.indexPath as string).toContain('.omniweave');
     expect(typeof out.lastIndexed).toBe('string');
     // ISO string that round-trips back into the index window.
@@ -114,5 +118,23 @@ describe('omniweave status --json — CI fields (#329)', () => {
     expectChangeCounts(out.pendingChanges, { added: 0, modified: 2, removed: 0 });
     expectChangeCounts(out.sourcePendingChanges, { added: 0, modified: 1, removed: 0 });
     expectChangeCounts(out.rawContentMaintenance, { added: 0, modified: 1, removed: 0 });
+  });
+
+  it('separates low-signal source maintenance from first-party source changes', async () => {
+    fs.mkdirSync(path.join(tempDir, 'src'));
+    fs.writeFileSync(path.join(tempDir, 'src', 'app.ts'), 'export function entry() { return 1; }\n');
+
+    const cg = OmniWeave.initSync(tempDir);
+    await cg.indexAll();
+    cg.close();
+
+    const snapshotDir = path.join(tempDir, 'research/2026-06-24-example/repos/tool');
+    fs.mkdirSync(snapshotDir, { recursive: true });
+    fs.writeFileSync(path.join(snapshotDir, 'fixture.ts'), 'export function snapshotOnly() { return 1; }\n');
+
+    const out = runStatusJson(tempDir);
+    expectChangeCounts(out.sourcePendingChanges, { added: 1, modified: 0, removed: 0 });
+    expectChangeCounts(out.firstPartySourcePendingChanges, { added: 0, modified: 0, removed: 0 });
+    expectChangeCounts(out.lowSignalSourceMaintenance, { added: 1, modified: 0, removed: 0 });
   });
 });

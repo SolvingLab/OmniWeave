@@ -40,7 +40,12 @@ import { isGeneratedFile } from '../extraction/generated-detection';
 import { scanDynamicDispatch } from './dynamic-boundaries';
 import { describeSnapshotImportWarning } from '../snapshot-metadata';
 import { CALL_SURFACE_EDGE_KINDS } from '../call-surface';
-import { OmniWeaveBuildFingerprint } from './version';
+import {
+  OmniWeaveBuildFingerprint,
+  readCurrentBuildFingerprint,
+  runtimeBuildSkew,
+  runtimeBuildSkewMessage,
+} from './version';
 
 /**
  * An expected, recoverable "omniweave can't serve this" condition — most
@@ -523,6 +528,18 @@ function changedEntryKey(entry: ChangedFileEntry): string {
 function subtractChangedEntries(all: ChangedFileEntry[], source: ChangedFileEntry[]): ChangedFileEntry[] {
   const sourceKeys = new Set(source.map(changedEntryKey));
   return all.filter((entry) => !sourceKeys.has(changedEntryKey(entry)));
+}
+
+function partitionLowSignalChangedEntries(entries: ChangedFileEntry[]): {
+  firstParty: ChangedFileEntry[];
+  lowSignal: ChangedFileEntry[];
+} {
+  const firstParty: ChangedFileEntry[] = [];
+  const lowSignal: ChangedFileEntry[] = [];
+  for (const entry of entries) {
+    (isLowSignalSourceFile(entry.path) ? lowSignal : firstParty).push(entry);
+  }
+  return { firstParty, lowSignal };
 }
 
 function pushCappedChangedEntries(lines: string[], entries: ChangedFileEntry[], cap = 50): void {
@@ -1386,6 +1403,9 @@ export class ToolHandler {
     } catch {
       return result;
     }
+    changedEntries = changedEntries.filter((entry) =>
+      !isLowSignalSourceFile(entry.path) || responseMentionsPath(text, entry.path)
+    );
     if (changedEntries.length === 0) return result;
 
     if (isExploreNoResultText(text)) {
@@ -4070,6 +4090,8 @@ export class ToolHandler {
     }
     const stats = cg.getStats();
     const snapshotImport = cg.getSnapshotImportInfo();
+    const currentBuildFingerprint = readCurrentBuildFingerprint();
+    const buildSkew = runtimeBuildSkew(OmniWeaveBuildFingerprint, currentBuildFingerprint);
 
     // Warn when this index actually belongs to a different git working tree
     // (e.g. the server resolved up from a nested worktree to the main checkout).
@@ -4091,6 +4113,12 @@ export class ToolHandler {
         ''
       );
     }
+    if (buildSkew) {
+      lines.push(
+        `> ⚠ ${runtimeBuildSkewMessage(buildSkew)}`,
+        ''
+      );
+    }
     lines.push(
       `**Files indexed:** ${stats.fileCount}`,
       `**Total nodes:** ${stats.nodeCount}`,
@@ -4098,6 +4126,9 @@ export class ToolHandler {
       `**Database size:** ${(stats.dbSizeBytes / 1024 / 1024).toFixed(2)} MB`,
       `**Runtime build:** ${OmniWeaveBuildFingerprint}`,
     );
+    if (buildSkew) {
+      lines.push(`**Current disk build:** ${currentBuildFingerprint}`);
+    }
 
     // Surface the active SQLite backend (node:sqlite, Node's built-in real
     // SQLite — full WAL + FTS5, no native build).
@@ -4148,11 +4179,18 @@ export class ToolHandler {
     } else {
       const allChanged = changedFileEntries(cg.getChangedFiles());
       const sourceChanged = changedFileEntries(cg.getChangedSourceFiles?.() ?? cg.getChangedFiles());
+      const { firstParty: firstPartySourceChanged, lowSignal: lowSignalSourceChanged } =
+        partitionLowSignalChangedEntries(sourceChanged);
       const rawContentMaintenance = subtractChangedEntries(allChanged, sourceChanged);
-      if (sourceChanged.length > 0) {
+      if (firstPartySourceChanged.length > 0) {
         lines.push('', '### Source graph changes since last index:');
-        pushCappedChangedEntries(lines, sourceChanged);
+        pushCappedChangedEntries(lines, firstPartySourceChanged);
         lines.push('', 'Run `omniweave sync` before trusting structural relationships.');
+      }
+      if (lowSignalSourceChanged.length > 0) {
+        lines.push('', '### Low-signal source maintenance:');
+        pushCappedChangedEntries(lines, lowSignalSourceChanged);
+        lines.push('', 'These are test/example/research snapshot sources filtered out of default retrieval.');
       }
       if (rawContentMaintenance.length > 0) {
         lines.push('', '### Raw-content index maintenance:');

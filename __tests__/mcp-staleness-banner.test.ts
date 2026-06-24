@@ -182,6 +182,30 @@ describe('MCP staleness banner', () => {
     expect(text).not.toContain('### Pending sync:');
   });
 
+  it('keeps low-signal source changes out of ordinary stale footers', async () => {
+    const snapshotDir = path.join(testDir, 'research/2026-06-24-example/repos/tool');
+    fs.mkdirSync(snapshotDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(snapshotDir, 'fixture.ts'),
+      'export function snapshotOnly() { return 1; }\n',
+    );
+
+    const explore = await handler.execute('omniweave_explore', { query: 'alphaOnly', maxFiles: 3 });
+    expect(explore.isError).toBeFalsy();
+    const exploreText = explore.content[0].text;
+    expect(exploreText).toContain('alphaOnly');
+    expect(exploreText).not.toMatch(/elsewhere in this project changed since the last index/);
+    expect(exploreText).not.toContain('research/2026-06-24-example/repos/tool/fixture.ts');
+
+    const status = await handler.execute('omniweave_status', {});
+    expect(status.isError).toBeFalsy();
+    const statusText = status.content[0].text;
+    expect(statusText).toContain('### Low-signal source maintenance:');
+    expect(statusText).toContain('research/2026-06-24-example/repos/tool/fixture.ts (added)');
+    expect(statusText).not.toContain('### Source graph changes since last index:');
+    expect(statusText).not.toContain('Run `omniweave sync` before trusting structural relationships.');
+  });
+
   it('warns that empty explore results may be stale when new files are not indexed yet', async () => {
     fs.writeFileSync(
       path.join(testDir, 'src', 'new-feature.ts'),
