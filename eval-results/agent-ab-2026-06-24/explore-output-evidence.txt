@@ -1,0 +1,58 @@
+######## Q1 S4 dispatch: 'which classes implement plotMA' (DESeq2) ########
+--- OmniWeave query plotMA ---
+method      plotMA (11146%)
+method      plotMA (11146%)
+function    plotMA.dataframe (5182%)
+function    plotMA.DESeqResults (4992%)
+  cmd: omniweave node "plotMA.DESeqResults" --file "R/plots.R" --line 120
+function    plotMA.DESeqDataSet (4990%)
+  cmd: omniweave node "plotMA.DESeqDataSet" --file "R/plots.R" --line 111
+--- codegraph query plotMA ---
+function    plotMA (11148%)
+function    plotMA (11148%)
+function    plotMA.dataframe (5182%)
+function    plotMA.DESeqResults (4992%)
+function    plotMA.DESeqDataSet (4989%)
+
+######## Q7 output honesty: missing symbol 'zqxnonexistentfn' (DESeq2) ########
+--- OmniWeave explore (missing) — char count + first lines ---
+  chars=550
+    No relevant code found for "zqxnonexistentfn123".
+    
+    This is an empty retrieval result, not a tool failure.
+    
+    Next best steps:
+--- codegraph explore (missing) — char count + first lines ---
+  chars=463
+    ⚠ CodeGraph results below come from a different git worktree (/private/tmp/claude-501/-Users-liuzaoqu-Desktop-develop-sogen-OmniWeave/5945a514-51eb-4bd1-b351-dc67269f0d7f/scratchpad/datasets/DESeq2), not where you're working (/Users/liuzaoqu/Desktop/develop/sogen/OmniWeave) — they may reflect another branch, and symbols changed only here are missing. Run "codegraph init -i" here for a worktree-local index.
+    
+    No relevant code found for "zqxnonexistentfn123"
+
+######## Q2 crossLang: explore 'run_analysis' (polyglot) — does the Flow cross to deseq.R? ########
+--- OmniWeave explore run_analysis (Flow/crossLang) ---
+## Exploration: run_analysis
+#### pipeline.py — run_analysis(function), run_via_check_call(function), echo_not_run(function), make_report(function)
+1	"""A plain Python orchestrator (NOT a workflow file) that shells out to an R
+3	graph dead-ends at these calls — no LSP resolves Python -> R, and grep can't
+4	follow the hop. generalCrossLangEdges synthesizes the crossLang edge from the
+10	def run_analysis(counts, out):
+12	    subprocess.run(["Rscript", "scripts/deseq.R", counts, out], check=True)
+22	    # in context must NOT produce a crossLang edge (the hard subprocess-call gate
+--- codegraph explore run_analysis ---
+**Exploration: run_analysis**
+**`pipeline.py`** — run_analysis(function), run_via_check_call(function), echo_not_run(function)
+1	"""A plain Python orchestrator (NOT a workflow file) that shells out to an R
+3	graph dead-ends at these calls — no LSP resolves Python -> R, and grep can't
+4	follow the hop. generalCrossLangEdges synthesizes the crossLang edge from the
+10	def run_analysis(counts, out):
+12	    subprocess.run(["Rscript", "scripts/deseq.R", counts, out], check=True)
+22	    # in context must NOT produce a crossLang edge (the hard subprocess-call gate
+
+######## Q3 invokes: callees of star_align (capstone) — reach STAR? ########
+--- OmniWeave callees star_align ---
+## Callees of star_align — 2 distinct definitions (narrow with `file`)
+### Snakefile::star_align (function) — Snakefile:27 — key: `omniweave_node symbol="star_align" file="Snakefile" line=27`
+- star (tool) - Snakefile:1 — via invokes — key: `omniweave_node symbol="star" file="Snakefile" line=1`
+### star_align (variable) — Snakefile:27 — key: `omniweave_node symbol="star_align" file="Snakefile" line=27`
+--- codegraph callees star_align ---
+ℹ Symbol "star_align" not found

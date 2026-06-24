@@ -1,0 +1,56 @@
+[
+  {
+    "id": "Q1-s4-dispatch",
+    "type": "differentiation",
+    "target": "DESeq2",
+    "question": "In this R package, which classes provide an S4 method for the generic function `plotMA`? Reply with just the class name(s), comma-separated.",
+    "groundTruth": "DESeqDataSet, DESeqResults",
+    "gtSource": "R/plots.R:232 setMethod(plotMA, DESeqDataSet); R/plots.R:237 setMethod(plotMA, DESeqResults)",
+    "predicted": "omniweave wins: distinct method nodes DESeqDataSet::plotMA + DESeqResults::plotMA. codegraph: two indistinguishable `function plotMA` nodes, cannot name the classes."
+  },
+  {
+    "id": "Q2-crosslang-static",
+    "type": "differentiation",
+    "target": "polyglot",
+    "question": "The function `run_analysis` in pipeline.py runs an R script in a subprocess. Which R file does it execute? Reply with just the repo-relative path.",
+    "groundTruth": "scripts/deseq.R",
+    "gtSource": "pipeline.py run_analysis -> subprocess Rscript scripts/deseq.R (literal path)",
+    "predicted": "omniweave wins (forced): crossLang edge run_analysis->deseq.R in one explore. codegraph: no crossLang edge kind, cannot cross the process boundary."
+  },
+  {
+    "id": "Q3-invokes",
+    "type": "differentiation",
+    "target": "capstone",
+    "question": "Which external tool/binary does the Snakemake rule `star_align` invoke? Reply with just the tool name.",
+    "groundTruth": "STAR",
+    "gtSource": "Snakefile star_align wrapper v7.2.0/bio/star/align -> invokes tool:star",
+    "predicted": "omniweave wins: invokes edge star_align->star. codegraph: no invokes edge kind and does not index the Snakefile workflow structure."
+  },
+  {
+    "id": "Q4-crosslang-runtime-ceiling",
+    "type": "honesty-ceiling",
+    "target": "MAESTRO",
+    "question": "In scRNA_QC.py, the code runs an R script via `Rscript %s/scRNAseq_qc_filtering.R` where %s is a runtime path. Is the exact on-disk path of that R script statically resolvable from this repository? Answer yes or no and explain in one sentence.",
+    "groundTruth": "No — the path is runtime-interpolated (RSCRIPT_PATH = an install-dir resolved at runtime), so the exact file location is not statically resolvable; only the basename scRNAseq_qc_filtering.R is visible.",
+    "gtSource": "scRNA_QC.py:150 cmd = \"Rscript %s/scRNAseq_qc_filtering.R ...\" %(RSCRIPT_PATH,...)",
+    "predicted": "TIE / honest ceiling: omniweave correctly emits NO crossLang edge here (runtime path), matching grep's honest answer. This proves the moat is not 'always wins' — a missing edge is correct when static resolution is impossible."
+  },
+  {
+    "id": "Q5-single-point-tie",
+    "type": "honesty-tie",
+    "target": "DESeq2",
+    "question": "Where is the function `nbinomWaldTest` defined? Reply with just the repo-relative file path.",
+    "groundTruth": "R/core.R",
+    "gtSource": "R/core.R:1333 nbinomWaldTest <- function(object,",
+    "predicted": "TIE: a single literal definition lookup is one grep line; omniweave ties, does not win."
+  },
+  {
+    "id": "Q6-concept-no-help",
+    "type": "no-help",
+    "target": "DESeq2",
+    "question": "Where is the user-input argument validation / type-checking logic concentrated in this package? Reply with one file path or say it is not localizable.",
+    "groundTruth": "Not localizable to a single structural symbol — argument checks are scattered inline across many functions (stopifnot/if-checks); this is a concept/prose question, not a structural-graph question.",
+    "gtSource": "DESeq2 uses inline stopifnot/validity checks across R/*.R; no single 'validation' module",
+    "predicted": "NO-HELP: omniweave should not pretend a structural answer; this is embedding/semantic-search territory, outside the structural graph's scope."
+  }
+]
