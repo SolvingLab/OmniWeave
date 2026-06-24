@@ -1,0 +1,3 @@
+{"name":"aider","ow_nodes":3094,"cg_nodes":3092,"ow_edges":9243,"cg_edges":9568,"std_calls_diff":139,"std_total_diff":326,"ow_bridge":1,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
+{"name":"code-graph-mcp","ow_nodes":490,"cg_nodes":490,"ow_edges":1213,"cg_edges":1215,"std_calls_diff":0,"std_total_diff":2,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
+{"name":"semantic-search-mcp","ow_nodes":437,"cg_nodes":437,"ow_edges":1008,"cg_edges":1021,"std_calls_diff":0,"std_total_diff":13,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
