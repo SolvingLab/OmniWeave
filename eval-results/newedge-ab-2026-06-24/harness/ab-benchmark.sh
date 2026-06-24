@@ -65,7 +65,7 @@ parse(){ node --no-warnings -e '
           else if(/mcp__/.test(n))mcp++;}}}
     if(o.type==="result"){hadResult=true; if(o.is_error)reasons.push("result_error")}}
   if(!hadResult)reasons.push("no_result");
-  process.stdout.write(JSON.stringify({valid:reasons.length===0,reasons,read,grep,bash,mcp,turns,ans:ans.slice(0,300)}));
+  process.stdout.write(JSON.stringify({valid:reasons.length===0,reasons,read,grep,bash,mcp,turns,ans}));
 ' "$1" "$2"; }
 
 run_cell(){ # $1=qid $2=target $3=arm $4=mode $5=model $6=run
@@ -100,3 +100,4 @@ done
 pkill -9 -f "serve --mcp --path" 2>/dev/null
 INV=$(grep -c '"valid":false' "$OUT/results.jsonl" || true); TOT=$(wc -l < "$OUT/results.jsonl")
 echo "==== DONE: $TOT runs, $INV invalid. results: $OUT/results.jsonl ===="
+if [ "$INV" -ne 0 ]; then exit 1; fi

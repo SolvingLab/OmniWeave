@@ -3,11 +3,12 @@
 // keyword/semantic match per question; borderline answers are flagged for human
 // / skeptic review. Effort = mean tool calls + turns. Honest: a tie is a tie.
 //
-// Usage: node score-benchmark.mjs [--scored-jsonl <out.jsonl>] <results.jsonl> <benchmark-questions.json>
+// Usage: node score-benchmark.mjs [--require-complete] [--scored-jsonl <out.jsonl>] <results.jsonl> <benchmark-questions.json>
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 let scoredJsonlPath = '';
+let requireComplete = false;
 const positional = [];
 for (let i = 2; i < process.argv.length; i++) {
   const arg = process.argv[i];
@@ -15,18 +16,68 @@ for (let i = 2; i < process.argv.length; i++) {
     scoredJsonlPath = process.argv[++i] || '';
     continue;
   }
+  if (arg === '--require-complete') {
+    requireComplete = true;
+    continue;
+  }
   positional.push(arg);
 }
 
 const [resultsPath, manifestPath] = positional;
 if (!resultsPath || !manifestPath) {
-  console.error('Usage: node score-benchmark.mjs [--scored-jsonl <out.jsonl>] <results.jsonl> <benchmark-questions.json>');
+  console.error('Usage: node score-benchmark.mjs [--require-complete] [--scored-jsonl <out.jsonl>] <results.jsonl> <benchmark-questions.json>');
   process.exit(2);
 }
 
 const runs = readFileSync(resultsPath, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+if (runs.length === 0) {
+  console.error(`No runs found in ${resultsPath}`);
+  process.exit(2);
+}
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
 const byId = Object.fromEntries(manifest.map((q) => [q.id, q]));
+
+function normalizedAnswer(answer) {
+  return String(answer || '').toLowerCase().replace(/\\/g, '/');
+}
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function hasNearbyNegation(answer, index) {
+  const before = answer.slice(Math.max(0, index - 32), index);
+  return /(?:\bnot\b|不是|并非|不应是|不应该是|不是这个|不是该|wrong|incorrect)\s*$/.test(before);
+}
+
+function containsDelimited(answer, needle, boundary = /[a-z0-9_./-]/) {
+  const target = needle.toLowerCase();
+  let index = answer.indexOf(target);
+  while (index !== -1) {
+    const before = index === 0 ? '' : answer[index - 1];
+    const after = answer[index + target.length] || '';
+    if (!boundary.test(before) && !boundary.test(after) && !hasNearbyNegation(answer, index)) {
+      return true;
+    }
+    index = answer.indexOf(target, index + target.length);
+  }
+  return false;
+}
+
+function containsPath(answer, acceptedPaths) {
+  for (const path of acceptedPaths) {
+    const pattern = new RegExp(
+      `(?:^|[^a-z0-9_.-])(?:\\/?[a-z0-9_.-]+\\/)*${escapeRegex(path)}(?:$|[^a-z0-9_./-])`,
+      'g'
+    );
+    let match;
+    while ((match = pattern.exec(answer)) !== null) {
+      const pathIndex = match.index + match[0].indexOf(path);
+      if (!hasNearbyNegation(answer, Math.min(match.index, pathIndex))) return true;
+    }
+  }
+  return false;
+}
 
 // Per-question correctness predicate over the (lowercased) answer text.
 const GRADERS = {
@@ -48,22 +99,47 @@ const GRADERS = {
   'v3-CL-maestro-ceiling': (a) => /\bno\b/.test(a) || a.includes('否') || a.includes('runtime') || a.includes('运行时') || a.includes('动态') || a.includes('not statically') || a.includes('resource_filename'),
   'v3-H-se-concept': (a) => a.includes('not localiz') || a.includes('scattered') || a.includes('multiple') || a.includes('across') || a.includes('inline') || a.includes('分散') || a.includes('不是集中') || a.includes('无法定位') || a.includes('没有集中') || a.includes('不集中'),
   // --- new-edge bank (module-var-ref / rtkQuery / dispatch synthesizers) ---
-  'NE-rtk-hook': (a) => a.includes('/api'),
-  'NE-pinia-login': (a) => /(?:^|[^\w/.-])(?:src\/)?store\/auth\.js(?:$|[^\w/.-])/.test(a),
-  'NE-sidekiq-worker': (a) => a.includes('destroyuserworker'),
-  'NE-celery-task': (a) => a.includes('send_welcome_email'),
-  'NE-modvar-impact': (a) => a.includes('check_compatibility'),
-  'NE-singlepoint-tie': (a) => a.includes('__init__.py'),
+  'NE-rtk-hook': (a) => containsDelimited(a, '/api', /[a-z0-9_./-]/),
+  'NE-pinia-login': (a) => containsPath(a, ['src/store/auth.js', 'store/auth.js']),
+  'NE-sidekiq-worker': (a) => containsDelimited(a, 'destroyuserworker', /[a-z0-9_]/),
+  'NE-celery-task': (a) => containsDelimited(a, 'send_welcome_email', /[a-z0-9_]/),
+  'NE-modvar-impact': (a) => containsDelimited(a, 'check_compatibility', /[a-z0-9_]/),
+  'NE-singlepoint-tie': (a) => containsPath(a, ['src/requests/__init__.py']),
   // honest negative-feature: the answer is No / 没有 / does not ship one
   'NE-nohelp': (a) => /\bno\b/.test(a) || a.includes('否') || a.includes('没有') || a.includes('does not') || a.includes("doesn't") || a.includes('no built-in') || a.includes('not ship') || a.includes('no dashboard'),
 };
 
 function grade(run) {
   const g = GRADERS[run.id];
-  const a = (run.ans || '').toLowerCase();
+  const a = normalizedAnswer(run.ans);
   if (!run.valid) return 'INVALID';
   if (!g) return 'UNGRADED';
   return g(a) ? 'CORRECT' : 'WRONG';
+}
+
+function expectedRunIds() {
+  const expected = [];
+  for (const q of manifest) {
+    if (q.type === 'differentiation') {
+      for (let run = 1; run <= 3; run++) {
+        expected.push(`${q.id}|omniweave|forced|mimo-v2.5-pro|${run}`);
+        expected.push(`${q.id}|codegraph|forced|mimo-v2.5-pro|${run}`);
+      }
+      for (let run = 1; run <= 2; run++) {
+        expected.push(`${q.id}|omniweave|forced|mimo-v2.5|${run}`);
+        expected.push(`${q.id}|codegraph|forced|mimo-v2.5|${run}`);
+        expected.push(`${q.id}|omniweave|natural|mimo-v2.5-pro|${run}`);
+        expected.push(`${q.id}|codegraph|natural|mimo-v2.5-pro|${run}`);
+        expected.push(`${q.id}|grep|natural|mimo-v2.5-pro|${run}`);
+      }
+    } else {
+      for (let run = 1; run <= 3; run++) {
+        expected.push(`${q.id}|omniweave|natural|mimo-v2.5-pro|${run}`);
+        expected.push(`${q.id}|grep|natural|mimo-v2.5-pro|${run}`);
+      }
+    }
+  }
+  return expected;
 }
 
 const scoredRuns = runs.map((run) => {
@@ -80,6 +156,33 @@ const scoredRuns = runs.map((run) => {
 if (scoredJsonlPath) {
   mkdirSync(dirname(scoredJsonlPath), { recursive: true });
   writeFileSync(scoredJsonlPath, scoredRuns.map((run) => JSON.stringify(run)).join('\n') + '\n');
+}
+
+let exitCode = 0;
+const invalidRuns = scoredRuns.filter((run) => run.verdict === 'INVALID');
+const ungradedRuns = scoredRuns.filter((run) => run.verdict === 'UNGRADED');
+if (invalidRuns.length > 0) {
+  console.error(`INVALID runs: ${invalidRuns.map((run) => `${run.id}/${run.arm}/${run.mode}/${run.model}/${run.run}`).join(', ')}`);
+  exitCode = 1;
+}
+if (ungradedRuns.length > 0) {
+  console.error(`UNGRADED runs: ${ungradedRuns.map((run) => run.id).join(', ')}`);
+  exitCode = 1;
+}
+if (requireComplete) {
+  const actual = scoredRuns.map((run) => `${run.id}|${run.arm}|${run.mode}|${run.model}|${run.run}`);
+  const actualCounts = new Map();
+  for (const id of actual) actualCounts.set(id, (actualCounts.get(id) ?? 0) + 1);
+  const expected = expectedRunIds();
+  const missing = expected.filter((id) => !actualCounts.has(id));
+  const unexpected = [...actualCounts.keys()].filter((id) => !expected.includes(id));
+  const duplicates = [...actualCounts.entries()].filter(([, count]) => count > 1).map(([id, count]) => `${id} x${count}`);
+  if (missing.length > 0 || unexpected.length > 0 || duplicates.length > 0) {
+    if (missing.length > 0) console.error(`Missing runs: ${missing.join(', ')}`);
+    if (unexpected.length > 0) console.error(`Unexpected runs: ${unexpected.join(', ')}`);
+    if (duplicates.length > 0) console.error(`Duplicate runs: ${duplicates.join(', ')}`);
+    exitCode = 1;
+  }
 }
 
 // Aggregate.
@@ -133,3 +236,5 @@ for (const id of ids) {
   const summary = Object.entries(armAcc).map(([arm, v]) => `${arm} ${v.c}/${v.n}`).join('  ');
   console.log(`- **${id}** (${q?.type}): ${summary}`);
 }
+
+process.exit(exitCode);
