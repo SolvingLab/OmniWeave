@@ -76,6 +76,7 @@ export interface SnapshotStaleness {
   checked: boolean;
   stale: boolean;
   indexedFileCount: number;
+  addedFiles: string[];
   changedFiles: string[];
   missingFiles: string[];
   unreadableFiles: string[];
@@ -1256,9 +1257,17 @@ async function computeSnapshotStaleness(projectRoot: string, dbPath: string): Pr
   }
 
   const changedFiles: string[] = [];
+  const addedFiles: string[] = [];
   const missingFiles: string[] = [];
   const unreadableFiles: string[] = [];
   const unsafeFiles: string[] = [];
+  const indexedPaths = new Set(files.map((file) => file.path));
+
+  for (const filePath of scanDirectory(projectRoot)) {
+    if (!indexedPaths.has(filePath)) {
+      addedFiles.push(filePath);
+    }
+  }
 
   for (const file of files) {
     const fullPath = validatePathWithinRoot(projectRoot, file.path);
@@ -1285,6 +1294,7 @@ async function computeSnapshotStaleness(projectRoot: string, dbPath: string): Pr
   }
 
   const stale =
+    addedFiles.length > 0 ||
     changedFiles.length > 0 ||
     missingFiles.length > 0 ||
     unreadableFiles.length > 0 ||
@@ -1294,6 +1304,7 @@ async function computeSnapshotStaleness(projectRoot: string, dbPath: string): Pr
     checked: true,
     stale,
     indexedFileCount: files.length,
+    addedFiles,
     changedFiles,
     missingFiles,
     unreadableFiles,
@@ -1401,11 +1412,12 @@ function knownGraphFileNames(): string[] {
 
 function describeStaleness(staleness: SnapshotStaleness): string {
   const parts: string[] = [];
+  if (staleness.addedFiles.length > 0) parts.push(`${staleness.addedFiles.length} added`);
   if (staleness.changedFiles.length > 0) parts.push(`${staleness.changedFiles.length} changed`);
   if (staleness.missingFiles.length > 0) parts.push(`${staleness.missingFiles.length} missing`);
   if (staleness.unreadableFiles.length > 0) parts.push(`${staleness.unreadableFiles.length} unreadable`);
   if (staleness.unsafeFiles.length > 0) parts.push(`${staleness.unsafeFiles.length} unsafe`);
-  return `Snapshot is stale for the target project (${parts.join(', ')} indexed files).`;
+  return `Snapshot is stale for the target project (${parts.join(', ')} files).`;
 }
 
 function summarizeMessages(messages: string[]): string {
@@ -1486,6 +1498,7 @@ async function recordSnapshotImportMetadata(
     queries.setMetadata(SNAPSHOT_IMPORT_METADATA_KEYS.allowStale, options.allowStale === true ? 'true' : 'false');
     queries.setMetadata(SNAPSHOT_IMPORT_METADATA_KEYS.staleness, JSON.stringify({
       stale: staleness?.stale === true,
+      addedFiles: staleness?.addedFiles.length ?? 0,
       changedFiles: staleness?.changedFiles.length ?? 0,
       missingFiles: staleness?.missingFiles.length ?? 0,
       unreadableFiles: staleness?.unreadableFiles.length ?? 0,

@@ -467,6 +467,7 @@ describe('snapshot import and verify', () => {
       const status = await new ToolHandler(cg).execute('omniweave_status', {});
       const text = status.content[0].text;
       expect(text).toContain('allowStale=true');
+      expect(text).toContain('added=0');
       expect(text).toContain('changed=1');
       expect(text).toContain('missing=0');
       expect(text).toContain('unreadable=0');
@@ -478,7 +479,36 @@ describe('snapshot import and verify', () => {
     const cliStatus = runBuiltCli(targetRoot, ['status']);
     expect(cliStatus.status).toBe(0);
     expect(cliStatus.stdout).toContain('allowStale=true');
+    expect(cliStatus.stdout).toContain('added=0');
     expect(cliStatus.stdout).toContain('changed=1');
+  });
+
+  it('refuses snapshots when the target has additional source files', async () => {
+    fs.writeFileSync(path.join(targetRoot, 'src', 'extra.ts'), `export function extra(): number { return 1; }\n`);
+
+    const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+    expect(verification.ok).toBe(true);
+    expect(verification.staleness?.stale).toBe(true);
+    expect(verification.staleness?.addedFiles).toContain('src/extra.ts');
+    expect(verification.warnings.join('\n')).toContain('1 added');
+
+    await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/1 added/);
+    expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+
+    const result = await importSnapshot(outputDir, targetRoot, { allowStale: true });
+    expect(result.staleness?.addedFiles).toContain('src/extra.ts');
+
+    const cg = OmniWeave.openSync(targetRoot);
+    try {
+      const status = await new ToolHandler(cg).execute('omniweave_status', {});
+      const text = status.content[0].text;
+      expect(text).toContain('allowStale=true');
+      expect(text).toContain('added=1');
+      expect(text).toContain('changed=0');
+      expect(text).toContain('missing=0');
+    } finally {
+      cg.destroy();
+    }
   });
 
   it('rechecks target staleness under the target lock before installing bytes', async () => {

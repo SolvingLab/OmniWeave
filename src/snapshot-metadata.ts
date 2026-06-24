@@ -16,6 +16,7 @@ export interface SnapshotImportInfo {
   allowStale: boolean;
   staleness: {
     stale: boolean;
+    addedFiles: number;
     changedFiles: number;
     missingFiles: number;
     unreadableFiles: number;
@@ -53,6 +54,7 @@ function parseStaleness(raw: string | null): SnapshotImportInfo['staleness'] {
     const parsed = JSON.parse(raw) as Record<string, unknown>;
     return {
       stale: parsed.stale === true,
+      addedFiles: numberValue(parsed.addedFiles),
       changedFiles: numberValue(parsed.changedFiles),
       missingFiles: numberValue(parsed.missingFiles),
       unreadableFiles: numberValue(parsed.unreadableFiles),
@@ -69,5 +71,5 @@ function numberValue(value: unknown): number {
 
 function formatStalenessCounts(staleness: SnapshotImportInfo['staleness']): string {
   if (!staleness) return '';
-  return `; stale target counts: changed=${staleness.changedFiles}, missing=${staleness.missingFiles}, unreadable=${staleness.unreadableFiles}, unsafe=${staleness.unsafeFiles}`;
+  return `; stale target counts: added=${staleness.addedFiles}, changed=${staleness.changedFiles}, missing=${staleness.missingFiles}, unreadable=${staleness.unreadableFiles}, unsafe=${staleness.unsafeFiles}`;
 }
