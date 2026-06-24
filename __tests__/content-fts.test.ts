@@ -106,6 +106,47 @@ describe('content_fts (raw file-content search)', () => {
     cg.close?.();
   });
 
+  it('does not treat external repository snapshot docs as content-only index input', async () => {
+    const snapshotDir = path.join(dir, 'research/2026-06-24-example/repos/tool');
+    fs.mkdirSync(snapshotDir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'README.md'), '# first-party docs marker\n');
+    fs.writeFileSync(path.join(snapshotDir, 'README.md'), '# external snapshot marker\n');
+
+    const cg = await OmniWeave.init(dir, { silent: true });
+    await cg.indexAll();
+
+    expect(cg.searchContent('first-party docs marker', 10).results.map((r) => r.path)).toEqual(['README.md']);
+    expect(cg.searchContent('external snapshot marker', 10).results).toEqual([]);
+    expect(cg.getChangedFiles().added).not.toContain('research/2026-06-24-example/repos/tool/README.md');
+
+    cg.close?.();
+  });
+
+  it('does not surface stale content-only housekeeping as source-graph staleness', async () => {
+    fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'src', 'app.ts'), 'export function entry() { return 1; }\n');
+
+    const cg = await OmniWeave.init(dir, { silent: true });
+    await cg.indexAll();
+    const stalePath = 'research/2026-06-24-example/repos/tool/README.md';
+    const raw = cg as unknown as {
+      queries: { upsertFileContent(path: string, content: string): void };
+      getChangedSourceFiles(): { added: string[]; modified: string[]; removed: string[] };
+    };
+    raw.queries.upsertFileContent(stalePath, '# external snapshot marker\n');
+
+    expect(cg.getChangedFiles().removed).toContain(stalePath);
+    expect(raw.getChangedSourceFiles().removed).not.toContain(stalePath);
+
+    const result = await new ToolHandler(cg).execute('omniweave_explore', { query: 'entry' });
+    const text = result.content.map((c) => c.text).join('\n');
+    expect(text).toContain('entry');
+    expect(text).not.toContain(stalePath);
+    expect(text).not.toContain('elsewhere in this project');
+
+    cg.close?.();
+  });
+
   it('purges legacy unsafe source content rows during ordinary sync', async () => {
     const secret = 'legacy-raw-config-secret';
     fs.writeFileSync(path.join(dir, 'application.properties'), `spring.datasource.password=${secret}\n`);

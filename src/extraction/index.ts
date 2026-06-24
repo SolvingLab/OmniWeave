@@ -141,8 +141,15 @@ function isLocaleJsonPath(filePath: string): boolean {
   return normalized.endsWith('.json') && /(^|\/)(locales?|i18n|translations?)\//.test(normalized);
 }
 
+function isLowSignalContentOnlyPath(filePath: string): boolean {
+  const normalized = filePath.replace(/\\/g, '/').toLowerCase();
+  if (/(?:^|\/)research\/[^/]+\/repos\//.test(normalized)) return true;
+  return /(?:^|\/)(tests?|__tests?__|specs?|fixtures?|samples?|examples?|benchmarks?|demos?)(?:\/|$)/.test(normalized);
+}
+
 function isContentOnlyFile(filePath: string): boolean {
   if (hasSensitiveRawContentPath(filePath)) return false;
+  if (isLowSignalContentOnlyPath(filePath)) return false;
   if (isLocaleJsonPath(filePath)) return true;
   const dot = filePath.lastIndexOf('.');
   if (dot < 0) return false;
@@ -1919,18 +1926,15 @@ export class ExtractionOrchestrator {
   }
 
   /**
-   * Get files that have changed since last index.
-   * Mirrors sync()'s filesystem-backed reconcile so status/stale checks cannot
-   * diverge from the files a real sync would add, modify, or remove.
+   * Source-graph freshness only. Read tools use this so raw-content-only
+   * housekeeping (docs/i18n content rows) cannot make code symbols/edges look
+   * stale.
    */
-  getChangedFiles(): { added: string[]; modified: string[]; removed: string[] } {
+  getChangedSourceFiles(): { added: string[]; modified: string[]; removed: string[] } {
     const currentFiles = scanDirectory(this.rootDir);
-    const currentContentFiles = scanContentSearchFiles(this.rootDir);
     const currentSet = new Set(currentFiles);
-    const currentContentOnly = new Set(currentContentFiles.filter((filePath) => !currentSet.has(filePath) && isContentOnlyFile(filePath)));
     const trackedFiles = this.queries.getAllFiles();
 
-    // Build Map for O(1) lookups
     const trackedMap = new Map<string, FileRecord>();
     for (const f of trackedFiles) {
       trackedMap.set(f.path, f);
@@ -1939,23 +1943,11 @@ export class ExtractionOrchestrator {
     const added: string[] = [];
     const modified: string[] = [];
     const removed: string[] = [];
-    const nonSourceRows = this.queries.nonSourceContentRows();
-    const trackedContentOnly = new Map(nonSourceRows.map((row) => [row.path, row.content]));
-    for (const row of this.queries.sourceContentRows()) {
-      if (!shouldIndexRawContent(row.path, row.language) && !modified.includes(row.path)) {
-        modified.push(row.path);
-      }
-    }
 
     // Find removed files
     for (const tracked of trackedFiles) {
       if (!currentSet.has(tracked.path) || !fs.existsSync(path.join(this.rootDir, tracked.path))) {
         removed.push(tracked.path);
-      }
-    }
-    for (const row of nonSourceRows) {
-      if (!currentContentOnly.has(row.path) || !fs.existsSync(path.join(this.rootDir, row.path))) {
-        removed.push(row.path);
       }
     }
 
@@ -1990,6 +1982,37 @@ export class ExtractionOrchestrator {
         added.push(filePath);
       } else if (tracked.contentHash !== contentHash) {
         modified.push(filePath);
+      }
+    }
+    return { added, modified, removed };
+  }
+
+  /**
+   * Get files that have changed since last index.
+   * Mirrors sync()'s filesystem-backed reconcile so status cannot diverge from
+   * the files a real sync would add, modify, or remove. Includes raw-content-only
+   * docs/i18n maintenance; use getChangedSourceFiles() for structure freshness.
+   */
+  getChangedFiles(): { added: string[]; modified: string[]; removed: string[] } {
+    const currentFiles = scanDirectory(this.rootDir);
+    const currentContentFiles = scanContentSearchFiles(this.rootDir);
+    const currentSet = new Set(currentFiles);
+    const currentContentOnly = new Set(currentContentFiles.filter((filePath) => !currentSet.has(filePath) && isContentOnlyFile(filePath)));
+    const sourceChanges = this.getChangedSourceFiles();
+
+    const added = [...sourceChanges.added];
+    const modified = [...sourceChanges.modified];
+    const removed = [...sourceChanges.removed];
+    const nonSourceRows = this.queries.nonSourceContentRows();
+    const trackedContentOnly = new Map(nonSourceRows.map((row) => [row.path, row.content]));
+    for (const row of this.queries.sourceContentRows()) {
+      if (!shouldIndexRawContent(row.path, row.language) && !modified.includes(row.path)) {
+        modified.push(row.path);
+      }
+    }
+    for (const row of nonSourceRows) {
+      if (!currentContentOnly.has(row.path) || !fs.existsSync(path.join(this.rootDir, row.path))) {
+        removed.push(row.path);
       }
     }
     for (const filePath of currentContentOnly) {

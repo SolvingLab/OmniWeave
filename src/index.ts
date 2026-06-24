@@ -643,6 +643,15 @@ export class OmniWeave {
   }
 
   /**
+   * Files whose source graph facts may be stale. Excludes docs/i18n raw-content
+   * index maintenance so read tools do not warn about structure when only
+   * content search rows need sync.
+   */
+  getChangedSourceFiles(): { added: string[]; modified: string[]; removed: string[] } {
+    return this.orchestrator.getChangedSourceFiles();
+  }
+
+  /**
    * Most recent index timestamp (ms since epoch) across all tracked files, or
    * null when nothing is indexed yet. Lets library consumers check index
    * freshness without shelling out to `omniweave status --json`. (#329)

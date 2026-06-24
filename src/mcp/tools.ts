@@ -1362,7 +1362,7 @@ export class ToolHandler {
     // the response fresh.
     let changedEntries: ChangedFileEntry[] = [];
     try {
-      const changes = cg.getChangedFiles?.();
+      const changes = cg.getChangedSourceFiles?.() ?? cg.getChangedFiles?.();
       if (changes) changedEntries = changedFileEntries(changes);
     } catch {
       return result;
