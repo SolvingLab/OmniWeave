@@ -1140,6 +1140,26 @@ describe('SCIP importer', () => {
     });
   });
 
+  it('keeps the SCIP importer out of core runtime dependencies and public exports', () => {
+    const packageJson = JSON.parse(
+      fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf8')
+    ) as {
+      dependencies?: Record<string, string>;
+      optionalDependencies?: Record<string, string>;
+    };
+    const runtimeDependencyNames = Object.keys({
+      ...(packageJson.dependencies ?? {}),
+      ...(packageJson.optionalDependencies ?? {}),
+    });
+
+    expect(runtimeDependencyNames.filter((name) =>
+      /scip|protobuf|google-protobuf|^@buf\//i.test(name)
+    )).toEqual([]);
+
+    const publicEntry = fs.readFileSync(path.resolve(__dirname, '../src/index.ts'), 'utf8');
+    expect(publicEntry).not.toMatch(/(?:import|export)[^'"]+['"][^'"]*\/scip(?:\/|['"])/);
+  });
+
   it('surfaces unverified SCIP source text labels in explore relationships', async () => {
     writeNoiseFiles(projectRoot, 505);
     await reindexProject(projectRoot);
