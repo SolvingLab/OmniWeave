@@ -1475,9 +1475,9 @@ export class ToolHandler {
         case 'omniweave_search':
           result = await this.handleSearch(args); break;
         case 'omniweave_callers':
-          result = await this.handleCallers(args); break;
+          result = await this.handleCallers(args, outputSurface); break;
         case 'omniweave_callees':
-          result = await this.handleCallees(args); break;
+          result = await this.handleCallees(args, outputSurface); break;
         case 'omniweave_impact':
           result = await this.handleImpact(args); break;
         case 'omniweave_explore':
@@ -1596,10 +1596,10 @@ export class ToolHandler {
   }
 
   /** Section heading for one distinct definition in grouped output. */
-  private definitionHeading(group: Node[]): string {
+  private definitionHeading(group: Node[], outputSurface: OutputSurface = 'mcp'): string {
     const head = group[0]!;
     const line = head.startLine ? `:${head.startLine}` : '';
-    return `### ${head.qualifiedName} (${head.kind}) — ${head.filePath}${line} — key: \`${this.nodeContinuationKey(head)}\``;
+    return `### ${head.qualifiedName} (${head.kind}) — ${head.filePath}${line} — ${this.nodeContinuationLabel(head, outputSurface)}`;
   }
 
   private collectCallSurfaceRelationships(
@@ -1667,7 +1667,7 @@ export class ToolHandler {
   /**
    * Handle omniweave_callers
    */
-  private async handleCallers(args: Record<string, unknown>): Promise<ToolResult> {
+  private async handleCallers(args: Record<string, unknown>, outputSurface: OutputSurface = 'mcp'): Promise<ToolResult> {
     const symbol = this.validateString(args.symbol, 'symbol');
     if (typeof symbol !== 'string') return symbol;
 
@@ -1697,28 +1697,29 @@ export class ToolHandler {
       // A successful `file` narrowing makes the multi-symbol aggregation note
       // stale — suppress it.
       const note = fileFilter && !filteredOut ? '' : allMatches.note;
-      const formatted = this.formatNodeList(callers, `Callers of ${symbol}`, labels, limit) + note + filterNote + omissionNote;
+      const formatted = this.formatNodeList(callers, `Callers of ${symbol}`, labels, limit, outputSurface) + note + filterNote + omissionNote;
       return this.textResult(this.truncateOutput(formatted));
     }
 
     // Multiple DISTINCT definitions (#764): one section per definition so an
     // agent never mistakes one app's callers for another's. Narrow with
     // `file` to focus a single definition.
+    const narrowHint = outputSurface === 'cli' ? 'narrow with `--file`' : 'narrow with `file`';
     const lines: string[] = [
-      `## Callers of ${symbol} — ${groups.length} distinct definitions (narrow with \`file\`)`,
+      `## Callers of ${symbol} — ${groups.length} distinct definitions (${narrowHint})`,
     ];
     for (const group of groups) {
       const { nodes: callers, labels, omittedLowSignal, omittedWeak } = collect(group);
-      lines.push('', this.definitionHeading(group));
+      lines.push('', this.definitionHeading(group, outputSurface));
       if (callers.length === 0) {
         lines.push('- (no callers)');
       } else {
         for (const node of callers.slice(0, limit)) {
           const location = node.startLine ? `:${node.startLine}` : '';
           const label = labels.get(node.id);
-          lines.push(`- ${this.callerDisplayName(node)} (${node.kind}) - ${node.filePath}${location}${label ? ` — via ${label}` : ''} — key: \`${this.nodeContinuationKey(node)}\``);
+          lines.push(`- ${this.callerDisplayName(node)} (${node.kind}) - ${node.filePath}${location}${label ? ` — via ${label}` : ''} — ${this.nodeContinuationLabel(node, outputSurface)}`);
         }
-        if (callers.length > limit) lines.push(this.moreResultsNote(callers.length, limit));
+        if (callers.length > limit) lines.push(this.moreResultsNote(callers.length, limit, outputSurface));
       }
       const omissionNote = this.relationshipOmissionNote(omittedLowSignal, omittedWeak);
       if (omissionNote) lines.push(omissionNote.trim());
@@ -1729,7 +1730,7 @@ export class ToolHandler {
   /**
    * Handle omniweave_callees
    */
-  private async handleCallees(args: Record<string, unknown>): Promise<ToolResult> {
+  private async handleCallees(args: Record<string, unknown>, outputSurface: OutputSurface = 'mcp'): Promise<ToolResult> {
     const symbol = this.validateString(args.symbol, 'symbol');
     if (typeof symbol !== 'string') return symbol;
 
@@ -1758,26 +1759,27 @@ export class ToolHandler {
       // A successful `file` narrowing makes the multi-symbol aggregation note
       // stale — suppress it.
       const note = fileFilter && !filteredOut ? '' : allMatches.note;
-      const formatted = this.formatNodeList(callees, `Callees of ${symbol}`, labels, limit) + note + filterNote + omissionNote;
+      const formatted = this.formatNodeList(callees, `Callees of ${symbol}`, labels, limit, outputSurface) + note + filterNote + omissionNote;
       return this.textResult(this.truncateOutput(formatted));
     }
 
     // Multiple DISTINCT definitions (#764): per-definition sections.
+    const narrowHint = outputSurface === 'cli' ? 'narrow with `--file`' : 'narrow with `file`';
     const lines: string[] = [
-      `## Callees of ${symbol} — ${groups.length} distinct definitions (narrow with \`file\`)`,
+      `## Callees of ${symbol} — ${groups.length} distinct definitions (${narrowHint})`,
     ];
     for (const group of groups) {
       const { nodes: callees, labels, omittedLowSignal, omittedWeak } = collect(group);
-      lines.push('', this.definitionHeading(group));
+      lines.push('', this.definitionHeading(group, outputSurface));
       if (callees.length === 0) {
         lines.push('- (no callees)');
       } else {
         for (const node of callees.slice(0, limit)) {
           const location = node.startLine ? `:${node.startLine}` : '';
           const label = labels.get(node.id);
-          lines.push(`- ${this.callerDisplayName(node)} (${node.kind}) - ${node.filePath}${location}${label ? ` — via ${label}` : ''} — key: \`${this.nodeContinuationKey(node)}\``);
+          lines.push(`- ${this.callerDisplayName(node)} (${node.kind}) - ${node.filePath}${location}${label ? ` — via ${label}` : ''} — ${this.nodeContinuationLabel(node, outputSurface)}`);
         }
-        if (callees.length > limit) lines.push(this.moreResultsNote(callees.length, limit));
+        if (callees.length > limit) lines.push(this.moreResultsNote(callees.length, limit, outputSurface));
       }
       const omissionNote = this.relationshipOmissionNote(omittedLowSignal, omittedWeak);
       if (omissionNote) lines.push(omissionNote.trim());
@@ -4396,7 +4398,13 @@ export class ToolHandler {
       : node.name;
   }
 
-  private formatNodeList(nodes: Node[], title: string, labels?: Map<string, string>, limit?: number): string {
+  private formatNodeList(
+    nodes: Node[],
+    title: string,
+    labels?: Map<string, string>,
+    limit?: number,
+    outputSurface: OutputSurface = 'mcp'
+  ): string {
     // Slice INSIDE the formatter (not at the call site) so the header always
     // reports the TRUE total and a capped list always carries the "+N more"
     // footer. A pre-sliced list made the header lie ("20 found" when 57 exist)
@@ -4416,11 +4424,11 @@ export class ToolHandler {
       // registration, instantiation, …).
       const label = labels?.get(node.id);
       lines.push(
-        `- ${this.callerDisplayName(node)} (${node.kind}) - ${node.filePath}${location}${label ? ` — via ${label}` : ''} — key: \`${this.nodeContinuationKey(node)}\``
+        `- ${this.callerDisplayName(node)} (${node.kind}) - ${node.filePath}${location}${label ? ` — via ${label}` : ''} — ${this.nodeContinuationLabel(node, outputSurface)}`
       );
     }
 
-    if (capped) lines.push('', this.moreResultsNote(total, shown.length));
+    if (capped) lines.push('', this.moreResultsNote(total, shown.length, outputSurface));
 
     return lines.join('\n');
   }
@@ -4436,12 +4444,13 @@ export class ToolHandler {
    * tools clamp `limit` to 100, so a hub with more says how to read the top 100
    * and that the rest exist.
    */
-  private moreResultsNote(total: number, shown: number): string {
+  private moreResultsNote(total: number, shown: number, outputSurface: OutputSurface = 'mcp'): string {
     const askable = Math.min(total, 100);
     const detail = total > 100
       ? `the top ${askable} (this symbol is a hub: ${total} total)`
       : 'the full list';
-    return `> ⚠️ Showing the first ${shown} of ${total} — re-run with \`limit=${askable}\` for ${detail}.`;
+    const limitHint = outputSurface === 'cli' ? `--limit ${askable}` : `limit=${askable}`;
+    return `> ⚠️ Showing the first ${shown} of ${total} — re-run with \`${limitHint}\` for ${detail}.`;
   }
 
   /**
@@ -4488,6 +4497,11 @@ export class ToolHandler {
 
   private nodeContinuation(node: Node, outputSurface: OutputSurface): string {
     return outputSurface === 'cli' ? this.cliNodeCommand(node) : this.nodeContinuationKey(node);
+  }
+
+  private nodeContinuationLabel(node: Node, outputSurface: OutputSurface): string {
+    const label = outputSurface === 'cli' ? 'cmd' : 'key';
+    return `${label}: \`${this.nodeContinuation(node, outputSurface)}\``;
   }
 
   private formatExploreRelationshipEdge(edge: Edge, source: Node, target: Node): string {

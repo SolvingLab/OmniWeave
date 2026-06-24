@@ -24,8 +24,12 @@ let handler: ToolHandler;
 
 const CALLER_COUNT = 25; // > the default limit of 20, < the 100 hard cap
 
-const text = async (tool: string, args: Record<string, unknown>): Promise<string> => {
-  const res = await handler.execute(tool, args);
+const text = async (
+  tool: string,
+  args: Record<string, unknown>,
+  options: Parameters<ToolHandler['execute']>[2] = {},
+): Promise<string> => {
+  const res = await handler.execute(tool, args, options);
   return res.content?.[0]?.text ?? '';
 };
 
@@ -79,6 +83,14 @@ describe('callers/callees — limit-truncation signal', () => {
     expect(out).toContain(`limit=${CALLER_COUNT}`); // exact number to ask for
   });
 
+  it('callers: CLI surface prints shell continuations and shell limit hints', async () => {
+    const out = await text('omniweave_callers', { symbol: 'target' }, { outputSurface: 'cli' });
+    expect(out).toContain('cmd: `omniweave node "caller0" --file "src/graph.ts" --line ');
+    expect(out).toContain(`--limit ${CALLER_COUNT}`);
+    expect(out).not.toContain('omniweave_node');
+    expect(out).not.toContain(`limit=${CALLER_COUNT}`);
+  });
+
   it('callers: raising limit above the total drops the cap signal and lists all', async () => {
     const out = await text('omniweave_callers', { symbol: 'target', limit: 100 });
     expect(out).toContain(`(${CALLER_COUNT} found)`);
@@ -95,12 +107,28 @@ describe('callers/callees — limit-truncation signal', () => {
     expect(out).toContain(`limit=${CALLER_COUNT}`);
   });
 
+  it('callees: CLI surface keeps the same shell continuation contract', async () => {
+    const out = await text('omniweave_callees', { symbol: 'fanOut' }, { outputSurface: 'cli' });
+    expect(out).toContain('cmd: `omniweave node "dep0" --file "src/graph.ts" --line ');
+    expect(out).toContain(`--limit ${CALLER_COUNT}`);
+    expect(out).not.toContain('omniweave_node');
+    expect(out).not.toContain(`limit=${CALLER_COUNT}`);
+  });
+
   it('a hub past the 100-cap says "top 100" and reports the real total', async () => {
     // Unit-level check of the footer wording for the >100 hub case (no need to
     // index 100+ files): the note must name the 100 cap AND the true total.
     const note = (handler as unknown as { moreResultsNote(t: number, s: number): string })
       .moreResultsNote(137, 20);
     expect(note).toContain('limit=100');
+    expect(note).toContain('hub: 137 total');
+  });
+
+  it('a CLI hub note names the shell flag, not the MCP argument shape', async () => {
+    const note = (handler as unknown as { moreResultsNote(t: number, s: number, surface: 'cli'): string })
+      .moreResultsNote(137, 20, 'cli');
+    expect(note).toContain('--limit 100');
+    expect(note).not.toContain('limit=100');
     expect(note).toContain('hub: 137 total');
   });
 });

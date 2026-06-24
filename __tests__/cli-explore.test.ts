@@ -473,6 +473,8 @@ export function snapshotCaller(): string {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('Callees of entryPoint');
     expect(result.stdout).toContain('localStep');
+    expect(result.stdout).toContain('cmd: `omniweave node "localStep" --file "src/mcp/flow.ts"');
+    expect(result.stdout).not.toContain('omniweave_node');
     expect(result.stdout).not.toContain('FlowResult');
     expect(result.stdout).not.toContain('snapshotOnly');
     expect(result.stdout).toContain('Omitted 1 low-signal relationship');
@@ -494,6 +496,8 @@ export function snapshotCaller(): string {
     expect(broad.status).toBe(0);
     expect(narrowed.status).toBe(0);
     expect(broad.stdout).toContain('2 distinct definitions');
+    expect(broad.stdout).toContain('narrow with `--file`');
+    expect(broad.stdout).not.toContain('omniweave_node');
     const mcpSection = sectionFrom(broad.stdout, 'src/mcp/flow.ts');
     const otherSection = sectionFrom(broad.stdout, 'src/other/flow.ts');
     expect(mcpSection).not.toContain('otherStep');
@@ -510,6 +514,8 @@ export function snapshotCaller(): string {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('Callers of localStep');
     expect(result.stdout).toContain('entryPoint');
+    expect(result.stdout).toContain('cmd: `omniweave node "entryPoint" --file "src/mcp/flow.ts"');
+    expect(result.stdout).not.toContain('omniweave_node');
     expect(result.stdout).not.toContain('snapshotCaller');
     expect(result.stdout).toContain('Omitted 1 low-signal relationship');
   });
@@ -521,6 +527,8 @@ export function snapshotCaller(): string {
     expect(broad.status).toBe(0);
     expect(narrowed.status).toBe(0);
     expect(broad.stdout).toContain('2 distinct definitions');
+    expect(broad.stdout).toContain('narrow with `--file`');
+    expect(broad.stdout).not.toContain('omniweave_node');
     const mcpSection = sectionFrom(broad.stdout, 'src/mcp/flow.ts');
     const otherSection = sectionFrom(broad.stdout, 'src/other/flow.ts');
     expect(mcpSection).toContain('src/mcp/flow.ts');
