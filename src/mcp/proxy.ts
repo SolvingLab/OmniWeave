@@ -30,6 +30,7 @@ import { SERVER_INSTRUCTIONS } from './server-instructions';
 import { getStaticTools } from './tools';
 import { getTelemetry, ClientInfo } from '../telemetry';
 import type { MCPEngine } from './engine';
+import { waitForWriteFlush } from './transport';
 
 const loadDb = (): typeof import('../db') => require('../db') as typeof import('../db');
 
@@ -260,6 +261,12 @@ export async function runLocalHandshakeProxy(deps: LocalHandshakeDeps): Promise<
   const writeClient = (obj: JsonRpc | string): void => {
     try { process.stdout.write((typeof obj === 'string' ? obj : JSON.stringify(obj)) + '\n'); } catch { /* host gone */ }
   };
+  const writeClientAndFlush = (obj: JsonRpc | string): Promise<void> => {
+    const line = (typeof obj === 'string' ? obj : JSON.stringify(obj)) + '\n';
+    return waitForWriteFlush((finish) => {
+      process.stdout.write(line, finish);
+    });
+  };
   const shutdown = (): void => {
     if (shuttingDown) return; shuttingDown = true;
     try { daemonSocket?.destroy(); } catch { /* ignore */ }
@@ -272,9 +279,11 @@ export async function runLocalHandshakeProxy(deps: LocalHandshakeDeps): Promise<
     const message = runtimeBuildSkewMessage(skew);
     process.stderr.write(`[OmniWeave MCP] ${message}\n`);
     if (id !== undefined) {
-      writeClient({ jsonrpc: '2.0', id, error: { code: -32603, message } });
+      void writeClientAndFlush({ jsonrpc: '2.0', id, error: { code: -32603, message } })
+        .finally(shutdown);
+    } else {
+      setTimeout(shutdown, 0).unref?.();
     }
-    setTimeout(shutdown, 0).unref?.();
     return true;
   };
   const ensureEngine = (): Promise<void> => {

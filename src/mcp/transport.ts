@@ -17,6 +17,27 @@
 import * as readline from 'readline';
 import type { Socket } from 'net';
 
+const JSON_RPC_WRITE_FLUSH_TIMEOUT_MS = 100;
+
+export function waitForWriteFlush(write: (finish: () => void) => void): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(finish, JSON_RPC_WRITE_FLUSH_TIMEOUT_MS);
+    timer.unref?.();
+    try {
+      write(finish);
+    } catch {
+      finish();
+    }
+  });
+}
+
 /**
  * JSON-RPC 2.0 Request
  */
@@ -79,6 +100,7 @@ export interface JsonRpcTransport {
   request(method: string, params?: unknown, timeoutMs?: number): Promise<unknown>;
   sendResult(id: string | number, result: unknown): void;
   sendError(id: string | number | null, code: number, message: string, data?: unknown): void;
+  sendErrorAndFlush(id: string | number | null, code: number, message: string, data?: unknown): Promise<void>;
 }
 
 /**
@@ -102,6 +124,11 @@ abstract class LineBasedJsonRpcTransport implements JsonRpcTransport {
   protected abstract write(line: string): void;
   protected abstract idPrefix(): string;
   abstract stop(): void;
+
+  protected writeAndFlush(line: string): Promise<void> {
+    this.write(line);
+    return Promise.resolve();
+  }
 
   /**
    * Send a server-initiated request to the client and await its response.
@@ -143,6 +170,10 @@ abstract class LineBasedJsonRpcTransport implements JsonRpcTransport {
 
   sendError(id: string | number | null, code: number, message: string, data?: unknown): void {
     this.send({ jsonrpc: '2.0', id, error: { code, message, data } });
+  }
+
+  sendErrorAndFlush(id: string | number | null, code: number, message: string, data?: unknown): Promise<void> {
+    return this.writeAndFlush(JSON.stringify({ jsonrpc: '2.0', id, error: { code, message, data } }));
   }
 
   /**
@@ -320,6 +351,12 @@ export class StdioTransport extends LineBasedJsonRpcTransport {
     process.stdout.write(line + '\n');
   }
 
+  protected override writeAndFlush(line: string): Promise<void> {
+    return waitForWriteFlush((finish) => {
+      process.stdout.write(line + '\n', finish);
+    });
+  }
+
   protected idPrefix(): string {
     return 'cg-srv';
   }
@@ -401,6 +438,17 @@ export class SocketTransport extends LineBasedJsonRpcTransport {
     if (!this.socket.destroyed) {
       this.socket.write(line + '\n');
     }
+  }
+
+  protected override writeAndFlush(line: string): Promise<void> {
+    if (this.socket.destroyed) return Promise.resolve();
+    return waitForWriteFlush((finish) => {
+      if (this.socket.destroyed) {
+        finish();
+        return;
+      }
+      this.socket.write(line + '\n', finish);
+    });
   }
 
   protected idPrefix(): string {
