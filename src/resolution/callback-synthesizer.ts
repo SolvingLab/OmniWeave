@@ -29,6 +29,7 @@ import { isGeneratedFile } from '../extraction/generated-detection';
 import { stripCommentsForRegex } from './strip-comments';
 import { WORKFLOW_STEP_PREFIX, isWorkflowFile } from './frameworks/workflow';
 import { goframeRouteEdges } from './goframe-synthesizer';
+import { cFnPointerDispatchEdges } from './c-fnptr-synthesizer';
 
 const REGISTRAR_NAME = /^(on[A-Z]\w*|subscribe|addListener|addEventListener|register|watch|listen|addCallback)$/;
 const DISPATCHER_NAME = /(emit|trigger|notify|dispatch|fire|publish|flush)/i;
@@ -3332,6 +3333,7 @@ export function synthesizeCallbackEdges(queries: QueryBuilder, ctx: ResolutionCo
   const sidekiqEdges = sidekiqDispatchEdges(ctx);
   const laravelEdges = laravelEventEdges(ctx);
   const reduxThunk = reduxThunkEdges(queries, ctx);
+  const cFnPtrEdges = cFnPointerDispatchEdges(queries, ctx);
   const workflowEdges = workflowCrossLangEdges(queries, ctx);
   const generalCrossLang = generalCrossLangEdges(ctx);
 
@@ -3367,6 +3369,7 @@ export function synthesizeCallbackEdges(queries: QueryBuilder, ctx: ResolutionCo
     ...sidekiqEdges,
     ...laravelEdges,
     ...reduxThunk,
+    ...cFnPtrEdges,
     ...workflowEdges,
     ...generalCrossLang,
   ]) {
