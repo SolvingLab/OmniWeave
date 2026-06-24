@@ -1957,6 +1957,30 @@ export class ToolHandler {
         registeredAt,
       };
     }
+    if (m?.synthesizedBy === 'pinia-store') {
+      const action = m.via ? `\`${String(m.via)}\`` : 'an action';
+      return {
+        label: `Pinia store action ${action} (dynamic dispatch)`,
+        compact: `dynamic: Pinia action ${action}${at}`,
+        registeredAt,
+      };
+    }
+    if (m?.synthesizedBy === 'vuex-dispatch') {
+      const action = m.via ? `\`${String(m.via)}\`` : 'an action';
+      return {
+        label: `Vuex store dispatch ${action} (dynamic dispatch)`,
+        compact: `dynamic: Vuex dispatch ${action}${at}`,
+        registeredAt,
+      };
+    }
+    if (m?.synthesizedBy === 'zustand-store') {
+      const action = m.via ? `\`${String(m.via)}\`` : 'an action';
+      return {
+        label: `Zustand store action ${action} (dynamic dispatch)`,
+        compact: `dynamic: Zustand action ${action}${at}`,
+        registeredAt,
+      };
+    }
     if (m?.synthesizedBy === 'interface-impl') {
       return {
         label: `interface/abstract dispatch — runs the implementation override (dynamic dispatch)`,

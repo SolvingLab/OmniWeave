@@ -450,6 +450,12 @@ export class ContextBuilder {
         ? `renders <${String(m.via || 'child')}>`
         : m.synthesizedBy === 'vue-handler'
         ? `Vue @${String(m.event || 'event')} handler`
+        : m.synthesizedBy === 'pinia-store'
+        ? `Pinia action \`${String(m.via || 'action')}\`${at}`
+        : m.synthesizedBy === 'vuex-dispatch'
+        ? `Vuex dispatch \`${String(m.via || 'action')}\`${at}`
+        : m.synthesizedBy === 'zustand-store'
+        ? `Zustand action \`${String(m.via || 'action')}\`${at}`
         : `event ${m.event ? `\`${String(m.event)}\`` : ''}${at}`;
       synthByPair.set(`${e.source}>${e.target}`, label);
     }

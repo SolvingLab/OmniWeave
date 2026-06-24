@@ -24,6 +24,7 @@
 import type { Edge, Node, NodeKind } from '../types';
 import type { QueryBuilder } from '../db/queries';
 import type { ResolutionContext } from './types';
+import * as path from 'path';
 import { isGeneratedFile } from '../extraction/generated-detection';
 import { stripCommentsForRegex } from './strip-comments';
 import { WORKFLOW_STEP_PREFIX, isWorkflowFile } from './frameworks/workflow';
@@ -2042,9 +2043,631 @@ function generalCrossLangEdges(ctx: ResolutionContext): Edge[] {
  * Synthesize dispatcher→callback edges (field observers + EventEmitters +
  * React re-render + JSX children + Vue templates + SvelteKit load + RN event
  * channel + Fabric native-impl + MyBatis Java↔XML + Gin middleware chain +
- * GoFrame reflective route binding).
+ * GoFrame reflective route binding + store action dispatch bridges).
  * Returns the count added. Never throws into indexing — callers wrap in try/catch.
  */
+// Pinia useStore().action() dispatch bridge.
+// A Pinia store factory `export const useXStore = defineStore(...)` exposes
+// extracted action nodes through `const s = useXStore(); s.action()`. Bridge only
+// when the consumer calls a factory defined in the same file or imported from the
+// store file via a relative named import. Alias/barrel imports are intentionally
+// skipped until the import resolver can prove them.
+const PINIA_CONSUMER_EXT = /\.(?:ts|tsx|js|jsx|mjs|cjs|vue)$/;
+const PINIA_FACTORY_RE = /\b(?:export\s+)?const\s+(\w+)\s*=\s*defineStore\s*\(/g;
+const PINIA_IMPORT_RE = /\bimport\s+(type\s+)?\{([^}]+)\}\s+from\s+['"]([^'"]+)['"]/g;
+const PINIA_BIND_RE = /\bconst\s+(\w+)\s*=\s*(?:await\s+)?(\w+)\s*\(/g;
+const PINIA_CALL_RE = /(\w+)\s*\.\s*(\w+)\s*\(/g;
+const PINIA_FANOUT_CAP = 80;
+const JS_IMPORT_EXTENSIONS = ['', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.vue'];
+const IDENT_RE = /[A-Za-z_$][A-Za-z0-9_$]*/y;
+const ZUSTAND_FACTORY_RE = /\bexport\s+const\s+(\w+)\s*=\s*create(?:\s*<[^>{}]+>)?\s*\(/g;
+const ZUSTAND_DESTRUCTURE_RE = /\bconst\s*\{([^}]+)\}\s*=\s*(\w+)\s*\.\s*getState\s*\(\s*\)/g;
+const ZUSTAND_BARE_CALL_RE = /\b(\w+)\s*\(/g;
+const ZUSTAND_FANOUT_CAP = 80;
+
+function normalizedFilePath(filePath: string): string {
+  return path.resolve(filePath).split(path.sep).join('/');
+}
+
+function isJsLikeMaskedAt(source: string, index: number): boolean {
+  let quote: '"' | "'" | '`' | null = null;
+  let lineComment = false;
+  let blockComment = false;
+  for (let i = 0; i < index; i++) {
+    const c = source[i]!;
+    const next = source[i + 1] ?? '';
+    if (lineComment) {
+      if (c === '\n') lineComment = false;
+      continue;
+    }
+    if (blockComment) {
+      if (c === '*' && next === '/') {
+        blockComment = false;
+        i++;
+      }
+      continue;
+    }
+    if (quote) {
+      if (c === '\\') {
+        i++;
+        continue;
+      }
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '/' && next === '/') {
+      lineComment = true;
+      i++;
+      continue;
+    }
+    if (c === '/' && next === '*') {
+      blockComment = true;
+      i++;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') quote = c;
+  }
+  return quote !== null || lineComment || blockComment;
+}
+
+function findMatchingDelimiter(source: string, openIndex: number, open: string, close: string): number {
+  let depth = 0;
+  let quote: '"' | "'" | '`' | null = null;
+  let lineComment = false;
+  let blockComment = false;
+  for (let i = openIndex; i < source.length; i++) {
+    const c = source[i]!;
+    const next = source[i + 1] ?? '';
+    if (lineComment) {
+      if (c === '\n') lineComment = false;
+      continue;
+    }
+    if (blockComment) {
+      if (c === '*' && next === '/') {
+        blockComment = false;
+        i++;
+      }
+      continue;
+    }
+    if (quote) {
+      if (c === '\\') {
+        i++;
+        continue;
+      }
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '/' && next === '/') {
+      lineComment = true;
+      i++;
+      continue;
+    }
+    if (c === '/' && next === '*') {
+      blockComment = true;
+      i++;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') {
+      quote = c;
+      continue;
+    }
+    if (c === open) depth++;
+    else if (c === close) {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+function lineOfOffset(source: string, offset: number): number {
+  return source.slice(0, Math.max(0, offset)).split('\n').length;
+}
+
+function sourceLine(source: string, line: number): string {
+  return source.split('\n')[line - 1] ?? '';
+}
+
+function lineMatchesObjectMember(source: string, line: number, memberName: string): boolean {
+  const escaped = memberName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?:^\\s*|[,{]\\s*)['"\`]?${escaped}['"\`]?\\s*(?:[:(]|,)`).test(sourceLine(source, line));
+}
+
+function defineStoreLineRanges(source: string): Array<{ start: number; end: number }> {
+  const ranges: Array<{ start: number; end: number }> = [];
+  const re = /\bdefineStore\s*\(/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(source))) {
+    if (isJsLikeMaskedAt(source, m.index)) continue;
+    const open = source.indexOf('(', m.index);
+    const close = open >= 0 ? findMatchingDelimiter(source, open, '(', ')') : -1;
+    if (open < 0 || close < 0) continue;
+    ranges.push({ start: lineOfOffset(source, m.index), end: lineOfOffset(source, close) });
+  }
+  return ranges;
+}
+
+function isPiniaActionTarget(node: Node, source: string): boolean {
+  if (!lineMatchesObjectMember(source, node.startLine, node.name)) return false;
+  return defineStoreLineRanges(source).some(
+    (range) => node.startLine >= range.start && node.startLine <= range.end,
+  );
+}
+
+function createCallLineRanges(source: string): Array<{ start: number; end: number }> {
+  const ranges: Array<{ start: number; end: number }> = [];
+  const re = /\bcreate(?:\s*<[^>{}]+>)?\s*\(/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(source))) {
+    if (isJsLikeMaskedAt(source, m.index)) continue;
+    const open = source.indexOf('(', m.index);
+    const close = open >= 0 ? findMatchingDelimiter(source, open, '(', ')') : -1;
+    if (open < 0 || close < 0) continue;
+    ranges.push({ start: lineOfOffset(source, m.index), end: lineOfOffset(source, close) });
+  }
+  return ranges;
+}
+
+function isZustandActionTarget(node: Node, source: string): boolean {
+  if (!lineMatchesObjectMember(source, node.startLine, node.name)) return false;
+  return createCallLineRanges(source).some(
+    (range) => node.startLine >= range.start && node.startLine <= range.end,
+  );
+}
+
+function parseNamedImportSpecifiers(raw: string): Array<{ imported: string; local: string }> {
+  const out: Array<{ imported: string; local: string }> = [];
+  for (const part of raw.split(',')) {
+    const trimmed = part.trim();
+    if (!trimmed || trimmed.startsWith('type ')) continue;
+    const alias = trimmed.match(/^(\w+)\s+as\s+(\w+)$/);
+    if (alias) {
+      out.push({ imported: alias[1]!, local: alias[2]! });
+      continue;
+    }
+    const bare = trimmed.match(/^(\w+)$/);
+    if (bare) out.push({ imported: bare[1]!, local: bare[1]! });
+  }
+  return out;
+}
+
+function parseObjectPatternSpecifiers(raw: string): Array<{ imported: string; local: string }> {
+  const out: Array<{ imported: string; local: string }> = [];
+  for (const part of raw.split(',')) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const alias = trimmed.match(/^(\w+)\s*:\s*(\w+)$/);
+    if (alias) {
+      out.push({ imported: alias[1]!, local: alias[2]! });
+      continue;
+    }
+    const bare = trimmed.match(/^(\w+)$/);
+    if (bare) out.push({ imported: bare[1]!, local: bare[1]! });
+  }
+  return out;
+}
+
+function resolveRelativeJsImport(
+  importerFile: string,
+  specifier: string,
+  indexedFiles: Map<string, string>,
+): string | null {
+  if (!specifier.startsWith('.')) return null;
+  const base = path.resolve(path.dirname(importerFile), specifier);
+  for (const ext of JS_IMPORT_EXTENSIONS) {
+    const direct = indexedFiles.get(normalizedFilePath(base + ext));
+    if (direct) return direct;
+  }
+  for (const ext of JS_IMPORT_EXTENSIONS.slice(1)) {
+    const indexFile = indexedFiles.get(normalizedFilePath(path.join(base, `index${ext}`)));
+    if (indexFile) return indexFile;
+  }
+  return null;
+}
+
+function visiblePiniaFactories(
+  file: string,
+  content: string,
+  factoryFile: Map<string, string>,
+  factoriesByFile: Map<string, Set<string>>,
+  indexedFiles: Map<string, string>,
+): Map<string, string> {
+  const visible = new Map<string, string>();
+  for (const [factory, factoryPath] of factoryFile) {
+    if (factoryPath === file) visible.set(factory, factoryPath);
+  }
+
+  PINIA_IMPORT_RE.lastIndex = 0;
+  let im: RegExpExecArray | null;
+  while ((im = PINIA_IMPORT_RE.exec(content))) {
+    if (isJsLikeMaskedAt(content, im.index)) continue;
+    if (im[1]) continue;
+    const targetFile = resolveRelativeJsImport(file, im[3]!, indexedFiles);
+    if (!targetFile) continue;
+    const targetFactories = factoriesByFile.get(targetFile);
+    if (!targetFactories) continue;
+    for (const spec of parseNamedImportSpecifiers(im[2]!)) {
+      if (targetFactories.has(spec.imported)) visible.set(spec.local, targetFile);
+    }
+  }
+  return visible;
+}
+
+function piniaStoreEdges(ctx: ResolutionContext): Edge[] {
+  // Map each `const useXStore = defineStore(...)` factory to its store file.
+  const factoryFile = new Map<string, string>();
+  const factoriesByFile = new Map<string, Set<string>>();
+  const indexedFiles = new Map<string, string>();
+  for (const file of ctx.getAllFiles()) {
+    indexedFiles.set(normalizedFilePath(file), file);
+    if (!PINIA_CONSUMER_EXT.test(file)) continue;
+    const content = ctx.readFile(file);
+    if (!content || !content.includes('defineStore')) continue;
+    PINIA_FACTORY_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = PINIA_FACTORY_RE.exec(content))) {
+      if (isJsLikeMaskedAt(content, m.index)) continue;
+      const factory = m[1]!;
+      factoryFile.set(factory, file);
+      let names = factoriesByFile.get(file);
+      if (!names) {
+        names = new Set<string>();
+        factoriesByFile.set(file, names);
+      }
+      names.add(factory);
+    }
+  }
+  if (!factoryFile.size) return [];
+
+  const edges: Edge[] = [];
+  const seen = new Set<string>();
+  for (const file of ctx.getAllFiles()) {
+    if (!PINIA_CONSUMER_EXT.test(file)) continue;
+    const content = ctx.readFile(file);
+    if (!content || !content.includes('Store')) continue;
+    const safe = stripCommentsForRegex(content, /\.(?:jsx?|mjs|cjs)$/.test(file) ? 'javascript' : 'typescript');
+    const visibleFactoriesForFile = visiblePiniaFactories(
+      file,
+      safe,
+      factoryFile,
+      factoriesByFile,
+      indexedFiles,
+    );
+    if (!visibleFactoriesForFile.size) continue;
+
+    // Bind store vars in this file: `const <var> = <known-factory>(...)`.
+    const varStore = new Map<string, string>();
+    PINIA_BIND_RE.lastIndex = 0;
+    let bm: RegExpExecArray | null;
+    while ((bm = PINIA_BIND_RE.exec(safe))) {
+      if (isJsLikeMaskedAt(content, bm.index)) continue;
+      const sf = visibleFactoriesForFile.get(bm[2]!);
+      if (sf) varStore.set(bm[1]!, sf);
+    }
+    if (!varStore.size) continue;
+
+    // Link `<var>.<method>(` to the extracted action function in the store file.
+    const nodesInFile = ctx.getNodesInFile(file);
+    const fallbackDispatcher = nodesInFile.find((n) => n.kind === 'component'); // .vue top-level setup
+    PINIA_CALL_RE.lastIndex = 0;
+    let cm: RegExpExecArray | null;
+    let added = 0;
+    while ((cm = PINIA_CALL_RE.exec(safe)) && added < PINIA_FANOUT_CAP) {
+      if (isJsLikeMaskedAt(content, cm.index)) continue;
+      const storeFile = varStore.get(cm[1]!);
+      if (!storeFile) continue;
+      const method = cm[2]!;
+      const line = safe.slice(0, cm.index).split('\n').length;
+      const disp = enclosingFn(nodesInFile, line) ?? fallbackDispatcher;
+      if (!disp) continue;
+      const target = ctx
+        .getNodesByName(method)
+        .filter((n) => n.kind === 'function' && n.filePath === storeFile)
+        .find((n) => isPiniaActionTarget(n, ctx.readFile(storeFile) ?? ''));
+      if (!target || target.id === disp.id) continue;
+      const key = `${disp.id}>${target.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      edges.push({
+        source: disp.id,
+        target: target.id,
+        kind: 'calls',
+        line,
+        provenance: 'heuristic',
+        metadata: { synthesizedBy: 'pinia-store', via: method, confidence: 0.8, registeredAt: `${file}:${line}` },
+      });
+      added++;
+    }
+  }
+  return edges;
+}
+
+function zustandStoreEdges(ctx: ResolutionContext): Edge[] {
+  const factoryFile = new Map<string, string>();
+  const factoriesByFile = new Map<string, Set<string>>();
+  const indexedFiles = new Map<string, string>();
+  for (const file of ctx.getAllFiles()) {
+    indexedFiles.set(normalizedFilePath(file), file);
+    if (!PINIA_CONSUMER_EXT.test(file)) continue;
+    const content = ctx.readFile(file);
+    if (!content || !content.includes('zustand') || !content.includes('create')) continue;
+    ZUSTAND_FACTORY_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = ZUSTAND_FACTORY_RE.exec(content))) {
+      if (isJsLikeMaskedAt(content, m.index)) continue;
+      const factory = m[1]!;
+      factoryFile.set(factory, file);
+      let names = factoriesByFile.get(file);
+      if (!names) {
+        names = new Set<string>();
+        factoriesByFile.set(file, names);
+      }
+      names.add(factory);
+    }
+  }
+  if (!factoryFile.size) return [];
+
+  const edges: Edge[] = [];
+  const seen = new Set<string>();
+  for (const file of ctx.getAllFiles()) {
+    if (!PINIA_CONSUMER_EXT.test(file)) continue;
+    const content = ctx.readFile(file);
+    if (!content || !content.includes('getState')) continue;
+    const safe = stripCommentsForRegex(content, /\.(?:jsx?|mjs|cjs)$/.test(file) ? 'javascript' : 'typescript');
+    const visibleFactoriesForFile = visiblePiniaFactories(
+      file,
+      safe,
+      factoryFile,
+      factoriesByFile,
+      indexedFiles,
+    );
+    if (!visibleFactoriesForFile.size) continue;
+
+    const localActions = new Map<string, { storeFile: string; action: string }>();
+    ZUSTAND_DESTRUCTURE_RE.lastIndex = 0;
+    let dm: RegExpExecArray | null;
+    while ((dm = ZUSTAND_DESTRUCTURE_RE.exec(safe))) {
+      if (isJsLikeMaskedAt(content, dm.index)) continue;
+      const storeFile = visibleFactoriesForFile.get(dm[2]!);
+      if (!storeFile) continue;
+      for (const spec of parseObjectPatternSpecifiers(dm[1]!)) {
+        localActions.set(spec.local, { storeFile, action: spec.imported });
+      }
+    }
+    if (!localActions.size) continue;
+
+    const nodesInFile = ctx.getNodesInFile(file);
+    ZUSTAND_BARE_CALL_RE.lastIndex = 0;
+    let cm: RegExpExecArray | null;
+    let added = 0;
+    while ((cm = ZUSTAND_BARE_CALL_RE.exec(safe)) && added < ZUSTAND_FANOUT_CAP) {
+      if (isJsLikeMaskedAt(content, cm.index)) continue;
+      if (safe[cm.index - 1] === '.') continue;
+      const bound = localActions.get(cm[1]!);
+      if (!bound) continue;
+      const line = safe.slice(0, cm.index).split('\n').length;
+      const disp = enclosingFn(nodesInFile, line);
+      if (!disp) continue;
+      const target = ctx
+        .getNodesByName(bound.action)
+        .filter((n) => n.kind === 'function' && n.filePath === bound.storeFile)
+        .find((n) => isZustandActionTarget(n, ctx.readFile(bound.storeFile) ?? ''));
+      if (!target || target.id === disp.id) continue;
+      const key = `${disp.id}>${target.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      edges.push({
+        source: disp.id,
+        target: target.id,
+        kind: 'calls',
+        line,
+        provenance: 'heuristic',
+        metadata: { synthesizedBy: 'zustand-store', via: bound.action, confidence: 0.75, registeredAt: `${file}:${line}` },
+      });
+      added++;
+    }
+  }
+  return edges;
+}
+
+// Vuex string-keyed dispatch / commit bridge.
+// Vuex dispatches actions/mutations by a runtime STRING key: `dispatch('user/login')`
+// / `commit('SET_TOKEN')` / `this.$store.dispatch('app/toggleDevice')`. The action
+// & mutation definitions are object-literal methods in store module files (now
+// extracted as function nodes). Bridge the string key to its node: the LAST `/`
+// segment is the action/mutation name; the preceding segment is the namespace
+// (roughly the store module's file). Resolve to a function node in a store file
+// (the store-file gate excludes a same-named `api/` helper - `getInfo`/`login`
+// commonly collide), disambiguated by the namespace appearing in the path (or, for
+// a root key, the same file - Vuex's local-module `commit('M')` inside an action).
+const VUEX_DISPATCH_RE = /(?:(this\.\$store|\w+\.\$store|\w+)\s*\.\s*)?(dispatch|commit)\s*\(\s*['"]([A-Za-z][\w/]*)['"]/g;
+const VUEX_STORE_SIGNAL = /\bdefineStore\b|\bcreateStore\b|\bVuex\b|\bmutations\b|\bactions\b|\bgetters\b|\bnamespaced\b/g;
+const VUEX_FANOUT_CAP = 120;
+
+/** A path segment (dir or filename stem) equals `seg`; `modules/user.js` matches `user`. */
+function pathHasSegment(filePath: string, seg: string): boolean {
+  return new RegExp('[\\\\/]' + seg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[\\\\/.]').test(filePath);
+}
+
+function isExplicitVuexStoreReceiver(receiver: string | undefined): boolean {
+  return receiver !== undefined && receiver.includes('$store');
+}
+
+interface VuexStoreMembers {
+  actions: Set<string>;
+  mutations: Set<string>;
+}
+
+function skipWs(source: string, i: number): number {
+  while (i < source.length && /\s/.test(source[i]!)) i++;
+  return i;
+}
+
+function readObjectKey(source: string, i: number): { key: string; next: number } | null {
+  i = skipWs(source, i);
+  const quote = source[i];
+  if (quote === '"' || quote === "'" || quote === '`') {
+    const end = source.indexOf(quote, i + 1);
+    if (end < 0) return null;
+    return { key: source.slice(i + 1, end), next: end + 1 };
+  }
+  IDENT_RE.lastIndex = i;
+  const m = IDENT_RE.exec(source);
+  return m ? { key: m[0], next: IDENT_RE.lastIndex } : null;
+}
+
+function topLevelObjectMemberNames(source: string, openBrace: number): Set<string> {
+  const closeBrace = findMatchingDelimiter(source, openBrace, '{', '}');
+  const names = new Set<string>();
+  if (closeBrace < 0) return names;
+  let i = openBrace + 1;
+  while (i < closeBrace) {
+    i = skipWs(source, i);
+    if (i >= closeBrace) break;
+    if (source[i] === ',') {
+      i++;
+      continue;
+    }
+    const key = readObjectKey(source, i);
+    if (!key) {
+      i++;
+      continue;
+    }
+    const afterKey = skipWs(source, key.next);
+    if (source[afterKey] === ':' || source[afterKey] === '(' || source[afterKey] === ',' || source[afterKey] === '}') {
+      names.add(key.key);
+    }
+    while (i < closeBrace) {
+      const c = source[i]!;
+      if (c === '"' || c === "'" || c === '`') {
+        const end = source.indexOf(c, i + 1);
+        i = end < 0 ? closeBrace : end + 1;
+        continue;
+      }
+      if (c === '{' || c === '(' || c === '[') {
+        const end = findMatchingDelimiter(source, i, c, c === '{' ? '}' : c === '(' ? ')' : ']');
+        i = end < 0 ? closeBrace : end + 1;
+        continue;
+      }
+      if (c === ',') {
+        i++;
+        break;
+      }
+      if (c === '}') break;
+      i++;
+    }
+  }
+  return names;
+}
+
+function vuexStoreMembers(source: string): VuexStoreMembers {
+  const members: VuexStoreMembers = { actions: new Set<string>(), mutations: new Set<string>() };
+  for (const key of ['actions', 'mutations'] as const) {
+    const re = new RegExp(`\\b${key}\\s*(?::|=)\\s*\\{`, 'g');
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(source))) {
+      if (isJsLikeMaskedAt(source, m.index)) continue;
+      const open = source.indexOf('{', m.index);
+      if (open < 0) continue;
+      for (const name of topLevelObjectMemberNames(source, open)) members[key].add(name);
+    }
+  }
+  return members;
+}
+
+function vuexDispatchEdges(ctx: ResolutionContext): Edge[] {
+  const storeFileCache = new Map<string, boolean>();
+  const memberCache = new Map<string, VuexStoreMembers>();
+  const isStoreFile = (file: string): boolean => {
+    let v = storeFileCache.get(file);
+    if (v === undefined) {
+      const c = ctx.readFile(file);
+      const seen = new Set<string>();
+      if (c) {
+        VUEX_STORE_SIGNAL.lastIndex = 0;
+        let sm: RegExpExecArray | null;
+        while ((sm = VUEX_STORE_SIGNAL.exec(c))) { seen.add(sm[0]); if (seen.size >= 2) break; }
+      }
+      v = seen.size >= 2;
+      storeFileCache.set(file, v);
+    }
+    return v;
+  };
+  const getMembers = (file: string): VuexStoreMembers => {
+    let v = memberCache.get(file);
+    if (!v) {
+      v = vuexStoreMembers(ctx.readFile(file) ?? '');
+      memberCache.set(file, v);
+    }
+    return v;
+  };
+
+  const resolve = (key: string, op: string, dispatchFile: string): Node | null => {
+    const segs = key.split('/');
+    const action = segs[segs.length - 1]!;
+    const memberKind = op === 'commit' ? 'mutations' : 'actions';
+    const cands = ctx
+      .getNodesByName(action)
+      .filter(
+        (n) =>
+          n.kind === 'function' &&
+          isStoreFile(n.filePath) &&
+          getMembers(n.filePath)[memberKind].has(action),
+      );
+    if (!cands.length) return null;
+    if (segs.length > 1) {
+      const mod = segs[segs.length - 2]!; // immediate namespace ≈ the module file
+      const namespaced = cands.filter((c) => pathHasSegment(c.filePath, mod));
+      return namespaced.length === 1 ? namespaced[0]! : null;
+    }
+    // Root key: only a local `commit('M')` / `dispatch('A')` inside a store module
+    // targets the same file. Component-level root keys are skipped rather than
+    // guessed across modules.
+    return cands.find((c) => c.filePath === dispatchFile) ?? null;
+  };
+
+  const edges: Edge[] = [];
+  const seen = new Set<string>();
+  for (const file of ctx.getAllFiles()) {
+    if (!PINIA_CONSUMER_EXT.test(file)) continue;
+    const content = ctx.readFile(file);
+    if (!content || (!content.includes('dispatch(') && !content.includes('commit('))) continue;
+    const safe = stripCommentsForRegex(content, /\.(?:jsx?|mjs|cjs)$/.test(file) ? 'javascript' : 'typescript');
+    const dispatchFileIsStore = isStoreFile(file);
+    const nodesInFile = ctx.getNodesInFile(file);
+    const fallback = nodesInFile.find((n) => n.kind === 'component'); // .vue top-level
+    VUEX_DISPATCH_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    let added = 0;
+    while ((m = VUEX_DISPATCH_RE.exec(safe)) && added < VUEX_FANOUT_CAP) {
+      if (isJsLikeMaskedAt(content, m.index)) continue;
+      const receiver = m[1];
+      if (!dispatchFileIsStore && !isExplicitVuexStoreReceiver(receiver)) continue;
+      if (receiver && !isExplicitVuexStoreReceiver(receiver)) continue;
+      const op = m[2]!;
+      const key = m[3]!;
+      const line = safe.slice(0, m.index).split('\n').length;
+      const disp = enclosingFn(nodesInFile, line) ?? fallback;
+      if (!disp) continue;
+      const target = resolve(key, op, file);
+      if (!target || target.id === disp.id) continue;
+      const edgeKey = `${disp.id}>${target.id}`;
+      if (seen.has(edgeKey)) continue;
+      seen.add(edgeKey);
+      edges.push({
+        source: disp.id,
+        target: target.id,
+        kind: 'calls',
+        line,
+        provenance: 'heuristic',
+        metadata: { synthesizedBy: 'vuex-dispatch', via: key, confidence: 0.75, registeredAt: `${file}:${line}` },
+      });
+      added++;
+    }
+  }
+  return edges;
+}
+
 export function synthesizeCallbackEdges(queries: QueryBuilder, ctx: ResolutionContext): number {
   // Cross-file Go method→type `contains` edges must be synthesized AND persisted
   // FIRST: a method declared in a different file from its receiver type is
@@ -2087,6 +2710,9 @@ export function synthesizeCallbackEdges(queries: QueryBuilder, ctx: ResolutionCo
   const mybatisEdges = mybatisJavaXmlEdges(queries);
   const ginEdges = ginMiddlewareChainEdges(queries, ctx);
   const goframeEdges = goframeRouteEdges(ctx);
+  const zustandEdges = zustandStoreEdges(ctx);
+  const piniaEdges = piniaStoreEdges(ctx);
+  const vuexEdges = vuexDispatchEdges(ctx);
   const workflowEdges = workflowCrossLangEdges(queries, ctx);
   const generalCrossLang = generalCrossLangEdges(ctx);
 
@@ -2113,6 +2739,9 @@ export function synthesizeCallbackEdges(queries: QueryBuilder, ctx: ResolutionCo
     ...mybatisEdges,
     ...ginEdges,
     ...goframeEdges,
+    ...zustandEdges,
+    ...piniaEdges,
+    ...vuexEdges,
     ...workflowEdges,
     ...generalCrossLang,
   ]) {
