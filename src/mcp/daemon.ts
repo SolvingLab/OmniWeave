@@ -77,6 +77,9 @@ const CLIENT_HELLO_TIMEOUT_MS = 3_000;
 /** Bytes/parse-window for an oversized hello line — bounded against a malicious peer. */
 const MAX_HELLO_LINE_BYTES = 4096;
 
+/** Bump when the daemon/proxy hello line changes shape. */
+const DAEMON_HELLO_PROTOCOL = 1;
+
 /**
  * Wire format for the one-shot hello line the daemon emits on every new
  * connection. The `omniweave` field is the build fingerprint (version +
@@ -89,7 +92,7 @@ export interface DaemonHello {
   omniweave: string; // build fingerprint: OmniWeaveBuildFingerprint (version[+buildId])
   pid: number;       // daemon pid (informational; for `ps` debugging)
   socketPath: string; // echoed back so the proxy can log it
-  protocol: 1;       // bump if the hello shape changes
+  protocol: typeof DAEMON_HELLO_PROTOCOL;
 }
 
 /**
@@ -259,7 +262,7 @@ export class Daemon {
       omniweave: OmniWeaveBuildFingerprint,
       pid: process.pid,
       socketPath: this.socketPath,
-      protocol: 1,
+      protocol: DAEMON_HELLO_PROTOCOL,
     };
     socket.write(JSON.stringify(hello) + '\n');
 
@@ -617,4 +620,4 @@ function readClientHello(
 }
 
 /** Exported for test stubs that need to bound the hello-line read. */
-export { MAX_HELLO_LINE_BYTES };
+export { DAEMON_HELLO_PROTOCOL, MAX_HELLO_LINE_BYTES };

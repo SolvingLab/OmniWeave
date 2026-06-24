@@ -93,7 +93,13 @@ describe('build fingerprint — rendezvous catches same-version-different-build'
     const result = await connectWithHello(d.sockPath, '1.0.0+rebuiltabc123');
     expect(result).not.toBe('version-mismatch');
     expect(result).not.toBeNull();
-    if (result && result !== 'version-mismatch') result.destroy();
+    if (result && typeof result !== 'string') result.destroy();
+  });
+
+  it('rejects a daemon with a matching build but incompatible hello protocol', async () => {
+    const d = await fakeDaemon({ omniweave: '1.0.0+rebuiltabc123', pid: 1, socketPath: 'x', protocol: 2 });
+    open.push(d.close);
+    expect(await connectWithHello(d.sockPath, '1.0.0+rebuiltabc123')).toBe('protocol-mismatch');
   });
 
   it('the proxy DEFAULT rendezvous datum is the build fingerprint, not the bare version (built artifact)', async () => {
@@ -118,7 +124,7 @@ describe('build fingerprint — rendezvous catches same-version-different-build'
     open.push(matching.close);
     const okRes = await builtProxy.connectWithHello(matching.sockPath); // default arg
     expect(okRes).not.toBe('version-mismatch');
-    if (okRes && okRes !== 'version-mismatch') okRes.destroy();
+    if (okRes && typeof okRes !== 'string') okRes.destroy();
 
     const stale = await fakeDaemon({ omniweave: V, pid: 1, socketPath: 'x', protocol: 1 });
     open.push(stale.close);

@@ -2,10 +2,10 @@
  * MCP proxy mode — issue #411.
  *
  * The proxy is a near-transparent stdio↔socket pipe. Once it has verified
- * the daemon's hello line (same major.minor.patch as ours), it does no
- * protocol parsing of its own: every byte the MCP host writes to the proxy's
- * stdin goes straight to the daemon socket, and every byte the daemon emits
- * goes straight to the host's stdout. Server-initiated JSON-RPC requests
+ * the daemon's hello line (same build fingerprint + hello protocol as ours),
+ * it does no protocol parsing of its own: every byte the MCP host writes to
+ * the proxy's stdin goes straight to the daemon socket, and every byte the
+ * daemon emits goes straight to the host's stdout. Server-initiated JSON-RPC requests
  * (e.g. `roots/list`) flow through the same pipe transparently.
  *
  * Lifecycle expectations:
@@ -21,7 +21,7 @@
 import * as fs from 'fs';
 import * as net from 'net';
 import { HOST_PPID_ENV } from '../extraction/wasm-runtime-flags';
-import { DaemonClientHello, DaemonHello, MAX_HELLO_LINE_BYTES } from './daemon';
+import { DaemonClientHello, DaemonHello, DAEMON_HELLO_PROTOCOL, MAX_HELLO_LINE_BYTES } from './daemon';
 import { supervisionLostReason } from './ppid-watchdog';
 import { treatStdinFailureAsShutdown } from './stdin-teardown';
 import { OmniWeaveBuildFingerprint } from './version';
@@ -141,19 +141,31 @@ export async function runProxy(
 }
 
 /**
- * Connect to a daemon at `socketPath` and verify its hello (exact version match).
- * Returns the live socket (hello already consumed) or null if unreachable / stale
- * / version-mismatched. Unlike {@link runProxy} it does NOT pipe — the caller
- * owns the socket. Used by the local-handshake proxy's background connect.
+ * Connect to a daemon at `socketPath` and verify its hello (exact build
+ * fingerprint + hello protocol match). Returns the live socket (hello already
+ * consumed) or null if unreachable / stale / mismatched. Unlike {@link runProxy}
+ * it does NOT pipe — the caller owns the socket. Used by the local-handshake
+ * proxy's background connect.
  */
 export async function connectWithHello(
   socketPath: string,
   expectedVersion: string = OmniWeaveBuildFingerprint,
-): Promise<net.Socket | 'version-mismatch' | null> {
+): Promise<net.Socket | 'version-mismatch' | 'protocol-mismatch' | null> {
   if (process.platform !== 'win32' && !fs.existsSync(socketPath)) return null;
   const socket = net.createConnection(socketPath);
   socket.setEncoding('utf8');
-  const hello = await readHelloLine(socket).catch(() => null);
+  const hello = await readHelloLine(socket).catch((err) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    return msg.startsWith('daemon hello incompatible protocol') ? 'protocol-mismatch' as const : null;
+  });
+  if (hello === 'protocol-mismatch') {
+    process.stderr.write(
+      `[OmniWeave MCP] Found a daemon on ${socketPath} but its hello protocol ` +
+      `is incompatible; serving this session in-process.\n`
+    );
+    socket.destroy();
+    return 'protocol-mismatch';
+  }
   if (!hello) {
     socket.destroy();
     return null; // no daemon yet — caller should keep polling
@@ -453,12 +465,22 @@ function readHelloLine(socket: net.Socket): Promise<DaemonHello> {
         socket.unshift(tail);
       }
       try {
-        const parsed = JSON.parse(line) as DaemonHello;
-        if (typeof parsed.omniweave !== 'string' || typeof parsed.pid !== 'number') {
+        const parsed = JSON.parse(line) as Partial<DaemonHello>;
+        if (
+          typeof parsed.omniweave !== 'string' ||
+          typeof parsed.pid !== 'number' ||
+          typeof parsed.socketPath !== 'string'
+        ) {
           reject(new Error('daemon hello missing required fields'));
           return;
         }
-        resolve(parsed);
+        if (parsed.protocol !== DAEMON_HELLO_PROTOCOL) {
+          reject(new Error(
+            `daemon hello incompatible protocol: got ${String(parsed.protocol)}, expected ${DAEMON_HELLO_PROTOCOL}`
+          ));
+          return;
+        }
+        resolve(parsed as DaemonHello);
       } catch (err) {
         reject(new Error(`daemon hello not JSON: ${err instanceof Error ? err.message : String(err)}`));
       }

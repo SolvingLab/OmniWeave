@@ -165,6 +165,19 @@ async function waitProcessExit(pid: number, timeoutMs: number): Promise<boolean>
   return waitFor(() => !isAlive(pid), timeoutMs).then(() => true).catch(() => false);
 }
 
+async function rmTreeEventually(dir: string): Promise<void> {
+  for (let attempt = 0; attempt < 6; attempt++) {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+      return;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (!['EBUSY', 'ENOTEMPTY', 'EPERM'].includes(code ?? '') || attempt === 5) throw err;
+      await new Promise((r) => setTimeout(r, 25 * (attempt + 1)));
+    }
+  }
+}
+
 describe('Shared MCP daemon (issue #411)', () => {
   let tempDir: string;   // the (possibly symlinked) path processes are spawned with
   let realRoot: string;  // its canonical form — what the daemon keys paths on
@@ -178,7 +191,11 @@ describe('Shared MCP daemon (issue #411)', () => {
   });
 
   afterEach(async () => {
+    const proxyPids = servers
+      .map((s) => s.child.pid)
+      .filter((pid): pid is number => typeof pid === 'number');
     killTree(...servers.map((s) => s.child));
+    await Promise.all(proxyPids.map((pid) => waitProcessExit(pid, 1000)));
     // The daemon is detached (not a tracked child) — reap it explicitly via the
     // pid it recorded, so a test can't leak a background daemon. Guard against
     // our own pid: the version-mismatch test plants `pid: process.pid` in the
@@ -186,10 +203,10 @@ describe('Shared MCP daemon (issue #411)', () => {
     const daemonPid = readLockPid(realRoot);
     if (daemonPid && daemonPid !== process.pid && isAlive(daemonPid)) {
       try { process.kill(daemonPid, 'SIGKILL'); } catch { /* race */ }
+      await waitProcessExit(daemonPid, 1000);
     }
-    await new Promise((r) => setTimeout(r, 50));
     servers.length = 0;
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    await rmTreeEventually(tempDir);
   });
 
   it('two invocations share ONE detached daemon; both attach as proxies', async () => {

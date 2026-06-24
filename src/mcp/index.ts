@@ -402,14 +402,14 @@ export class MCPServer {
     const getDaemonSocket = async () => {
       // Fast path: a daemon may already be listening.
       const probe = await connectWithHello(socketPath);
-      if (probe === 'version-mismatch') return null; // definitive — serve in-process, don't poll for 6s
+      if (typeof probe === 'string') return null; // definitive mismatch — serve in-process, don't poll for 6s
       if (probe) return probe;
       // None reachable — spawn one (detached) and poll for its bind.
       spawnDetachedDaemon(root);
       for (let attempt = 0; attempt < DAEMON_CONNECT_MAX_RETRIES; attempt++) {
         await sleep(DAEMON_CONNECT_RETRY_DELAY_MS);
         const s = await connectWithHello(socketPath);
-        if (s === 'version-mismatch') return null;
+        if (typeof s === 'string') return null;
         if (s) return s;
       }
       return null; // never bound — the proxy serves this session in-process
