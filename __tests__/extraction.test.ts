@@ -381,6 +381,26 @@ function main() {
     const calls = result.unresolvedReferences.filter((r) => r.referenceKind === 'calls');
     expect(calls.some((c) => c.referenceName === 'processData')).toBe(true);
   });
+
+  it('should not emit bare call refs for local callback bindings', () => {
+    const code = `
+function waitForReady(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const finish = () => resolve();
+    finish();
+    reject(new Error("not ready"));
+  });
+}
+`;
+    const result = extractFromSource('promise.ts', code);
+    const calls = result.unresolvedReferences
+      .filter((r) => r.referenceKind === 'calls')
+      .map((r) => r.referenceName);
+
+    expect(calls).not.toContain('resolve');
+    expect(calls).not.toContain('reject');
+    expect(calls).not.toContain('finish');
+  });
 });
 
 describe('Arrow Function Export Extraction', () => {

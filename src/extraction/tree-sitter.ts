@@ -33,6 +33,8 @@ import {
   getApplicableFrameworks,
 } from '../resolution/frameworks';
 
+const JS_LIKE_LANGUAGES = new Set<Language>(['typescript', 'tsx', 'javascript', 'jsx']);
+
 // Re-export for backward compatibility
 export { generateNodeId } from './tree-sitter-helpers';
 
@@ -1006,6 +1008,75 @@ export class TreeSitterExtractor {
     if (node.type !== 'assignment') return false;
     const left = getChildByField(node, 'left') ?? node.namedChild(0);
     return left?.type === 'constant';
+  }
+
+  private isFunctionLikeNode(node: SyntaxNode): boolean {
+    if (!this.extractor) return false;
+    return this.extractor.functionTypes.includes(node.type) || this.extractor.methodTypes.includes(node.type);
+  }
+
+  private bindingPatternContainsName(node: SyntaxNode, name: string): boolean {
+    const text = getNodeText(node, this.source);
+    if (node.type === 'identifier' || node.type === 'shorthand_property_identifier_pattern') {
+      return text === name;
+    }
+    for (let i = 0; i < node.namedChildCount; i++) {
+      const child = node.namedChild(i);
+      if (child && this.bindingPatternContainsName(child, name)) return true;
+    }
+    return false;
+  }
+
+  private functionParametersContainBinding(fnNode: SyntaxNode, name: string): boolean {
+    const params = getChildByField(fnNode, 'parameters');
+    if (!params) return false;
+    if (params.type === 'identifier') return getNodeText(params, this.source) === name;
+    for (let i = 0; i < params.namedChildCount; i++) {
+      const param = params.namedChild(i);
+      if (!param) continue;
+      const binding =
+        getChildByField(param, 'pattern') ??
+        getChildByField(param, 'name') ??
+        (param.type === 'identifier' ? param : param.namedChild(0));
+      if (binding && this.bindingPatternContainsName(binding, name)) return true;
+    }
+    return false;
+  }
+
+  private functionBodyHasPriorLocalBinding(fnNode: SyntaxNode, callStartIndex: number, name: string): boolean {
+    const body = getChildByField(fnNode, 'body');
+    if (!body) return false;
+
+    const visit = (node: SyntaxNode): boolean => {
+      if (node.startIndex >= callStartIndex) return false;
+      if (node !== body && this.isFunctionLikeNode(node)) return false;
+      if (node.type === 'variable_declarator') {
+        const nameNode = getChildByField(node, 'name');
+        return !!nameNode && this.bindingPatternContainsName(nameNode, name);
+      }
+      for (let i = 0; i < node.namedChildCount; i++) {
+        const child = node.namedChild(i);
+        if (child && visit(child)) return true;
+      }
+      return false;
+    };
+
+    return visit(body);
+  }
+
+  private isJsLikeLocalBareCall(calleeName: string, callNode: SyntaxNode): boolean {
+    if (!JS_LIKE_LANGUAGES.has(this.language)) return false;
+    if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(calleeName)) return false;
+
+    let current = callNode.parent;
+    while (current) {
+      if (this.isFunctionLikeNode(current)) {
+        if (this.functionParametersContainBinding(current, calleeName)) return true;
+        if (this.functionBodyHasPriorLocalBinding(current, callNode.startIndex, calleeName)) return true;
+      }
+      current = current.parent;
+    }
+    return false;
   }
 
   /**
@@ -2623,6 +2694,7 @@ export class TreeSitterExtractor {
 
     // Get the function/method being called
     let calleeName = '';
+    let isBareIdentifierCall = false;
 
     // Java/Kotlin method_invocation has 'object' + 'name' fields instead of 'function'
     // PHP member_call_expression has 'object' + 'name', scoped_call_expression has 'scope' + 'name'
@@ -2921,6 +2993,9 @@ export class TreeSitterExtractor {
           }
         } else {
           calleeName = getNodeText(func, this.source);
+          isBareIdentifierCall =
+            (func.type === 'identifier' || func.type === 'simple_identifier') &&
+            /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(calleeName);
         }
       }
     }
@@ -2933,6 +3008,10 @@ export class TreeSitterExtractor {
     if (calleeName) {
       const conv = calleeName.match(/^\(\s*\*?\s*([A-Za-z_][\w.]*)\s*\)$/);
       if (conv && conv[1]) calleeName = conv[1];
+    }
+
+    if (calleeName && isBareIdentifierCall && this.isJsLikeLocalBareCall(calleeName, node)) {
+      return;
     }
 
     if (calleeName) {
