@@ -7,6 +7,7 @@ import * as path from 'path';
 import OmniWeave from '../src/index';
 import { DatabaseConnection, getDatabasePath, type OpenDatabaseOptions } from '../src/db';
 import { CURRENT_SCHEMA_VERSION } from '../src/db/migrations';
+import { QueryBuilder } from '../src/db/queries';
 import { ToolHandler } from '../src/mcp/tools';
 import { FileLock } from '../src/utils';
 import {
@@ -403,29 +404,26 @@ describe('snapshot import and verify', () => {
     const targetDbPath = getDatabasePath(targetRoot);
     const targetHashBefore = hashFileForTest(targetDbPath);
 
-    const conn = DatabaseConnection.open(path.join(outputDir, SNAPSHOT_DATABASE_FILENAME));
+    const originalSetMetadata = QueryBuilder.prototype.setMetadata;
     try {
-      conn.getDb().exec(`
-        CREATE TRIGGER snapshot_metadata_blocker
-        BEFORE INSERT ON project_metadata
-        BEGIN
-          SELECT RAISE(ABORT, 'metadata blocked by snapshot');
-        END;
-      `);
-      conn.getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)');
-    } finally {
-      conn.close();
-    }
-    refreshSnapshotDatabaseManifest(outputDir);
+      QueryBuilder.prototype.setMetadata = function patchedSetMetadata(key: string, value: string): void {
+        if (key === 'snapshot.imported') {
+          throw new Error('metadata blocked by test');
+        }
+        return originalSetMetadata.call(this, key, value);
+      };
 
-    await expect(importSnapshot(outputDir, targetRoot, { force: true })).rejects.toThrow(/metadata blocked by snapshot/);
-    expect(hashFileForTest(targetDbPath)).toBe(targetHashBefore);
+      await expect(importSnapshot(outputDir, targetRoot, { force: true })).rejects.toThrow(/metadata blocked by test/);
+      expect(hashFileForTest(targetDbPath)).toBe(targetHashBefore);
 
-    const cg = OmniWeave.openSync(targetRoot);
-    try {
-      expect(cg.getSnapshotImportInfo()).toBeNull();
+      const cg = OmniWeave.openSync(targetRoot);
+      try {
+        expect(cg.getSnapshotImportInfo()).toBeNull();
+      } finally {
+        cg.destroy();
+      }
     } finally {
-      cg.destroy();
+      QueryBuilder.prototype.setMetadata = originalSetMetadata;
     }
   });
 
@@ -449,6 +447,30 @@ describe('snapshot import and verify', () => {
     expect(snapshotDbCalls.length).toBeGreaterThan(0);
     expect(snapshotDbCalls.some((call) => call.dbPath === path.join(outputDir, SNAPSHOT_DATABASE_FILENAME))).toBe(false);
     expect(snapshotDbCalls.every((call) => call.options.migrate === false && call.options.readOnly === true)).toBe(true);
+  });
+
+  it('rejects snapshots with unexpected sqlite schema objects', async () => {
+    const conn = DatabaseConnection.open(path.join(outputDir, SNAPSHOT_DATABASE_FILENAME));
+    try {
+      conn.getDb().exec(`
+        CREATE TRIGGER snapshot_metadata_blocker
+        BEFORE INSERT ON project_metadata
+        BEGIN
+          SELECT RAISE(ABORT, 'metadata blocked by snapshot');
+        END;
+      `);
+      conn.getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      conn.close();
+    }
+    refreshSnapshotDatabaseManifest(outputDir);
+
+    const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+
+    expect(verification.ok).toBe(false);
+    expect(verification.errors.join('\n')).toContain('unexpected sqlite_schema objects');
+    expect(verification.errors.join('\n')).toContain('trigger:snapshot_metadata_blocker:project_metadata');
+    await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
   });
 
   it('refuses stale target sources by default and leaves the target uninitialized', async () => {

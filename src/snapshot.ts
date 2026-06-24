@@ -22,6 +22,39 @@ const MAX_SNAPSHOT_DOCSTRING_TEXT_LENGTH = 20_000;
 const MAX_SNAPSHOT_GRAPH_JSON_TEXT_LENGTH = 20_000;
 const MAX_SNAPSHOT_GRAPH_JSON_DEPTH = 8;
 const MAX_SNAPSHOT_GRAPH_JSON_ITEMS = 1_000;
+const ALLOWED_SNAPSHOT_SCHEMA_OBJECTS = new Set([
+  'table:edges:edges',
+  'table:files:files',
+  'table:nodes:nodes',
+  'table:nodes_fts:nodes_fts',
+  'table:nodes_fts_config:nodes_fts_config',
+  'table:nodes_fts_data:nodes_fts_data',
+  'table:nodes_fts_docsize:nodes_fts_docsize',
+  'table:nodes_fts_idx:nodes_fts_idx',
+  'table:project_metadata:project_metadata',
+  'table:schema_versions:schema_versions',
+  'table:unresolved_refs:unresolved_refs',
+  'index:idx_edges_kind:edges',
+  'index:idx_edges_provenance:edges',
+  'index:idx_edges_source_kind:edges',
+  'index:idx_edges_target_kind:edges',
+  'index:idx_files_language:files',
+  'index:idx_files_modified_at:files',
+  'index:idx_nodes_file_line:nodes',
+  'index:idx_nodes_file_path:nodes',
+  'index:idx_nodes_kind:nodes',
+  'index:idx_nodes_language:nodes',
+  'index:idx_nodes_lower_name:nodes',
+  'index:idx_nodes_name:nodes',
+  'index:idx_nodes_qualified_name:nodes',
+  'index:idx_unresolved_file_path:unresolved_refs',
+  'index:idx_unresolved_from_name:unresolved_refs',
+  'index:idx_unresolved_from_node:unresolved_refs',
+  'index:idx_unresolved_name:unresolved_refs',
+  'trigger:nodes_ad:nodes',
+  'trigger:nodes_ai:nodes',
+  'trigger:nodes_au:nodes',
+]);
 
 export interface SnapshotManifest {
   format: typeof SNAPSHOT_FORMAT;
@@ -670,6 +703,7 @@ function validateStagedSnapshotDatabase(
     validateSnapshotPathColumn(conn.getDb(), 'nodes', 'file_path', 'nodes.file_path', errors);
     validateSnapshotPathColumn(conn.getDb(), 'unresolved_refs', 'file_path', 'unresolved_refs.file_path', errors);
     validateSnapshotDatabasePragmas(conn.getDb(), errors);
+    validateSnapshotSqliteSchema(conn.getDb(), errors);
     validateSnapshotIndexedPathMembership(conn.getDb(), errors);
     validateSnapshotGraphText(conn.getDb(), errors);
     if (targetRoot) {
@@ -853,6 +887,27 @@ function validateSnapshotDatabasePragmas(db: SqliteDatabase, errors: string[]): 
   const foreignKeyRows = db.prepare('PRAGMA foreign_key_check').all() as Array<Record<string, unknown>>;
   if (foreignKeyRows.length > 0) {
     errors.push(`Snapshot database failed foreign_key_check: ${foreignKeyRows.length} violation${foreignKeyRows.length === 1 ? '' : 's'}`);
+  }
+}
+
+function validateSnapshotSqliteSchema(db: SqliteDatabase, errors: string[]): void {
+  let rows: Array<{ type: string; name: string; tblName: string }>;
+  try {
+    rows = db.prepare(`
+      SELECT type, name, tbl_name AS tblName
+      FROM sqlite_schema
+      WHERE name NOT LIKE 'sqlite_%'
+    `).all() as Array<{ type: string; name: string; tblName: string }>;
+  } catch (err) {
+    errors.push(`Snapshot database cannot validate sqlite_schema: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+
+  const unexpected = rows
+    .map((row) => `${row.type}:${row.name}:${row.tblName}`)
+    .filter((key) => !ALLOWED_SNAPSHOT_SCHEMA_OBJECTS.has(key));
+  if (unexpected.length > 0) {
+    errors.push(`Snapshot database contains unexpected sqlite_schema objects: ${summarizePaths(unexpected)}`);
   }
 }
 
