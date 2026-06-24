@@ -199,7 +199,7 @@ for (const r of scoredRuns) {
 }
 
 console.log('# Agent A/B benchmark — scored\n');
-const ids = [...new Set(scoredRuns.map((r) => r.id))];
+const ids = manifest.map((q) => q.id).filter((id) => scoredRuns.some((r) => r.id === id));
 for (const id of ids) {
   const q = byId[id];
   console.log(`\n## ${id}  (${q?.type})  — GT: ${q?.groundTruth?.slice(0, 80)}`);
