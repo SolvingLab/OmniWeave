@@ -1,6 +1,7 @@
 # New-edge agent A/B — do the edges shipped this cycle actually help an agent?
 
-**Status: RESULTS PENDING** (matrix running; verdict + tables filled on completion).
+**Status: COMPLETE** — 82/82 runs finished, 0 harness-invalid runs; strict scored
+artifacts are committed under `results/`.
 
 ## Abstract
 
@@ -11,9 +12,9 @@ proved they *exist* and hold parity with codegraph. This study answers the iron-
 question those gates do **not**: *存在 ≠ 有用* — does a real LLM agent spend fewer
 Read/turns because of them, and with what honesty caveats?
 
-This is **not** a "more correct" claim. Correctness is expected to tie across every arm
-(it does — see results). The question is purely **effort** and **trust honesty**, run
-fail-closed with tie/no-help/ceiling questions included to defeat cherry-picking.
+This is **not** a "more correct" claim. The question is **effort**, **tool adoption**,
+and **trust honesty**, run fail-closed with tie/no-help questions included to defeat
+cherry-picking. Correctness differences are reported only as observed run outcomes.
 
 ## Method (publication-grade, reproducible)
 
@@ -31,11 +32,13 @@ fail-closed with tie/no-help/ceiling questions included to defeat cherry-picking
   + ×2 each (small); natural `omniweave`×2 + `codegraph`×2 + `grep`×2 (pro). Tie/no-help
   questions: natural `omniweave`×3 + `grep`×3 (pro).
 - **Fail-closed**: any claude failure / empty jsonl / missing result marks the run
-  `valid:false`; invalid runs are never scored as wins (`ab-benchmark.sh`).
-- **Grading**: per-question keyword predicate over the lowercased answer
+  `valid:false`; invalid runs are never scored as wins, and current harness/scorer exits
+  non-zero for invalid, empty, ungraded, or incomplete matrices.
+- **Grading**: per-question predicate over normalized answer text
   (`score-benchmark.mjs` `GRADERS['NE-*']`), GT locked + line-cited in
   `datasets/MANIFEST.md`, each verified by reading the real source AND confirming the
-  edge fires (`omniweave init` + DB query).
+  edge fires (`omniweave init` + DB query). Path graders use exact path matching and
+  simple negation guards; raw transcripts remain available for human audit.
 - **Targets**: 5, in `datasets/MANIFEST.md` — 2 real repos (vue-realworld pinia;
   psf/requests `d64b9ad`), 3 controlled real-idiom fixtures (rtk / celery / sidekiq),
   the same status the `capstone`/`polyglot` eval-gate fixtures hold.
@@ -57,26 +60,36 @@ fail-closed with tie/no-help/ceiling questions included to defeat cherry-picking
 
 ## Results
 
-_(filled on matrix completion — scored table + per-question honest verdict from
-`score-benchmark.mjs`, raw `results.jsonl` committed under `results/`.)_
+Full table: `results/scored.md`. Raw stream transcripts: `results/raw/transcripts/`.
+Full-answer parsed runs: `results/runs.jsonl`. Strict scored rows:
+`results/scored.jsonl`. Run provenance and hashes: `results/RUN-MANIFEST.md`.
 
-### Early read (Q1 NE-rtk-hook complete, Q2 NE-pinia-login forced cells)
+### Aggregate
 
-- Correctness ties (16/16 on rtk, 5/5 on pinia-forced so far).
-- **Natural mode: 0 MCP adoption across all arms** (omniweave, codegraph *and* grep all
-  `mcp=0` — MiMo greps/reads regardless of attached tools), reproducing Step A's 0/36.
-- **Forced mode: omniweave = codegraph** (both answer via ~1 MCP call) — parity confirmed
-  (the debt is closed), sufficiency confirmed.
-- Even the "discriminating" rtk baseUrl question ties on effort: a 16-line fixture lets
-  grep read the whole file, so the structural edge's convention-free jump shows no
-  effort delta at that scale.
+| arm | correct | avg MCP | avg Read | avg Grep | avg Bash | avg turns |
+|---|---:|---:|---:|---:|---:|---:|
+| omniweave | 37/37 | 0.9 | 0.8 | 0.3 | 1.8 | 11.9 |
+| codegraph | 27/28 | 0.7 | 0.8 | 0.3 | 1.8 | 13.3 |
+| grep | 16/17 | 0.0 | 0.6 | 0.1 | 0.9 | 5.7 |
 
-## Honest verdict (provisional, pending full matrix)
+### Per Question
 
-The new edges are **validated as present, usable (forced-mode sufficiency), and at parity
-with codegraph (no regression)** — but this A/B does **not** demonstrate an
-effort moat *over grep* for them on these targets with this driver, because (a) MiMo does
-not adopt the structural MCP in natural mode and (b) the dispatch fixtures are small
-enough that grep+read ties. This is consistent with rounds 1–7 and Step A: correctness is
-not the moat; the measured effort moat lives on *large cross-boundary* questions, not
-small same-language dispatch links. **No "more correct" claim; ties reported as ties.**
+| id | honest result |
+|---|---|
+| NE-rtk-hook | omniweave 7/7, codegraph 7/7, grep 2/2 |
+| NE-pinia-login | omniweave 7/7, codegraph 7/7, grep 1/2 |
+| NE-sidekiq-worker | omniweave 7/7, codegraph 6/7, grep 2/2 |
+| NE-celery-task | omniweave 7/7, codegraph 7/7, grep 2/2 |
+| NE-modvar-impact | omniweave 3/3, grep 3/3 |
+| NE-singlepoint-tie | omniweave 3/3, grep 3/3 |
+| NE-nohelp | omniweave 3/3, grep 3/3 |
+
+## Honest Verdict
+
+The new edges are **present, usable under forced MCP, and no longer a regression against
+codegraph on this bank**. They do **not** demonstrate a broad effort moat over grep on
+these small targets with this driver: natural mode again shows **0 MCP adoption**, and
+small fixtures are cheap to inspect with shell/read. The useful signal is narrower:
+OmniWeave's default surface can answer the new-edge bank fail-closed, while ties and
+no-help cases stay visible. The next benchmark must move these same edge classes into
+larger cross-boundary repos if we want to measure effort reduction rather than parity.

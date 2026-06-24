@@ -1,0 +1,1 @@
+{"hooks":{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command","command":"bash /Users/liuzaoqu/ow-ab-wt/scripts/agent-eval/force-mcp-hook.sh"}]}]}}

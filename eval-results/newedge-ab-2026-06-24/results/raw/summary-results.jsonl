@@ -1,0 +1,82 @@
+{"id":"NE-rtk-hook","arm":"omniweave","mode":"forced","model":"mimo-v2.5-pro","run":1,"valid":true,"reasons":[],"read":0,"grep":1,"bash":1,"mcp":1,"turns":12,"ans":"`/api`"}
+{"id":"NE-rtk-hook","arm":"codegraph","mode":"forced","model":"mimo-v2.5-pro","run":1,"valid":true,"reasons":[],"read":0,"grep":0,"bash":1,"mcp":1,"turns":10,"ans":"`/api`"}
+{"id":"NE-rtk-hook","arm":"omniweave","mode":"forced","model":"mimo-v2.5-pro","run":2,"valid":true,"reasons":[],"read":3,"grep":0,"bash":3,"mcp":1,"turns":31,"ans":"`/api`"}
+{"id":"NE-rtk-hook","arm":"codegraph","mode":"forced","model":"mimo-v2.5-pro","run":2,"valid":true,"reasons":[],"read":0,"grep":0,"bash":1,"mcp":1,"turns":8,"ans":"`/api`"}
+{"id":"NE-rtk-hook","arm":"omniweave","mode":"forced","model":"mimo-v2.5-pro","run":3,"valid":true,"reasons":[],"read":1,"grep":0,"bash":2,"mcp":1,"turns":13,"ans":"`/api`"}
+{"id":"NE-rtk-hook","arm":"codegraph","mode":"forced","model":"mimo-v2.5-pro","run":3,"valid":true,"reasons":[],"read":0,"grep":0,"bash":1,"mcp":1,"turns":10,"ans":"`/api`"}
+{"id":"NE-rtk-hook","arm":"omniweave","mode":"forced","model":"mimo-v2.5","run":1,"valid":true,"reasons":[],"read":0,"grep":1,"bash":1,"mcp":1,"turns":10,"ans":"`/api`"}
+{"id":"NE-rtk-hook","arm":"codegraph","mode":"forced","model":"mimo-v2.5","run":1,"valid":true,"reasons":[],"read":0,"grep":1,"bash":1,"mcp":1,"turns":14,"ans":"`/api`"}
+{"id":"NE-rtk-hook","arm":"omniweave","mode":"forced","model":"mimo-v2.5","run":2,"valid":true,"reasons":[],"read":1,"grep":0,"bash":2,"mcp":6,"turns":27,"ans":"`/api`"}
+{"id":"NE-rtk-hook","arm":"codegraph","mode":"forced","model":"mimo-v2.5","run":2,"valid":true,"reasons":[],"read":3,"grep":0,"bash":4,"mcp":1,"turns":28,"ans":"`/api`"}
+{"id":"NE-rtk-hook","arm":"omniweave","mode":"natural","model":"mimo-v2.5-pro","run":1,"valid":true,"reasons":[],"read":1,"grep":0,"bash":2,"mcp":0,"turns":7,"ans":"`/api`"}
+{"id":"NE-rtk-hook","arm":"codegraph","mode":"natural","model":"mimo-v2.5-pro","run":1,"valid":true,"reasons":[],"read":0,"grep":0,"bash":2,"mcp":0,"turns":6,"ans":"`/api`"}
+{"id":"NE-rtk-hook","arm":"grep","mode":"natural","model":"mimo-v2.5-pro","run":1,"valid":true,"reasons":[],"read":0,"grep":0,"bash":3,"mcp":0,"turns":9,"ans":"`/api`"}
+{"id":"NE-rtk-hook","arm":"omniweave","mode":"natural","model":"mimo-v2.5-pro","run":2,"valid":true,"reasons":[],"read":1,"grep":0,"bash":1,"mcp":0,"turns":8,"ans":"`/api`"}
+{"id":"NE-rtk-hook","arm":"codegraph","mode":"natural","model":"mimo-v2.5-pro","run":2,"valid":true,"reasons":[],"read":1,"grep":0,"bash":1,"mcp":0,"turns":6,"ans":"`/api`"}
+{"id":"NE-rtk-hook","arm":"grep","mode":"natural","model":"mimo-v2.5-pro","run":2,"valid":true,"reasons":[],"read":1,"grep":0,"bash":1,"mcp":0,"turns":8,"ans":"`/api`"}
+{"id":"NE-pinia-login","arm":"omniweave","mode":"forced","model":"mimo-v2.5-pro","run":1,"valid":true,"reasons":[],"read":2,"grep":1,"bash":1,"mcp":1,"turns":16,"ans":"`src/store/auth.js`"}
+{"id":"NE-pinia-login","arm":"codegraph","mode":"forced","model":"mimo-v2.5-pro","run":1,"valid":true,"reasons":[],"read":1,"grep":0,"bash":2,"mcp":1,"turns":15,"ans":"`src/store/auth.js`"}
+{"id":"NE-pinia-login","arm":"omniweave","mode":"forced","model":"mimo-v2.5-pro","run":2,"valid":true,"reasons":[],"read":1,"grep":0,"bash":1,"mcp":1,"turns":10,"ans":"`src/store/auth.js`"}
+{"id":"NE-pinia-login","arm":"codegraph","mode":"forced","model":"mimo-v2.5-pro","run":2,"valid":true,"reasons":[],"read":1,"grep":1,"bash":2,"mcp":1,"turns":14,"ans":"`src/store/auth.js`"}
+{"id":"NE-pinia-login","arm":"omniweave","mode":"forced","model":"mimo-v2.5-pro","run":3,"valid":true,"reasons":[],"read":1,"grep":0,"bash":1,"mcp":1,"turns":10,"ans":"`src/store/auth.js`"}
+{"id":"NE-pinia-login","arm":"codegraph","mode":"forced","model":"mimo-v2.5-pro","run":3,"valid":true,"reasons":[],"read":0,"grep":0,"bash":1,"mcp":1,"turns":8,"ans":"`src/store/auth.js`"}
+{"id":"NE-pinia-login","arm":"omniweave","mode":"forced","model":"mimo-v2.5","run":1,"valid":true,"reasons":[],"read":1,"grep":0,"bash":2,"mcp":1,"turns":11,"ans":"`src/store/auth.js`"}
+{"id":"NE-pinia-login","arm":"codegraph","mode":"forced","model":"mimo-v2.5","run":1,"valid":true,"reasons":[],"read":1,"grep":1,"bash":0,"mcp":1,"turns":9,"ans":"`src/store/auth.js`"}
+{"id":"NE-pinia-login","arm":"omniweave","mode":"forced","model":"mimo-v2.5","run":2,"valid":true,"reasons":[],"read":3,"grep":2,"bash":7,"mcp":1,"turns":40,"ans":"`src/store/auth.js`"}
+{"id":"NE-pinia-login","arm":"codegraph","mode":"forced","model":"mimo-v2.5","run":2,"valid":true,"reasons":[],"read":1,"grep":1,"bash":4,"mcp":1,"turns":17,"ans":"`src/store/auth.js`"}
+{"id":"NE-pinia-login","arm":"omniweave","mode":"natural","model":"mimo-v2.5-pro","run":1,"valid":true,"reasons":[],"read":0,"grep":2,"bash":5,"mcp":0,"turns":14,"ans":"`src/store/auth.js`"}
+{"id":"NE-pinia-login","arm":"codegraph","mode":"natural","model":"mimo-v2.5-pro","run":1,"valid":true,"reasons":[],"read":1,"grep":0,"bash":0,"mcp":0,"turns":4,"ans":"`src/store/auth.js`"}
+{"id":"NE-pinia-login","arm":"grep","mode":"natural","model":"mimo-v2.5-pro","run":1,"valid":true,"reasons":[],"read":1,"grep":0,"bash":0,"mcp":0,"turns":4,"ans":"`src/store/auth.ts`"}
+{"id":"NE-pinia-login","arm":"omniweave","mode":"natural","model":"mimo-v2.5-pro","run":2,"valid":true,"reasons":[],"read":0,"grep":0,"bash":3,"mcp":0,"turns":7,"ans":"`src/store/auth.js`"}
+{"id":"NE-pinia-login","arm":"codegraph","mode":"natural","model":"mimo-v2.5-pro","run":2,"valid":true,"reasons":[],"read":1,"grep":0,"bash":0,"mcp":0,"turns":4,"ans":"`src/store/auth.js`"}
+{"id":"NE-pinia-login","arm":"grep","mode":"natural","model":"mimo-v2.5-pro","run":2,"valid":true,"reasons":[],"read":1,"grep":0,"bash":0,"mcp":0,"turns":6,"ans":"`src/store/auth.js`（或 `.ts`）——Login.vue 第 50 行 `import { useAuthStore } from \"@/store/auth\"`，第 74 行调用 `authStore.login(...)`。"}
+{"id":"NE-sidekiq-worker","arm":"omniweave","mode":"forced","model":"mimo-v2.5-pro","run":1,"valid":true,"reasons":[],"read":0,"grep":0,"bash":1,"mcp":1,"turns":8,"ans":"**`DestroyUserWorker`**"}
+{"id":"NE-sidekiq-worker","arm":"codegraph","mode":"forced","model":"mimo-v2.5-pro","run":1,"valid":true,"reasons":[],"read":1,"grep":1,"bash":3,"mcp":1,"turns":26,"ans":"**DestroyUserWorker**"}
+{"id":"NE-sidekiq-worker","arm":"omniweave","mode":"forced","model":"mimo-v2.5-pro","run":2,"valid":true,"reasons":[],"read":0,"grep":0,"bash":2,"mcp":1,"turns":11,"ans":"`DestroyUserWorker`"}
+{"id":"NE-sidekiq-worker","arm":"codegraph","mode":"forced","model":"mimo-v2.5-pro","run":2,"valid":true,"reasons":[],"read":4,"grep":0,"bash":6,"mcp":1,"turns":57,"ans":"`DestroyUserWorker`"}
+{"id":"NE-sidekiq-worker","arm":"omniweave","mode":"forced","model":"mimo-v2.5-pro","run":3,"valid":true,"reasons":[],"read":0,"grep":0,"bash":2,"mcp":1,"turns":9,"ans":"**DestroyUserWorker**\n\n`UserService#destroy` 调用 `DestroyUserWorker.perform_async(user.id)`，由 `DestroyUserWorker#perform` 异步执行实际的删除逻辑。"}
+{"id":"NE-sidekiq-worker","arm":"codegraph","mode":"forced","model":"mimo-v2.5-pro","run":3,"valid":true,"reasons":[],"read":0,"grep":0,"bash":1,"mcp":1,"turns":8,"ans":"`DestroyUserWorker`"}
+{"id":"NE-sidekiq-worker","arm":"omniweave","mode":"forced","model":"mimo-v2.5","run":1,"valid":true,"reasons":[],"read":0,"grep":1,"bash":2,"mcp":4,"turns":17,"ans":"`DestroyUserWorker`"}
+{"id":"NE-sidekiq-worker","arm":"codegraph","mode":"forced","model":"mimo-v2.5","run":1,"valid":true,"reasons":[],"read":0,"grep":0,"bash":2,"mcp":0,"turns":9,"ans":"`CleanupUserJob`"}
+{"id":"NE-sidekiq-worker","arm":"omniweave","mode":"forced","model":"mimo-v2.5","run":2,"valid":true,"reasons":[],"read":0,"grep":0,"bash":3,"mcp":3,"turns":16,"ans":"`DestroyUserWorker`\n\n`UserService#destroy` 通过 `DestroyUserWorker.perform_async(user.id)` 入队，Sidekiq 异步执行的就是 `DestroyUserWorker` 的 `perform` 方法。"}
+{"id":"NE-sidekiq-worker","arm":"codegraph","mode":"forced","model":"mimo-v2.5","run":2,"valid":true,"reasons":[],"read":0,"grep":0,"bash":1,"mcp":1,"turns":8,"ans":"`DestroyUserWorker`"}
+{"id":"NE-sidekiq-worker","arm":"omniweave","mode":"natural","model":"mimo-v2.5-pro","run":1,"valid":true,"reasons":[],"read":1,"grep":0,"bash":2,"mcp":0,"turns":7,"ans":"**DestroyUserWorker**"}
+{"id":"NE-sidekiq-worker","arm":"codegraph","mode":"natural","model":"mimo-v2.5-pro","run":1,"valid":true,"reasons":[],"read":2,"grep":0,"bash":2,"mcp":0,"turns":8,"ans":"`DestroyUserWorker`"}
+{"id":"NE-sidekiq-worker","arm":"grep","mode":"natural","model":"mimo-v2.5-pro","run":1,"valid":true,"reasons":[],"read":2,"grep":0,"bash":2,"mcp":0,"turns":8,"ans":"`DestroyUserWorker`"}
+{"id":"NE-sidekiq-worker","arm":"omniweave","mode":"natural","model":"mimo-v2.5-pro","run":2,"valid":true,"reasons":[],"read":2,"grep":0,"bash":2,"mcp":0,"turns":8,"ans":"`DestroyUserWorker`"}
+{"id":"NE-sidekiq-worker","arm":"codegraph","mode":"natural","model":"mimo-v2.5-pro","run":2,"valid":true,"reasons":[],"read":1,"grep":0,"bash":2,"mcp":0,"turns":7,"ans":"`DestroyUserWorker`"}
+{"id":"NE-sidekiq-worker","arm":"grep","mode":"natural","model":"mimo-v2.5-pro","run":2,"valid":true,"reasons":[],"read":1,"grep":1,"bash":1,"mcp":0,"turns":7,"ans":"`DestroyUserWorker`"}
+{"id":"NE-celery-task","arm":"omniweave","mode":"forced","model":"mimo-v2.5-pro","run":1,"valid":true,"reasons":[],"read":0,"grep":0,"bash":2,"mcp":2,"turns":15,"ans":"`send_welcome_email`"}
+{"id":"NE-celery-task","arm":"codegraph","mode":"forced","model":"mimo-v2.5-pro","run":1,"valid":true,"reasons":[],"read":0,"grep":0,"bash":1,"mcp":1,"turns":10,"ans":"`send_welcome_email`"}
+{"id":"NE-celery-task","arm":"omniweave","mode":"forced","model":"mimo-v2.5-pro","run":2,"valid":true,"reasons":[],"read":4,"grep":0,"bash":2,"mcp":1,"turns":25,"ans":"`send_welcome_email`"}
+{"id":"NE-celery-task","arm":"codegraph","mode":"forced","model":"mimo-v2.5-pro","run":2,"valid":true,"reasons":[],"read":0,"grep":0,"bash":1,"mcp":1,"turns":10,"ans":"`send_welcome_email`"}
+{"id":"NE-celery-task","arm":"omniweave","mode":"forced","model":"mimo-v2.5-pro","run":3,"valid":true,"reasons":[],"read":0,"grep":0,"bash":2,"mcp":2,"turns":12,"ans":"`send_welcome_email`"}
+{"id":"NE-celery-task","arm":"codegraph","mode":"forced","model":"mimo-v2.5-pro","run":3,"valid":true,"reasons":[],"read":3,"grep":0,"bash":5,"mcp":1,"turns":32,"ans":"`send_welcome_email`"}
+{"id":"NE-celery-task","arm":"omniweave","mode":"forced","model":"mimo-v2.5","run":1,"valid":true,"reasons":[],"read":0,"grep":0,"bash":1,"mcp":3,"turns":13,"ans":"`send_welcome_email`"}
+{"id":"NE-celery-task","arm":"codegraph","mode":"forced","model":"mimo-v2.5","run":1,"valid":true,"reasons":[],"read":0,"grep":1,"bash":1,"mcp":1,"turns":14,"ans":"`send_welcome_email`"}
+{"id":"NE-celery-task","arm":"omniweave","mode":"forced","model":"mimo-v2.5","run":2,"valid":true,"reasons":[],"read":2,"grep":1,"bash":3,"mcp":2,"turns":24,"ans":"`send_welcome_email`"}
+{"id":"NE-celery-task","arm":"codegraph","mode":"forced","model":"mimo-v2.5","run":2,"valid":true,"reasons":[],"read":0,"grep":0,"bash":2,"mcp":1,"turns":14,"ans":"`send_welcome_email`"}
+{"id":"NE-celery-task","arm":"omniweave","mode":"natural","model":"mimo-v2.5-pro","run":1,"valid":true,"reasons":[],"read":1,"grep":0,"bash":2,"mcp":0,"turns":9,"ans":"`send_welcome_email`"}
+{"id":"NE-celery-task","arm":"codegraph","mode":"natural","model":"mimo-v2.5-pro","run":1,"valid":true,"reasons":[],"read":2,"grep":1,"bash":1,"mcp":0,"turns":8,"ans":"`send_welcome_email`"}
+{"id":"NE-celery-task","arm":"grep","mode":"natural","model":"mimo-v2.5-pro","run":1,"valid":true,"reasons":[],"read":1,"grep":0,"bash":2,"mcp":0,"turns":7,"ans":"`send_welcome_email`\n\n在 `app/views.py:5` 中，`signup` view 调用了 `send_welcome_email.delay(user_id)` 来异步发送欢迎邮件。"}
+{"id":"NE-celery-task","arm":"omniweave","mode":"natural","model":"mimo-v2.5-pro","run":2,"valid":true,"reasons":[],"read":1,"grep":0,"bash":1,"mcp":0,"turns":8,"ans":"`send_welcome_email`"}
+{"id":"NE-celery-task","arm":"codegraph","mode":"natural","model":"mimo-v2.5-pro","run":2,"valid":true,"reasons":[],"read":0,"grep":0,"bash":3,"mcp":0,"turns":7,"ans":"`send_welcome_email`"}
+{"id":"NE-celery-task","arm":"grep","mode":"natural","model":"mimo-v2.5-pro","run":2,"valid":true,"reasons":[],"read":1,"grep":0,"bash":1,"mcp":0,"turns":10,"ans":"`send_welcome_email`"}
+{"id":"NE-modvar-impact","arm":"omniweave","mode":"natural","model":"mimo-v2.5-pro","run":1,"valid":true,"reasons":[],"read":1,"grep":0,"bash":0,"mcp":0,"turns":4,"ans":"`check_compatibility`"}
+{"id":"NE-modvar-impact","arm":"grep","mode":"natural","model":"mimo-v2.5-pro","run":1,"valid":true,"reasons":[],"read":1,"grep":0,"bash":0,"mcp":0,"turns":4,"ans":"`check_compatibility`"}
+{"id":"NE-modvar-impact","arm":"omniweave","mode":"natural","model":"mimo-v2.5-pro","run":2,"valid":true,"reasons":[],"read":1,"grep":0,"bash":0,"mcp":0,"turns":4,"ans":"`check_compatibility`"}
+{"id":"NE-modvar-impact","arm":"grep","mode":"natural","model":"mimo-v2.5-pro","run":2,"valid":true,"reasons":[],"read":1,"grep":0,"bash":0,"mcp":0,"turns":4,"ans":"`check_compatibility`"}
+{"id":"NE-modvar-impact","arm":"omniweave","mode":"natural","model":"mimo-v2.5-pro","run":3,"valid":true,"reasons":[],"read":1,"grep":1,"bash":1,"mcp":0,"turns":8,"ans":"`check_compatibility`"}
+{"id":"NE-modvar-impact","arm":"grep","mode":"natural","model":"mimo-v2.5-pro","run":3,"valid":true,"reasons":[],"read":1,"grep":0,"bash":0,"mcp":0,"turns":4,"ans":"`check_compatibility`"}
+{"id":"NE-singlepoint-tie","arm":"omniweave","mode":"natural","model":"mimo-v2.5-pro","run":1,"valid":true,"reasons":[],"read":0,"grep":0,"bash":2,"mcp":0,"turns":6,"ans":"`src/requests/__init__.py:60`"}
+{"id":"NE-singlepoint-tie","arm":"grep","mode":"natural","model":"mimo-v2.5-pro","run":1,"valid":true,"reasons":[],"read":0,"grep":0,"bash":1,"mcp":0,"turns":4,"ans":"`src/requests/__init__.py`"}
+{"id":"NE-singlepoint-tie","arm":"omniweave","mode":"natural","model":"mimo-v2.5-pro","run":2,"valid":true,"reasons":[],"read":0,"grep":0,"bash":2,"mcp":0,"turns":7,"ans":"`src/requests/__init__.py`"}
+{"id":"NE-singlepoint-tie","arm":"grep","mode":"natural","model":"mimo-v2.5-pro","run":2,"valid":true,"reasons":[],"read":0,"grep":0,"bash":1,"mcp":0,"turns":6,"ans":"`src/requests/__init__.py:60`"}
+{"id":"NE-singlepoint-tie","arm":"omniweave","mode":"natural","model":"mimo-v2.5-pro","run":3,"valid":true,"reasons":[],"read":0,"grep":0,"bash":1,"mcp":0,"turns":6,"ans":"`src/requests/__init__.py`"}
+{"id":"NE-singlepoint-tie","arm":"grep","mode":"natural","model":"mimo-v2.5-pro","run":3,"valid":true,"reasons":[],"read":0,"grep":0,"bash":1,"mcp":0,"turns":4,"ans":"`src/requests/__init__.py`"}
+{"id":"NE-nohelp","arm":"omniweave","mode":"natural","model":"mimo-v2.5-pro","run":1,"valid":true,"reasons":[],"read":0,"grep":0,"bash":0,"mcp":0,"turns":2,"ans":"No. `requests` 是一个简洁的 HTTP 客户端库，不提供任何连接池指标仪表盘 UI；连接池管理由底层的 `urllib3` 负责，且仅通过 API 暴露状态，没有内置可视化界面。"}
+{"id":"NE-nohelp","arm":"grep","mode":"natural","model":"mimo-v2.5-pro","run":1,"valid":true,"reasons":[],"read":0,"grep":0,"bash":1,"mcp":0,"turns":4,"ans":"**否。** `requests` 库是同步 HTTP 客户端，本身不内置连接池管理或实时指标仪表盘 UI——连接池由底层的 `urllib3` 提供，且无任何可视化/监控界面。"}
+{"id":"NE-nohelp","arm":"omniweave","mode":"natural","model":"mimo-v2.5-pro","run":2,"valid":true,"reasons":[],"read":0,"grep":0,"bash":0,"mcp":0,"turns":2,"ans":"No. `requests` 底层使用 `urllib3` 的连接池，但只暴露了有限的池配置（如 `pool_connections`、`pool_maxsize`），并未提供任何内置的实时连接池指标仪表盘 UI。"}
+{"id":"NE-nohelp","arm":"grep","mode":"natural","model":"mimo-v2.5-pro","run":2,"valid":true,"reasons":[],"read":0,"grep":0,"bash":2,"mcp":0,"turns":6,"ans":"**No.** `requests` 不附带任何内置的实时连接池指标仪表盘 UI——它是一个纯 HTTP 客户端库，连接池逻辑由底层 `urllib3` 管理，不提供可视化监控界面。"}
+{"id":"NE-nohelp","arm":"omniweave","mode":"natural","model":"mimo-v2.5-pro","run":3,"valid":true,"reasons":[],"read":0,"grep":0,"bash":0,"mcp":0,"turns":2,"ans":"No.`requests` 不提供任何内置的连接池实时指标仪表盘 UI，它依赖底层 `urllib3` 的连接池但只暴露有限的配置参数（如 `pool_connections`、`pool_maxsize`），不包含可观测性或可视化功能。"}
+{"id":"NE-nohelp","arm":"grep","mode":"natural","model":"mimo-v2.5-pro","run":3,"valid":true,"reasons":[],"read":0,"grep":0,"bash":0,"mcp":0,"turns":2,"ans":"No. `requests` 是一个简洁的 HTTP 客户端库，底层虽通过 `urllib3` 管理连接池，但不附带任何 UI 或实时指标看板功能。"}

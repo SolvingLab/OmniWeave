@@ -33,15 +33,16 @@ We never claim "more correct". Correctness is expected to tie across all arms.
 | Target | Kind | Source / commit | New edge under test | GT-verified edge |
 |---|---|---|---|---|
 | `rtk` | controlled fixture | `eval-results/framework-parity-2026-06-24/dispatch-fixtures/rtk` | RTK-Query generated hook → endpoint + module-var-ref hook → createApi const | `useGetRecordsQuery → getRecords` (rtk-query); `useGetRecordsQuery → recordsApi` (module-var-ref) |
-| `vue-realworld` | **real repo** | gothinkster/vue-realworld-example-app (Pinia options-store port) | pinia-store component-handler → store action (cross-file) | `onSubmit → login` (`src/store/auth.js:37`) |
+| `vue-realworld` | **real repo** | gothinkster/vue-realworld-example-app `f7e48c8` (Pinia options-store port) | pinia-store component-handler → store action (cross-file) | `onSubmit → login` (`src/store/auth.js:37`) |
 | `celery` | controlled fixture | `dispatch-fixtures/celery` | celery `.delay` dispatch → task | `signup → send_welcome_email` (`app/tasks.py:4`) |
 | `sidekiq` | controlled fixture | `dispatch-fixtures/sidekiq` | sidekiq `perform_async` → worker `perform` (cross-file) | `destroy → perform` (`app/destroy_user_worker.rb:3`, via `DestroyUserWorker`) |
 | `requests` | **real repo** | psf/requests `d64b9ad` (= benchmark `lang-python`) | same-file `module-var-ref` function → module constant | `check_compatibility → charset_normalizer_version` (`src/requests/__init__.py:52`) |
 
 Re-create with: `bash harness/setup-newedge-targets.sh` (rsync clean copies into
-`~/ow-newedge-targets`, then `omniweave init` + `codegraph init` each). The real repos
-come from `eval-results/omniweave-benchmark/datasets/fetch.sh` (vue-realworld is the
-gothinkster app cloned separately; requests = `lang-python`).
+`~/ow-newedge-targets`, then `omniweave init` + `codegraph init` each; the script exits
+non-zero if any source is missing or either indexer fails). The real repos come from
+`eval-results/omniweave-benchmark/datasets/fetch.sh` (vue-realworld is the gothinkster
+app cloned separately; requests = `lang-python`).
 
 ## Why each differentiation question is discriminating (not reasoning-answerable)
 

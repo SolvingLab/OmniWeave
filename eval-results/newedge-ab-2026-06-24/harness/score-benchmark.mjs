@@ -36,6 +36,7 @@ if (runs.length === 0) {
 }
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
 const byId = Object.fromEntries(manifest.map((q) => [q.id, q]));
+const ARM_ORDER = ['omniweave', 'codegraph', 'grep'];
 
 function normalizedAnswer(answer) {
   return String(answer || '').toLowerCase().replace(/\\/g, '/');
@@ -233,7 +234,14 @@ for (const id of ids) {
     (armAcc[arm] ??= { c: 0, n: 0 });
     armAcc[arm].c += cells[k].correct; armAcc[arm].n += cells[k].runs.length;
   }
-  const summary = Object.entries(armAcc).map(([arm, v]) => `${arm} ${v.c}/${v.n}`).join('  ');
+  const summary = Object.entries(armAcc)
+    .sort(([a], [b]) => {
+      const ai = ARM_ORDER.indexOf(a);
+      const bi = ARM_ORDER.indexOf(b);
+      return (ai === -1 ? ARM_ORDER.length : ai) - (bi === -1 ? ARM_ORDER.length : bi) || a.localeCompare(b);
+    })
+    .map(([arm, v]) => `${arm} ${v.c}/${v.n}`)
+    .join('  ');
   console.log(`- **${id}** (${q?.type}): ${summary}`);
 }
 

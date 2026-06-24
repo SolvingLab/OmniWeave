@@ -12,6 +12,7 @@ DS="$HOME/ow-bench-datasets"
 rm -rf "$STAGE"; mkdir -p "$STAGE"
 
 stage() { # name src
+  [ -d "$2" ] || { echo "missing source for $1: $2" >&2; exit 1; }
   rsync -a --exclude .git --exclude node_modules --exclude dist \
     --exclude .omniweave --exclude .codegraph "$2/" "$STAGE/$1/"
 }
@@ -23,8 +24,8 @@ stage requests     "$DS/lang-python"
 
 for t in rtk celery sidekiq vue-realworld requests; do
   echo "=== indexing $t (OW + CG) ==="
-  OMNIWEAVE_WASM_RELAUNCHED=1 node "$OWBIN" init "$STAGE/$t" </dev/null >/dev/null 2>&1 && echo "  OW ok" || echo "  OW FAIL"
-  CODEGRAPH_WASM_RELAUNCHED=1 node "$CGBIN" init "$STAGE/$t" </dev/null >/dev/null 2>&1 && echo "  CG ok" || echo "  CG FAIL"
+  OMNIWEAVE_WASM_RELAUNCHED=1 node "$OWBIN" init "$STAGE/$t" </dev/null >/dev/null 2>&1 && echo "  OW ok" || { echo "  OW FAIL" >&2; exit 1; }
+  CODEGRAPH_WASM_RELAUNCHED=1 node "$CGBIN" init "$STAGE/$t" </dev/null >/dev/null 2>&1 && echo "  CG ok" || { echo "  CG FAIL" >&2; exit 1; }
 done
 echo "=== staged + indexed in $STAGE ==="
 ls "$STAGE"
