@@ -368,6 +368,16 @@ describe('snapshot import and verify', () => {
     expect(cliExplore.stdout).toContain('imported from a snapshot');
     expect(cliExplore.stdout).toContain('graph facts are from an external artifact');
 
+    const cliQuery = runBuiltCli(targetRoot, ['query', 'entry']);
+    expect(cliQuery.status).toBe(0);
+    expect(cliQuery.stdout).toContain('imported from a snapshot');
+    expect(cliQuery.stdout).toContain('graph facts are from an external artifact');
+
+    const cliContentQuery = runBuiltCli(targetRoot, ['query', 'pattern:return helper']);
+    expect(cliContentQuery.status).toBe(0);
+    expect(cliContentQuery.stdout).toContain('imported from a snapshot');
+    expect(cliContentQuery.stdout).toContain('graph facts are from an external artifact');
+
     const cliStatus = runBuiltCli(targetRoot, ['status']);
     expect(cliStatus.status).toBe(0);
     expect(cliStatus.stdout).toContain('Source files match imported snapshot hashes');

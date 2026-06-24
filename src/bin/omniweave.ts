@@ -41,7 +41,7 @@ import { relaunchWithWasmRuntimeFlagsIfNeeded } from '../extraction/wasm-runtime
 import { silenceEnvNoiseWarnings } from './quiet-warnings';
 import { EXTRACTION_VERSION } from '../extraction/extraction-version';
 import { getTelemetry, TELEMETRY_DOCS, recordIndexEvent } from '../telemetry';
-import { describeSnapshotImportWarning } from '../snapshot-metadata';
+import { describeSnapshotImportWarning, type SnapshotImportInfo } from '../snapshot-metadata';
 import { CALL_SURFACE_EDGE_KINDS } from '../call-surface';
 import { OmniWeaveBuildFingerprint } from '../mcp/version';
 
@@ -426,6 +426,11 @@ function info(message: string): void {
  */
 function warn(message: string): void {
   console.log(chalk.yellow(getGlyphs().warn) + ' ' + message);
+}
+
+function warnSnapshotImportIfNeeded(cg: { getSnapshotImportInfo?: () => SnapshotImportInfo | null }): void {
+  const snapshotImport = cg.getSnapshotImportInfo?.() ?? null;
+  if (snapshotImport) warn(describeSnapshotImportWarning(snapshotImport));
 }
 
 function buildExploreUnavailableMessage(projectPath: string): string {
@@ -945,9 +950,7 @@ program
       if (worktreeMismatch) {
         warn(worktreeMismatchWarning(worktreeMismatch));
       }
-      if (snapshotImport) {
-        warn(describeSnapshotImportWarning(snapshotImport));
-      }
+      warnSnapshotImportIfNeeded(cg);
       console.log();
 
       // Index stats
@@ -1050,6 +1053,9 @@ program
 
       const { default: OmniWeave } = await loadOmniWeave();
       const cg = await OmniWeave.open(projectPath);
+      if (!options.json) {
+        warnSnapshotImportIfNeeded(cg);
+      }
 
       const limit = parseCliIntOption(options.limit, 10, 1, 100);
       const contentPattern = extractContentSearchPattern(search);
