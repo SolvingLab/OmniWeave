@@ -164,7 +164,16 @@ describe('Glyph sets', () => {
     }
   });
 
-  it('ASCII spinner has the same frame count as the Unicode spinner', () => {
-    expect(ASCII_GLYPHS.spinner.length).toBe(UNICODE_GLYPHS.spinner.length);
+  it('both spinners animate (each consumed mod its own length)', () => {
+    // Frame counts need not match: the renderer indexes `spinner[frame % len]`
+    // per set, so a 10-frame Braille spinner and a 4-frame `|/-\` spinner are
+    // both fine. The contract is only that each actually cycles.
+    expect(UNICODE_GLYPHS.spinner.length).toBeGreaterThan(1);
+    expect(ASCII_GLYPHS.spinner.length).toBeGreaterThan(1);
+  });
+
+  it('only the Unicode set carries sub-cell bar partials; ASCII triggers the block fallback', () => {
+    expect(UNICODE_GLYPHS.barPartials.length).toBe(7);
+    expect(ASCII_GLYPHS.barPartials.length).toBe(0);
   });
 });

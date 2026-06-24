@@ -1,123 +1,141 @@
 import { parentPort, workerData } from 'worker_threads';
 import { writeSync } from 'fs';
 import { getGlyphs } from './glyphs';
-import type { ShimmerWorkerMessage } from './types';
+import {
+  renderDashboard, Throughput,
+  type DashboardState, type DashboardStyle, type PhaseRow, type PhaseStatus,
+} from './dashboard-render';
+import type { ShimmerWorkerMessage, ShimmerWorkerData } from './types';
 
-// Write directly to fd 1 (stdout) instead of writeStdout().
-// In Node.js worker threads, process.stdout is proxied through the main
-// thread's event loop — so if the main thread is blocked (e.g. SQLite),
-// stdout writes from the worker queue up and the animation freezes.
-// fs.writeSync(1, ...) is a direct kernel syscall that bypasses this.
-//
-// Side effect: bypasses Node's TTY-aware encoding conversion on Windows,
-// so UTF-8 bytes hit the console raw and mojibake on OEM codepages.
-// `getGlyphs()` returns ASCII fallbacks on Windows to avoid this (#168).
-function writeStdout(s: string): void {
+// Write directly to fd 1 (stdout) instead of process.stdout. In worker threads
+// process.stdout is proxied through the main thread's event loop, so when the
+// main thread is blocked (e.g. SQLite) the animation freezes. fs.writeSync(1)
+// is a direct syscall that bypasses this. The trade-off (no TTY-aware encoding
+// on Windows) is handled by ASCII glyph fallback in getGlyphs() (#168).
+function out(s: string): void {
   writeSync(1, s);
 }
 
-const G = getGlyphs();
-const SPINNER_GLYPHS = G.spinner;
-const ANIM_INTERVAL = 150;
-const FRAMES_PER_GLYPH = 3;
+const data = workerData as ShimmerWorkerData;
+const startTime = data.startTime;
+const isTTY = data.isTTY;
+let columns = data.columns || 80;
+const style: DashboardStyle = { color: data.color, glyphs: getGlyphs() };
 
-const RST = '\x1b[0m';
-const DM = '\x1b[2m';
-const GRN = '\x1b[32m';
-const BOLD = '\x1b[1m';
+const ESC = '\x1b';
+const HIDE = `${ESC}[?25l`;
+const SHOW = `${ESC}[?25h`;
+const CLR = `${ESC}[2K`;
+const HOME = `${ESC}[1G`;
 
-const startTime: number = workerData.startTime;
+// Phase state, discovered dynamically in arrival order (real phases are
+// scanning -> parsing -> resolving; the panel grows as each first appears).
+interface Phase { key: string; status: PhaseStatus; current: number; total: number }
+const order: string[] = [];
+const phases = new Map<string, Phase>();
+let activeKey = '';
+const tp = new Throughput();
 
-function animFrame(): number {
-  return Math.floor((Date.now() - startTime) / ANIM_INTERVAL);
-}
-
-function lerp(a: number, b: number, t: number): number {
-  return Math.round(a + (b - a) * t);
-}
-
-function shimmerColor(frame: number): string {
-  const t = (Math.sin(frame * 2 * Math.PI / 13) + 1) / 2;
-  const r = lerp(160, 251, t);
-  const g = lerp(100, 191, t);
-  const b = lerp(9, 36, t);
-  return `\x1b[38;2;${r};${g};${b}m${BOLD}`;
-}
-
-function formatNumber(n: number): string {
-  return n.toLocaleString();
-}
-
-function renderBar(frame: number, filled: number, empty: number): string {
-  if (filled === 0) return `${DM}${G.barEmpty.repeat(empty)}${RST}`;
-  const cycleFrames = 24;
-  const shimmerPos = ((frame % cycleFrames) / cycleFrames) * (filled + 6) - 3;
-  const shimmerWidth = 3;
-  let bar = '';
-  for (let i = 0; i < filled; i++) {
-    const dist = Math.abs(i - shimmerPos);
-    const t = Math.max(0, 1 - dist / shimmerWidth);
-    const r = lerp(160, 251, t);
-    const g = lerp(100, 191, t);
-    const b = lerp(9, 36, t);
-    bar += `\x1b[38;2;${r};${g};${b}m${BOLD}${G.barFilled}`;
+function ensurePhase(key: string): Phase {
+  let p = phases.get(key);
+  if (!p) {
+    p = { key, status: 'active', current: 0, total: 0 };
+    phases.set(key, p);
+    order.push(key);
   }
-  bar += `${RST}${DM}${G.barEmpty.repeat(empty)}${RST}`;
-  return bar;
+  return p;
 }
 
-// Mutable state
-let currentMessage = '';
-let currentPercent = -1;
-let currentCount = 0;
+function markActiveDone(): void {
+  if (activeKey) {
+    const prev = phases.get(activeKey);
+    if (prev) prev.status = 'done';
+  }
+}
+
+function applyUpdate(key: string, current: number, total: number): void {
+  if (key !== activeKey) {
+    markActiveDone();
+    activeKey = key;
+    tp.reset(); // so the footer rate tracks this phase, not a cross-unit jump
+  }
+  const p = ensurePhase(key);
+  p.status = 'active';
+  p.current = current;
+  p.total = total;
+  tp.record(current, Date.now());
+}
+
+function buildState(): DashboardState {
+  const elapsedMs = Date.now() - startTime;
+  const frame = Math.floor(elapsedMs / 50);
+  const rows: PhaseRow[] = order.map((key) => {
+    const p = phases.get(key)!;
+    return { key, label: key, status: p.status, current: p.current, total: p.total };
+  });
+  return {
+    subtitle: data.subtitle,
+    phases: rows,
+    elapsedMs,
+    rate: tp.rate(),
+    history: tp.history,
+    spinnerFrame: Math.floor(frame / 2),
+    shimmerFrame: frame,
+  };
+}
+
+// --- TTY live rendering -----------------------------------------------------
+
+let renderedLines = 0;
+let cursorHidden = false;
 
 function render(): void {
-  if (!currentMessage) return;
-  const frame = animFrame();
-  const glyphIdx = Math.floor(frame / FRAMES_PER_GLYPH) % SPINNER_GLYPHS.length;
-  const glyph = SPINNER_GLYPHS[glyphIdx] ?? SPINNER_GLYPHS[0] ?? '.';
-  const color = shimmerColor(frame);
-
-  let line: string;
-  if (currentPercent >= 0) {
-    const barWidth = 25;
-    const filled = Math.round(barWidth * currentPercent / 100);
-    const empty = barWidth - filled;
-    line = `${DM}${G.rail}${RST}  ${color}${glyph}${RST} ${currentMessage}  ${renderBar(frame, filled, empty)}  ${currentPercent}%`;
-  } else if (currentCount > 0) {
-    line = `${DM}${G.rail}${RST}  ${color}${glyph}${RST} ${currentMessage}... ${formatNumber(currentCount)} found`;
-  } else {
-    line = `${DM}${G.rail}${RST}  ${color}${glyph}${RST} ${currentMessage}...`;
-  }
-
-  writeStdout(`\r\x1b[K${line}`);
+  if (!isTTY || order.length === 0) return;
+  const lines = renderDashboard(buildState(), style, columns);
+  let buf = '';
+  if (!cursorHidden) { buf += HIDE; cursorHidden = true; }
+  if (renderedLines > 0) buf += `${ESC}[${renderedLines}A`;
+  for (const l of lines) buf += `${CLR}${HOME}${l}\n`;
+  const extra = renderedLines - lines.length;
+  for (let i = 0; i < extra; i++) buf += `${CLR}${HOME}\n`;
+  if (extra > 0) buf += `${ESC}[${extra}A`;
+  renderedLines = lines.length;
+  out(buf);
 }
 
-function finishPhase(): void {
-  if (!currentMessage) return;
-  writeStdout(`\r\x1b[K`);
-  let detail = '';
-  if (currentPercent >= 0) detail = ` ${G.dash} done`;
-  else if (currentCount > 0) detail = ` ${G.dash} ${formatNumber(currentCount)} found`;
-  writeStdout(`${DM}${G.rail}${RST}  ${GRN}${G.phaseDone}${RST} ${currentMessage}${detail}\n`);
-  currentMessage = '';
-  currentPercent = -1;
-  currentCount = 0;
+function restoreCursor(): void {
+  if (cursorHidden) { out(SHOW); cursorHidden = false; }
 }
 
-// Render loop — independent of main thread
-const tickInterval = setInterval(render, 50);
+// --- non-TTY: one plain line per completed phase ----------------------------
+
+function logPlainPhaseDone(key: string): void {
+  const p = phases.get(key);
+  if (!p) return;
+  const g = style.glyphs;
+  const detail = p.total > 0
+    ? `${p.total.toLocaleString('en-US')} ${key === 'scanning' ? 'files' : 'done'}`
+    : `${p.current.toLocaleString('en-US')} found`;
+  out(`  ${g.doneMark} ${key} ${g.dash} ${detail}\n`);
+}
+
+const tickInterval = isTTY ? setInterval(render, 50) : null;
 
 parentPort!.on('message', (msg: ShimmerWorkerMessage) => {
   if (msg.type === 'update') {
-    currentMessage = msg.phaseName;
-    currentPercent = msg.percent;
-    currentCount = msg.count;
+    applyUpdate(msg.phase, msg.current, msg.total);
   } else if (msg.type === 'finish-phase') {
-    finishPhase();
+    if (!isTTY && activeKey) logPlainPhaseDone(activeKey);
+    markActiveDone();
+  } else if (msg.type === 'resize') {
+    columns = msg.columns || columns;
   } else if (msg.type === 'stop') {
-    clearInterval(tickInterval);
-    finishPhase();
+    if (tickInterval) clearInterval(tickInterval);
+    if (!isTTY && activeKey) logPlainPhaseDone(activeKey);
+    markActiveDone();
+    activeKey = '';
+    render();          // settle the panel with all phases done
+    restoreCursor();
     parentPort!.postMessage({ type: 'stopped' });
   }
 });

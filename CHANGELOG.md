@@ -11,6 +11,7 @@ and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### New Features
 
+- `omniweave index` / `omniweave sync` now render a live multi-phase dashboard: each phase (scanning, parsing, resolving) gets its own gradient progress bar that fills at sub-character resolution, with a running files/second rate, a throughput sparkline, and an ETA — settling into a checked summary when indexing completes. It still animates smoothly while the main thread is busy writing the database (the renderer runs on its own thread), falls back to plain ASCII bars on terminals without UTF-8, and degrades to one line per completed phase when output is piped or not a terminal. `NO_COLOR` is honored.
 - Added optional `omniweave.json` extension mappings so projects can map non-standard extensions to supported languages. The mapping is honored consistently by full indexing, incremental sync, and file watching, while zero-config behavior stays unchanged.
 - GoFrame `g.Meta` routes now index as route nodes and link to their controller methods through the request type in the handler signature, surfacing GoFrame's reflective route binding as an explicit dynamic-dispatch edge.
 
@@ -23,6 +24,7 @@ and adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - C++ extraction no longer invents phantom functions from macro-prefixed type declarations.
 - Synthesized dynamic-dispatch edges now have a generic MCP label fallback, so new heuristic bridges do not appear as bare static calls.
 - A long-running OmniWeave background daemon no longer keeps serving answers from outdated code after the package is upgraded or rebuilt under the same version. The daemon and the per-session client now compare a build fingerprint (version plus a hash of the compiled output) during their handshake, so a freshly-updated client detects a stale daemon and serves the session with current code instead of silently piping through the old one. Older installs without the fingerprint fall back to the previous version-only handshake unchanged.
+- `omniweave` commands no longer print Node's one-time `NODE_TLS_REJECT_UNAUTHORIZED` security warning (emitted when a TLS-intercepting proxy exports that variable in your shell) or the `node:sqlite` experimental-feature notice. Both are unactionable noise that cluttered the index/sync output — the TLS variable is your environment's choice, not OmniWeave's, and `node:sqlite` is a hard dependency. TLS verification behavior is unchanged, and every other Node warning still prints.
 
 ## [1.0.0] - 2026-06-12
 

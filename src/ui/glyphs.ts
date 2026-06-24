@@ -31,10 +31,18 @@ export interface Glyphs {
   info: string;
   warn: string;
   spinner: string[];
+  /** Sub-cell bar segments, 1/8..7/8. Empty array signals the ASCII bar path. */
+  barPartials: string[];
+  /** Sparkline ramp, low..high (8 levels). */
+  sparks: string[];
   barFilled: string;
   barEmpty: string;
   rail: string;
   phaseDone: string;
+  /** Inline per-phase completion mark (narrower than `ok`). */
+  doneMark: string;
+  /** Inline not-yet-started phase mark. */
+  pendingMark: string;
   dash: string;
   hLine: string;
   treeBranch: string;
@@ -47,11 +55,15 @@ export const UNICODE_GLYPHS: Glyphs = {
   err: '✗',
   info: 'ℹ',
   warn: '⚠',
-  spinner: ['·', '✢', '✳', '✶', '✻', '✽'],
+  spinner: ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'],
+  barPartials: ['▏', '▎', '▍', '▌', '▋', '▊', '▉'],
+  sparks: ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'],
   barFilled: '█',
   barEmpty: '░',
   rail: '│',
   phaseDone: '◆',
+  doneMark: '✓',
+  pendingMark: '·',
   dash: '—',
   hLine: '─',
   treeBranch: '├── ',
@@ -64,11 +76,15 @@ export const ASCII_GLYPHS: Glyphs = {
   err: '[ERR]',
   info: '[i]',
   warn: '[!]',
-  spinner: ['.', '*', '+', 'x', 'o', 'O'],
+  spinner: ['|', '/', '-', '\\'],
+  barPartials: [],
+  sparks: ['.', '.', ':', ':', '-', '=', '+', '#'],
   barFilled: '#',
   barEmpty: '-',
   rail: '|',
   phaseDone: '*',
+  doneMark: '+',
+  pendingMark: '.',
   dash: '-',
   hLine: '-',
   treeBranch: '|-- ',

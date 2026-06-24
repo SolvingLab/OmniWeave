@@ -38,6 +38,7 @@ import { clamp } from '../utils';
 
 import { buildNode25BlockBanner, buildNodeTooOldBanner, isNodeTooOld } from './node-version-check';
 import { relaunchWithWasmRuntimeFlagsIfNeeded } from '../extraction/wasm-runtime-flags';
+import { silenceEnvNoiseWarnings } from './quiet-warnings';
 import { EXTRACTION_VERSION } from '../extraction/extraction-version';
 import { getTelemetry, TELEMETRY_DOCS, recordIndexEvent } from '../telemetry';
 import { describeSnapshotImportWarning } from '../snapshot-metadata';
@@ -72,6 +73,12 @@ function parseCliIntOption(value: string | undefined, fallback: number, min: num
   const parsed = Number(trimmed);
   if (!Number.isSafeInteger(parsed)) return fallback;
   return clamp(parsed, min, max);
+}
+
+/** Collapse the home directory to `~` for a compact dashboard subtitle. */
+function shortenHome(p: string): string {
+  const home = process.env.HOME || process.env.USERPROFILE || '';
+  return home && p.startsWith(home) ? `~${p.slice(home.length)}` : p;
 }
 
 const CLI_CALL_SURFACE_EDGE_KINDS = new Set<EdgeKind>(['calls', 'crossLang', 'invokes', 'instantiates']);
@@ -171,6 +178,12 @@ function collectCliCallSurface(
 // eslint-disable-next-line @typescript-eslint/no-implied-eval
 const importESM = new Function('specifier', 'return import(specifier)') as
   (specifier: string) => Promise<typeof import('@clack/prompts')>;
+
+// Drop two unactionable, every-command warnings (proxy-set
+// NODE_TLS_REJECT_UNAUTHORIZED and the node:sqlite experimental notice) before
+// any code path can trigger them. All other warnings still print. Re-runs after
+// the WASM-flag re-exec below, so the child process is covered too.
+silenceEnvNoiseWarnings();
 
 // Block OmniWeave on Node.js 25.x — V8's turboshaft WASM JIT has a Zone
 // allocator bug that reliably crashes when compiling tree-sitter
@@ -624,8 +637,7 @@ program
           verbose: true,
         });
       } else {
-        process.stdout.write(`${colors.dim}${getGlyphs().rail}${colors.reset}\n`);
-        const progress = createShimmerProgress();
+        const progress = createShimmerProgress({ subtitle: shortenHome(projectPath) });
         result = await cg.indexAll({
           onProgress: progress.onProgress,
         });
@@ -761,8 +773,7 @@ program
           verbose: true,
         });
       } else {
-        process.stdout.write(`${colors.dim}${getGlyphs().rail}${colors.reset}\n`);
-        const progress = createShimmerProgress();
+        const progress = createShimmerProgress({ subtitle: shortenHome(projectPath) });
         result = await cg.indexAll({
           onProgress: progress.onProgress,
         });
@@ -814,8 +825,7 @@ program
       const clack = await importESM('@clack/prompts');
       clack.intro('Syncing OmniWeave');
 
-      process.stdout.write(`${colors.dim}${getGlyphs().rail}${colors.reset}\n`);
-      const progress = createShimmerProgress();
+      const progress = createShimmerProgress({ subtitle: shortenHome(projectPath) });
 
       const result = await cg.sync({
         onProgress: progress.onProgress,
