@@ -3624,7 +3624,11 @@ export class ToolHandler {
 
     // Single definition — the common case.
     if (matches.length === 1) {
-      return this.textResult(this.truncateOutput(await this.renderNodeSection(cg, matches[0]!, includeCode, outputSurface)));
+      const node = matches[0]!;
+      const rendered = await this.renderNodeSection(cg, node, includeCode, outputSurface);
+      return this.textResult(includeCode
+        ? this.truncateNodeOutput(rendered, node, outputSurface)
+        : this.truncateOutput(rendered));
     }
 
     // Multiple definitions share this name — overloads, or same-named methods on
@@ -4396,6 +4400,33 @@ export class ToolHandler {
     const lastNewline = truncated.lastIndexOf('\n');
     const cutPoint = lastNewline > MAX_OUTPUT_LENGTH * 0.8 ? lastNewline : MAX_OUTPUT_LENGTH;
     return truncated.slice(0, cutPoint) + '\n\n... (output truncated)';
+  }
+
+  private truncateNodeOutput(text: string, node: Node, outputSurface: OutputSurface): string {
+    if (text.length <= MAX_OUTPUT_LENGTH) return text;
+    const line = node.startLine || 1;
+    const retry = outputSurface === 'cli'
+      ? `run \`omniweave node ${this.cliArg(node.filePath)} --offset ${line} --limit 200\``
+      : `call omniweave_node with \`file: "${node.filePath}", offset: ${line}, limit: 200\``;
+    const suffix = `\n\n... (output truncated at a complete code fence; ${retry} for the next source window.)`;
+    const closeFence = '\n```';
+    let cutLimit = MAX_OUTPUT_LENGTH - suffix.length;
+    let cut = text.slice(0, Math.max(0, cutLimit));
+    let cutPoint = cut.lastIndexOf('\n');
+    if (cutPoint <= MAX_OUTPUT_LENGTH * 0.8) cutPoint = cut.length;
+    cut = cut.slice(0, cutPoint).trimEnd();
+
+    const fenceCount = (cut.match(/^```/gm) ?? []).length;
+    if (fenceCount % 2 === 0) {
+      return cut + suffix;
+    }
+
+    cutLimit = MAX_OUTPUT_LENGTH - suffix.length - closeFence.length;
+    cut = text.slice(0, Math.max(0, cutLimit));
+    cutPoint = cut.lastIndexOf('\n');
+    if (cutPoint <= MAX_OUTPUT_LENGTH * 0.8) cutPoint = cut.length;
+    cut = cut.slice(0, cutPoint).trimEnd();
+    return cut + closeFence + suffix;
   }
 
   // =========================================================================

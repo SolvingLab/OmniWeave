@@ -102,7 +102,10 @@ describe('omniweave_node file-view (Read replacement)', () => {
     expect(out).toContain('useBig (src/c.ts:3)');
     expect(out.indexOf('### Trail')).toBeGreaterThanOrEqual(0);
     expect(out.indexOf('### Trail')).toBeLessThan(out.indexOf('```typescript'));
-    expect(out).toContain('... (output truncated)');
+    expect(out).toContain('output truncated');
+    expect((out.match(/^```/gm) ?? []).length % 2).toBe(0);
+    expect(out).toContain('complete code fence');
+    expect(out).toContain('offset: 1, limit: 200');
   });
 
   it('does NOT dump a config/data file (yaml/properties) — #383 secret safety', async () => {
