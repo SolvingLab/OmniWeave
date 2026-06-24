@@ -3,12 +3,24 @@
 // keyword/semantic match per question; borderline answers are flagged for human
 // / skeptic review. Effort = mean tool calls + turns. Honest: a tie is a tie.
 //
-// Usage: node score-benchmark.mjs <results.jsonl> <benchmark-questions.json>
-import { readFileSync } from 'node:fs';
+// Usage: node score-benchmark.mjs [--scored-jsonl <out.jsonl>] <results.jsonl> <benchmark-questions.json>
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 
-const [, , resultsPath, manifestPath] = process.argv;
+let scoredJsonlPath = '';
+const positional = [];
+for (let i = 2; i < process.argv.length; i++) {
+  const arg = process.argv[i];
+  if (arg === '--scored-jsonl') {
+    scoredJsonlPath = process.argv[++i] || '';
+    continue;
+  }
+  positional.push(arg);
+}
+
+const [resultsPath, manifestPath] = positional;
 if (!resultsPath || !manifestPath) {
-  console.error('Usage: node score-benchmark.mjs <results.jsonl> <benchmark-questions.json>');
+  console.error('Usage: node score-benchmark.mjs [--scored-jsonl <out.jsonl>] <results.jsonl> <benchmark-questions.json>');
   process.exit(2);
 }
 
@@ -54,13 +66,29 @@ function grade(run) {
   return g(a) ? 'CORRECT' : 'WRONG';
 }
 
+const scoredRuns = runs.map((run) => {
+  const verdict = grade(run);
+  return {
+    ...run,
+    rawValid: run.valid,
+    rawReasons: run.reasons ?? [],
+    verdict,
+    correct: verdict === 'CORRECT',
+  };
+});
+
+if (scoredJsonlPath) {
+  mkdirSync(dirname(scoredJsonlPath), { recursive: true });
+  writeFileSync(scoredJsonlPath, scoredRuns.map((run) => JSON.stringify(run)).join('\n') + '\n');
+}
+
 // Aggregate.
 const cells = {};
-for (const r of runs) {
+for (const r of scoredRuns) {
   const key = `${r.id}|${r.arm}|${r.mode}|${r.model}`;
   (cells[key] ??= { runs: [], correct: 0, invalid: 0, mcp: 0, read: 0, grep: 0, bash: 0, turns: 0 });
   const c = cells[key];
-  const v = grade(r);
+  const v = r.verdict;
   c.runs.push({ run: r.run, verdict: v, ans: r.ans, mcp: r.mcp, read: r.read, grep: r.grep, bash: r.bash, turns: r.turns });
   if (v === 'CORRECT') c.correct++;
   if (v === 'INVALID') c.invalid++;
@@ -68,7 +96,7 @@ for (const r of runs) {
 }
 
 console.log('# Agent A/B benchmark — scored\n');
-const ids = [...new Set(runs.map((r) => r.id))];
+const ids = [...new Set(scoredRuns.map((r) => r.id))];
 for (const id of ids) {
   const q = byId[id];
   console.log(`\n## ${id}  (${q?.type})  — GT: ${q?.groundTruth?.slice(0, 80)}`);
