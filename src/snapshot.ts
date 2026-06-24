@@ -498,10 +498,10 @@ function validateSnapshotManifest(
 ): boolean {
   const raw = manifest as unknown as Record<string, unknown>;
   if (manifest.format !== SNAPSHOT_FORMAT) {
-    errors.push(`Unsupported snapshot format: ${String(manifest.format)}`);
+    errors.push(`Unsupported snapshot format: ${formatSnapshotDiagnosticValue(manifest.format)}`);
   }
   if (manifest.formatVersion !== SNAPSHOT_FORMAT_VERSION) {
-    errors.push(`Unsupported snapshot format version: ${String(manifest.formatVersion)}`);
+    errors.push(`Unsupported snapshot format version: ${formatSnapshotDiagnosticValue(manifest.formatVersion)}`);
   }
   if (typeof manifest.omniweaveVersion !== 'string') {
     errors.push('Snapshot manifest omniweaveVersion must be a string');
@@ -895,6 +895,7 @@ function validateSnapshotNodeGraphText(db: SqliteDatabase, errors: string[]): vo
   let rows: Array<{
     rowid: unknown;
     id: unknown;
+    kind: unknown;
     name: unknown;
     qualifiedName: unknown;
     signature: unknown;
@@ -902,11 +903,12 @@ function validateSnapshotNodeGraphText(db: SqliteDatabase, errors: string[]): vo
   }>;
   try {
     rows = db.prepare(`
-      SELECT rowid, id, name, qualified_name AS qualifiedName, signature, docstring
+      SELECT rowid, id, kind, name, qualified_name AS qualifiedName, signature, docstring
       FROM nodes
     `).all() as Array<{
       rowid: unknown;
       id: unknown;
+      kind: unknown;
       name: unknown;
       qualifiedName: unknown;
       signature: unknown;
@@ -922,6 +924,7 @@ function validateSnapshotNodeGraphText(db: SqliteDatabase, errors: string[]): vo
   for (const row of rows) {
     const label = snapshotRowLabel('nodes', row.rowid);
     if (!isSafeSnapshotInlineGraphText(row.id)) invalidInline.push(`nodes.id ${label}`);
+    if (!isSafeSnapshotInlineGraphText(row.kind)) invalidInline.push(`nodes.kind ${label}`);
     if (!isSafeSnapshotInlineGraphText(row.name)) invalidInline.push(`nodes.name ${label}`);
     if (!isSafeSnapshotInlineGraphText(row.qualifiedName)) invalidInline.push(`nodes.qualified_name ${label}`);
     if (row.signature !== null && row.signature !== undefined && !isSafeSnapshotInlineGraphText(row.signature)) {
@@ -1123,7 +1126,7 @@ function validateSnapshotManifestValue(
   errors: string[],
 ): void {
   if (actual !== expected) {
-    errors.push(`Snapshot manifest ${label} does not match database: expected ${String(expected)}, got ${String(actual)}`);
+    errors.push(`Snapshot manifest ${label} does not match database: expected ${formatSnapshotDiagnosticValue(expected)}, got ${formatSnapshotDiagnosticValue(actual)}`);
   }
 }
 
@@ -1177,7 +1180,15 @@ function isSafeSnapshotIndexedPath(value: unknown): value is string {
 }
 
 function displayPathValue(value: unknown): string {
-  return typeof value === 'string' ? JSON.stringify(value) : String(value);
+  return formatSnapshotDiagnosticValue(value);
+}
+
+function formatSnapshotDiagnosticValue(value: unknown): string {
+  const text = typeof value === 'string' ? value : String(value);
+  if (!isSafeSnapshotInlineGraphText(text)) {
+    return '[unsafe value omitted]';
+  }
+  return typeof value === 'string' ? JSON.stringify(value) : text;
 }
 
 function formatSchemaVersion(version: number | null): string {
