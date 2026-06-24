@@ -102,6 +102,23 @@ export function hashContent(content: string): string {
  */
 const MAX_FILE_SIZE = 1024 * 1024;
 
+function sizeExceededResult(filePath: string, size: number): ExtractionResult {
+  return {
+    nodes: [],
+    edges: [],
+    unresolvedReferences: [],
+    errors: [
+      {
+        message: `File exceeds max size (${size} > ${MAX_FILE_SIZE})`,
+        filePath,
+        severity: 'warning',
+        code: 'size_exceeded',
+      },
+    ],
+    durationMs: 0,
+  };
+}
+
 /**
  * Directory names that are dependency, build, cache, or tooling output across the
  * languages/frameworks OmniWeave supports — curated from the canonical
@@ -1231,14 +1248,12 @@ export class ExtractionOrchestrator {
         // useful symbols. The single-file extractFile path already enforces
         // this; the bulk path used to silently skip the check.
         if (stats.size > MAX_FILE_SIZE) {
+          const language = detectLanguage(filePath, content, extensionOverrides);
+          const result = sizeExceededResult(filePath, stats.size);
+          this.storeExtractionResult(filePath, content, language, stats, result);
           processed++;
           filesSkipped++;
-          errors.push({
-            message: `File exceeds max size (${stats.size} > ${MAX_FILE_SIZE})`,
-            filePath,
-            severity: 'warning',
-            code: 'size_exceeded',
-          });
+          errors.push(...result.errors);
           onProgress?.({ phase: 'parsing', current: processed, total });
           continue;
         }
@@ -1542,20 +1557,10 @@ export class ExtractionOrchestrator {
 
     // Check file size
     if (stats.size > MAX_FILE_SIZE) {
-      return {
-        nodes: [],
-        edges: [],
-        unresolvedReferences: [],
-        errors: [
-          {
-            message: `File exceeds max size (${stats.size} > ${MAX_FILE_SIZE})`,
-            filePath: relativePath,
-            severity: 'warning',
-            code: 'size_exceeded',
-          },
-        ],
-        durationMs: 0,
-      };
+      const language = detectLanguage(relativePath, content, loadExtensionOverrides(this.rootDir));
+      const result = sizeExceededResult(relativePath, stats.size);
+      this.storeExtractionResult(relativePath, content, language, stats, result);
+      return result;
     }
 
     const language = detectLanguage(relativePath, content, loadExtensionOverrides(this.rootDir));

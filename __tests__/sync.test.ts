@@ -149,6 +149,20 @@ describe('Sync Module', () => {
         expect(result.filesRemoved).toBe(0);
         expect(result.filesChecked).toBeGreaterThan(0);
       });
+
+      it('should not repeatedly report oversized source files as added', async () => {
+        const oversized = 'export const value = 1;\n'.repeat(60_000);
+        fs.writeFileSync(path.join(testDir, 'src', 'oversized.ts'), oversized);
+
+        const first = await cg.sync();
+        expect(first.filesAdded).toBe(1);
+        expect(first.nodesUpdated).toBe(0);
+
+        const second = await cg.sync();
+        expect(second.filesAdded).toBe(0);
+        expect(second.filesModified).toBe(0);
+        expect(second.filesRemoved).toBe(0);
+      });
     });
   });
 
