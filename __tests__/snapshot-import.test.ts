@@ -412,6 +412,35 @@ describe('snapshot import and verify', () => {
     expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
   });
 
+  it('rejects content-only snapshot rows when target text is not valid UTF-8', async () => {
+    writeLocale(sourceRoot);
+    fs.writeFileSync(path.join(targetRoot, 'README.md'), Buffer.from([0xff, 0xfe, 0xfd, 0x20, 0x61, 0x62, 0x63]));
+    await reindexProject(sourceRoot);
+    await exportSnapshot(sourceRoot, outputDir, {
+      force: true,
+      omniweaveVersion: '9.9.9-test',
+      omniweaveBuildFingerprint: '9.9.9-test+buildabc',
+    });
+
+    const conn = DatabaseConnection.open(path.join(outputDir, SNAPSHOT_DATABASE_FILENAME));
+    try {
+      conn.getDb().prepare(
+        'INSERT INTO content_fts (path, content) VALUES (?, ?)'
+      ).run('README.md', Buffer.from([0xff, 0xfe, 0xfd, 0x20, 0x61, 0x62, 0x63]).toString('utf-8'));
+      conn.getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      conn.close();
+    }
+    refreshSnapshotDatabaseManifest(outputDir);
+
+    const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+
+    expect(verification.ok).toBe(false);
+    expect(verification.errors.join('\n')).toContain('content_fts paths that are neither indexed source files nor target content-search files');
+    await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
+    expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+  });
+
   it('full reindex after source deletion removes imported snapshot facts and clears the warning', async () => {
     await importSnapshot(outputDir, targetRoot);
 
@@ -843,6 +872,34 @@ describe('snapshot import and verify', () => {
     expect(errors).toContain('src/index.ts');
     expect(errors).not.toContain('```');
     expect(errors).not.toContain('ignore previous instructions');
+    await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
+    expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+  });
+
+  it('rejects source content index rows for unsafe raw-content languages', async () => {
+    fs.writeFileSync(path.join(sourceRoot, 'application.yml'), 'spring:\n  datasource:\n    password: sk-live-snapshot-source\n');
+    await reindexProject(sourceRoot);
+    await exportSnapshot(sourceRoot, outputDir, {
+      force: true,
+      omniweaveVersion: '9.9.9-test',
+      omniweaveBuildFingerprint: '9.9.9-test+buildabc',
+    });
+
+    const conn = DatabaseConnection.open(path.join(outputDir, SNAPSHOT_DATABASE_FILENAME));
+    try {
+      conn.getDb().prepare(
+        'INSERT INTO content_fts (path, content) VALUES (?, ?)'
+      ).run('application.yml', 'spring:\n  datasource:\n    password: sk-live-snapshot-source\n');
+      conn.getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      conn.close();
+    }
+    refreshSnapshotDatabaseManifest(outputDir);
+
+    const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+
+    expect(verification.ok).toBe(false);
+    expect(verification.errors.join('\n')).toContain('source content_fts paths that are not safe for raw-content indexing');
     await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
     expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
   });

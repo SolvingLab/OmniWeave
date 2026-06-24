@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-24 · the war plan's Step C "one new general lever": the only axis the
 symbol-only `nodes_fts` cannot answer — *which files contain string Y* where Y is a literal
-that is not a symbol (an error message, a config value, a comment). Built **in-process** in the
+that is not a symbol (an error message, an i18n label, a comment). Built **in-process** in the
 existing `node:sqlite` engine (FTS5 `tokenize='trigram'`), zero new dependency, zero-config
 preserved.
 
@@ -15,14 +15,16 @@ preserved.
   `deleteFileContent` (wired into `deleteFile` so the content index stays in lockstep with `files`),
   `searchContent(pattern, limit)` (literal substring, ranked, snippet + path, `hasMore`),
   `contentIndexFileCount` (0 ⇒ migrated-but-not-reindexed).
-- Population in `storeExtractionResult` for files `<= MAX_FILE_SIZE` (1 MiB).
-- Snapshot verifier allowlist extended with the 6 `content_fts*` shadow tables.
+- Population in `storeExtractionResult` for safe source files `<= MAX_FILE_SIZE` (1 MiB), plus
+  a narrow content-only pass for docs text and locale/i18n JSON.
+- Snapshot verifier allowlist extended with the 6 `content_fts*` shadow tables; import now binds
+  source rows to `files.content_hash` and content-only rows to target bytes.
 - Locked by `__tests__/content-fts.test.ts` (find-by-content, snippet, absence, `<3`-char trigram
-  floor, `hasMore` truncation, lockstep removal on sync-delete).
+  floor, `hasMore` truncation, lockstep removal on sync-delete, safe content-only coverage, no
+  out-of-root symlink reads, invalid UTF-8 skip, and legacy unsafe-row purge).
 
-**Not yet surfaced** to MCP/CLI — `searchContent` is a library method only. The `pattern:` mode on
-`omniweave_search` + snapshot content-injection escaping are the next increment (deliberately
-separate: it edits the hot `tools.ts`).
+The surfaced path is deliberately small: `omniweave_search` accepts explicit `pattern:<literal>`
+raw-content mode, and CLI `omniweave query 'pattern:<literal>'` prints the same snippet evidence.
 
 ## Build + storage — measured on REAL django (@420b4f5b, 3,009 indexed files)
 
@@ -59,19 +61,13 @@ separate: it edits the hot `tools.ts`).
 5. **Not a correctness/outcome lever.** Per Step A (`eval-results/content-vs-structural-2026-06-24/`),
    on a real LLM the content index is an adoption-gated *economy* convenience, never marketed as
    more-correct.
-6. **COVERAGE GAP (found 2026-06-24 via the "no-区分度" push — `coverage-probe.mjs`):** content_fts
-   is populated in `storeExtractionResult`, which runs **only for files OmniWeave EXTRACTS** — the
-   recognized source languages **plus** the few config grammars it indexes (`.yaml`/`.yml`). It does
-   **NOT** cover `.json`, `.md`, `.txt`, or any other non-indexed text type. Firsthand: indexing a
-   dir with `locales/en.json`, `readme.md`, `app.ts`, `config.yaml`, content_fts covers only
-   `app.ts` + `config.yaml`; the i18n `en.json` and the markdown are absent, so
-   `searchContent("Wireframe to code")` cannot find the i18n value. **This is the symbol-UNcorrelated
-   content (i18n / docs / generic JSON config) where a content index would matter MOST — and the
-   current implementation does not reach it.** It diverges from the war plan's stated intent
-   ("populate for files ≤ MAX_FILE_SIZE" = all files). Closing it means a content-only pass over the
-   scanned file list (binary-skipped) decoupled from extraction — which raises content storage and
-   pressures the `< 1 GB for < 50k files` gate on doc/translation-heavy repos. **That tension
-   (coverage vs the storage gate) is a product decision, recorded here rather than silently resolved.**
+6. **Content-only coverage is intentionally narrow.** The post-fix `coverage-probe.mjs` now shows
+   `app.ts`, `readme.md`, and `locales/en.json` covered for `Wireframe to code`, while
+   `config.yaml` is deliberately omitted from raw snippets. This closes the symbol-uncorrelated
+   i18n/docs gap without making generic JSON/YAML/properties/XML or secret-prone filenames searchable.
+   Safety gates: sensitive basename/path denylist (`.env*`, key/token/credential/service-account
+   shapes, secret dirs), no symlink escape, strict UTF-8, 1 MiB cap, and ordinary `sync()` purges
+   legacy unsafe source rows from older schema-6 indexes.
 
 ## Reproduce
 
