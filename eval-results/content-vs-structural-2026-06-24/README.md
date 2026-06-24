@@ -80,32 +80,58 @@ skeptically.
 
 ## Results — forced mode (MCP-only, grep denied)
 
-_Forced-mode run (`force-mcp-hook.sh` denies Bash/Grep/source-Read; arms `omniweave` +
-`codegraph`) is in progress; results land in a follow-up commit. Hypothesis under test:
-with grep removed, the structural-only graph **cannot** answer the content questions
-(`omniweave_search` is symbol-only), so content correctness should drop on `C1`/`C2` while
-structural questions stay answerable — the conditional sufficiency case for `content_fts`._
+24 runs (`omniweave` + `codegraph` arms; the `grep` arm is meaningless when grep is denied),
+**0 INVALID**. `force-mcp-hook.sh` was confirmed live in-transcript: the agent's first move on
+the content questions is a Bash `grep`, which is **denied** ("Shell and source-file reading are
+disabled… answer using the attached code-graph MCP tools"), after which it falls back to
+`omniweave_explore` / `omniweave_node`.
 
-## Honest verdict (natural mode — directional)
+| Question | axis | omniweave (MCP-only) | codegraph (MCP-only) |
+|---|---|---|---|
+| S1-extends | structural | 100%✓ 3.5t 13.0τ | 100%✓ 3.0t 13.0τ |
+| S2-callers | structural | 100%✓ 2.5t 9.0τ | **50%✓** 6.5t 18.0τ |
+| S3-callees | structural | 100%✓ 3.0t 11.0τ | 100%✓ 3.5t 15.0τ |
+| C1-literal | content | 100%✓ 2.0t 8.0τ | 100%✓ 1.5t 13.0τ |
+| C2-literal | content | 100%✓ 2.5t **17.0τ** | 100%✓ 2.0t 10.0τ |
+| CEIL | ceiling | 100%✓ 4.0t 16.0τ | 100%✓ 3.5t 11.0τ |
 
-- **Correctness ties everywhere** (36/36, all six questions, all three arms). Reconfirms
-  rounds 1–7: OmniWeave is not "more correct"; we make no such claim.
-- **The content index is, at most, an ECONOMY win — and on this model/repo not even that.**
-  MiMo answered every content question by grepping the literal in ~1 call; an attached
-  structural MCP was used **0 times in 36 runs**, so a content index (also MCP-surfaced)
-  would face the same non-adoption. The 60–70% "best-in-niche + superset" route is the
-  honest read; the 10–20% "general replacement via content index" route is **not** supported
-  by this evidence — a weak model with grep available does not reach for an attached index.
-- **The content gap itself is real** (the `omniweave search` empirical check), so `content_fts`
-  remains worth building for the surfaces that *do* adopt it (forced/sandboxed agents, and
-  `explore` empty-seed fallback), but its value must be framed as adoption-gated economy,
-  not a general correctness or even guaranteed tool-call win.
-- **Caveat (n=1 model × 1 repo, and a greppable bank):** these structural questions are all
-  greppable on a tidy Python repo, so they do not exercise the cross-boundary structural moat
-  (where prior benchmarks *did* see MiMo adopt OmniWeave). The finding is specifically about
-  *content* retrieval and *weak-model adoption*. Widen to the other four war-plan repos and a
-  stronger model before treating the route as settled. Forced mode (below) adds the
-  sufficiency half.
+**The surprise that reframes the whole content thesis: even with grep DENIED, both tools
+answered the content questions at 100% correctness.** `omniweave_explore "CSRF verification
+failed"` lands on `django/views/csrf.py` and `omniweave_explore "Enter a valid email address"`
+lands on `django/core/validators.py` — **not** because the FTS indexes those literals (it does
+not), but because the literal lives in a file whose **symbols/filename are semantically
+correlated** with the query terms (`csrf`, `validators`). The structural graph reaches
+symbol-correlated content by proximity. The cost shows up as **turns, not correctness**: C2
+omniweave averaged 17 turns (some runs flailed against the deny-hook before finding it) vs the
+~5 turns the same question took in natural mode with a single grep.
+
+(Side note, structural axis: forced omniweave 100% vs codegraph **83%** — codegraph failed one
+of two `S2-callers` runs after 7 MCP calls / 24 turns. n=2, so this is an anecdote, not a
+structural-moat claim — but it is the one place a correctness gap opened, and it favored
+OmniweAVE, not the content question.)
+
+## Honest verdict (both modes)
+
+- **Correctness ties on content in BOTH modes.** Natural: 36/36, every arm greps. Forced: the
+  structural graph still reaches symbol-correlated content by symbol/filename proximity. There
+  is **no content question in this bank that a structural-only agent gets wrong** — so the
+  content index's *outcome* value here is **zero**, and the 10–20% "general replacement via
+  content index" route is **not** supported by this evidence.
+- **Its value is a narrow EFFICIENCY/economy lever, gated by two things:**
+  1. *Adoption* — in natural mode MiMo used the attached structural MCP **0 times in 36 runs**;
+     it greps. A content index on the same MCP surface would be bypassed the same way by this
+     model. (Stronger models adopt MCP more — prior benchmarks show that — so this is a
+     model-strength-dependent bound, not a permanent one.)
+  2. *Symbol-correlation* — when the string lives in a semantically-named file/symbol, the
+     structural graph already finds it (sometimes with turn-flailing a content index would cut).
+- **Build `content_fts` (it is DONE③ regardless), but frame it honestly:** a turn-cutting
+  convenience for sandboxed/forced agents and an `explore` empty-seed fallback, **not** a
+  correctness, outcome, or guaranteed-tool-call win. Never market it as "more correct".
+- **The content gap that *would* need it** is the **symbol-UNcorrelated** string — a literal in
+  a file whose name/symbols don't echo the query (a generic message in a misc util). **This bank
+  does not test that case** (CSRF→csrf.py and email→validators.py are both correlated), so the
+  true ceiling of the gap is *un-measured here*. That, plus widening to the other four war-plan
+  repos and a stronger model, is the honest next experiment before the route is settled.
 
 ## Reproduce
 
