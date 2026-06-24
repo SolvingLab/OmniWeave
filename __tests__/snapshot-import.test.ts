@@ -350,6 +350,7 @@ describe('snapshot import and verify', () => {
         ['omniweave_explore', { query: 'entry helper' }],
         ['omniweave_node', { symbol: 'entry', includeCode: true }],
         ['omniweave_search', { query: 'entry' }],
+        ['omniweave_search', { query: 'pattern:return helper' }],
         ['omniweave_callers', { symbol: 'helper' }],
         ['omniweave_impact', { symbol: 'helper' }],
       ];
