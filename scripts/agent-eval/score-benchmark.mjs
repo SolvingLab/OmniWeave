@@ -37,7 +37,7 @@ const GRADERS = {
   'v3-H-se-concept': (a) => a.includes('not localiz') || a.includes('scattered') || a.includes('multiple') || a.includes('across') || a.includes('inline') || a.includes('分散') || a.includes('不是集中') || a.includes('无法定位') || a.includes('没有集中') || a.includes('不集中'),
   // --- new-edge bank (module-var-ref / rtkQuery / dispatch synthesizers) ---
   'NE-rtk-hook': (a) => a.includes('/api'),
-  'NE-pinia-login': (a) => a.includes('auth.js') || a.includes('auth.ts') || a.includes('store/auth'),
+  'NE-pinia-login': (a) => /(?:^|[^\w/.-])(?:src\/)?store\/auth\.js(?:$|[^\w/.-])/.test(a),
   'NE-sidekiq-worker': (a) => a.includes('destroyuserworker'),
   'NE-celery-task': (a) => a.includes('send_welcome_email'),
   'NE-modvar-impact': (a) => a.includes('check_compatibility'),
