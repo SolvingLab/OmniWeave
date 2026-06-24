@@ -46,6 +46,14 @@ describe('Framework dispatch synthesizers (celery/spring/mediatr/sidekiq/laravel
         (e.metadata as { synthesizedBy?: string } | undefined)?.synthesizedBy === synthesizedBy
     );
 
+  const synthesizedEdges = (edges: Edge[], synthesizedBy: string): Edge[] =>
+    edges.filter(
+      (e) =>
+        e.kind === 'calls' &&
+        e.provenance === 'heuristic' &&
+        (e.metadata as { synthesizedBy?: string } | undefined)?.synthesizedBy === synthesizedBy
+    );
+
   it('bridges a Celery .delay() dispatch to its @shared_task body (Python)', async () => {
     write(
       'app/tasks.py',
@@ -332,5 +340,385 @@ export const bootstrapUser = createAsyncThunk('users/bootstrap', async (id: numb
     expect(service).toBeDefined();
 
     expect(bridge(cg.getOutgoingEdges(bootstrap!.id), service!.id, 'redux-thunk')).toBeUndefined();
+  });
+
+  it('does not bridge dispatch-looking text inside string literals', async () => {
+    write(
+      'py/tasks.py',
+      `from celery import shared_task
+
+@shared_task
+def send_welcome_email(user_id):
+    return user_id
+`
+    );
+    write(
+      'py/views.py',
+      `from .tasks import send_welcome_email
+
+def signup(request):
+    note = "send_welcome_email.delay(user_id)"
+    return request
+`
+    );
+    write(
+      'java/OrderPlaced.java',
+      `package shop;
+class OrderPlaced {}
+`
+    );
+    write(
+      'java/EmailListener.java',
+      `package shop;
+import org.springframework.context.event.EventListener;
+class EmailListener {
+    @EventListener
+    public void onOrderPlaced(OrderPlaced event) {}
+}
+`
+    );
+    write(
+      'java/OrderService.java',
+      `package shop;
+class OrderService {
+    public void placeOrder(long id) {
+        String note = "publisher.publishEvent(new OrderPlaced(id))";
+    }
+}
+`
+    );
+    write(
+      'cs/CancelOrderCommand.cs',
+      `namespace Shop {
+    public class CancelOrderCommand {}
+}
+`
+    );
+    write(
+      'cs/CancelOrderCommandHandler.cs',
+      `using MediatR;
+namespace Shop {
+    public class CancelOrderCommandHandler : IRequestHandler<CancelOrderCommand, bool> {
+        public Task<bool> Handle(CancelOrderCommand request, CancellationToken ct) {
+            return Task.FromResult(true);
+        }
+    }
+}
+`
+    );
+    write(
+      'cs/OrdersController.cs',
+      `namespace Shop {
+    public class OrdersController {
+        private readonly IMediator _mediator;
+        public Task Cancel(long id) {
+            var trace = "_mediator.Send(new CancelOrderCommand())";
+            return Task.CompletedTask;
+        }
+    }
+}
+`
+    );
+    write(
+      'rb/destroy_user_worker.rb',
+      `class DestroyUserWorker
+  include Sidekiq::Worker
+  def perform(user_id)
+    user_id
+  end
+end
+`
+    );
+    write(
+      'rb/user_service.rb',
+      `class UserService
+  def destroy(user)
+    trace = "DestroyUserWorker.perform_async(user.id)"
+  end
+end
+`
+    );
+    write(
+      'php/PlaybackStarted.php',
+      `<?php
+namespace App\\Events;
+class PlaybackStarted {}
+`
+    );
+    write(
+      'php/UpdateNowPlaying.php',
+      `<?php
+namespace App\\Listeners;
+use App\\Events\\PlaybackStarted;
+class UpdateNowPlaying {
+    public function handle(PlaybackStarted $event) {}
+}
+`
+    );
+    write(
+      'php/PlaybackController.php',
+      `<?php
+namespace App\\Http;
+use App\\Events\\PlaybackStarted;
+class PlaybackController {
+    public function play($song) {
+        $trace = "event(new PlaybackStarted($song))";
+    }
+}
+`
+    );
+    write(
+      'ts/users.ts',
+      `import { createAsyncThunk } from '@reduxjs/toolkit';
+
+export const fetchUser = createAsyncThunk('users/fetch', async (id: number) => ({ id }));
+export const bootstrapUser = createAsyncThunk('users/bootstrap', async (id: number) => {
+  const trace = "dispatch(fetchUser(id))";
+  return id;
+});
+`
+    );
+
+    const cg = await OmniWeave.init(dir, { silent: true });
+    await cg.indexAll();
+
+    const fns = cg.getNodesByKind('function');
+    const methods = cg.getNodesByKind('method');
+    const constants = cg.getNodesByKind('constant');
+
+    const signup = fns.find((n) => n.name === 'signup');
+    const placeOrder = methods.find((n) => n.name === 'placeOrder');
+    const cancel = methods.find((n) => n.name === 'Cancel');
+    const destroy = methods.find((n) => n.name === 'destroy');
+    const play = methods.find((n) => n.name === 'play');
+    const bootstrap = constants.find((n) => n.name === 'bootstrapUser');
+    expect(signup).toBeDefined();
+    expect(placeOrder).toBeDefined();
+    expect(cancel).toBeDefined();
+    expect(destroy).toBeDefined();
+    expect(play).toBeDefined();
+    expect(bootstrap).toBeDefined();
+
+    expect(synthesizedEdges(cg.getOutgoingEdges(signup!.id), 'celery-dispatch')).toHaveLength(0);
+    expect(synthesizedEdges(cg.getOutgoingEdges(placeOrder!.id), 'spring-event')).toHaveLength(0);
+    expect(synthesizedEdges(cg.getOutgoingEdges(cancel!.id), 'mediatr-dispatch')).toHaveLength(0);
+    expect(synthesizedEdges(cg.getOutgoingEdges(destroy!.id), 'sidekiq-dispatch')).toHaveLength(0);
+    expect(synthesizedEdges(cg.getOutgoingEdges(play!.id), 'laravel-event')).toHaveLength(0);
+    expect(synthesizedEdges(cg.getOutgoingEdges(bootstrap!.id), 'redux-thunk')).toHaveLength(0);
+  });
+
+  it('does not bridge Spring events across packages by simple class name', async () => {
+    write('src/shop/OrderPlaced.java', 'package shop;\nclass OrderPlaced {}\n');
+    write('src/billing/OrderPlaced.java', 'package billing;\nclass OrderPlaced {}\n');
+    write(
+      'src/billing/BillingListener.java',
+      `package billing;
+import org.springframework.context.event.EventListener;
+class BillingListener {
+    @EventListener
+    public void onOrderPlaced(OrderPlaced event) {}
+}
+`
+    );
+    write(
+      'src/shop/OrderService.java',
+      `package shop;
+class OrderService {
+    public void placeOrder() {
+        publisher.publishEvent(new OrderPlaced());
+    }
+}
+`
+    );
+
+    const cg = await OmniWeave.init(dir, { silent: true });
+    await cg.indexAll();
+
+    const placeOrder = cg.getNodesByKind('method').find((n) => n.name === 'placeOrder');
+    expect(placeOrder).toBeDefined();
+    expect(synthesizedEdges(cg.getOutgoingEdges(placeOrder!.id), 'spring-event')).toHaveLength(0);
+  });
+
+  it('requires Spring ApplicationListener methods to belong to the implementing class', async () => {
+    write(
+      'src/Events.java',
+      `package shop;
+class OrderPlaced {}
+class InvoicePaid {}
+`
+    );
+    write(
+      'src/MixedListeners.java',
+      `package shop;
+import org.springframework.context.ApplicationListener;
+class RealListener implements ApplicationListener<OrderPlaced> {
+    public void onApplicationEvent(OrderPlaced event) {}
+}
+class NotAListener {
+    public void onApplicationEvent(InvoicePaid event) {}
+}
+`
+    );
+    write(
+      'src/BillingService.java',
+      `package shop;
+class BillingService {
+    public void bill() {
+        publisher.publishEvent(new InvoicePaid());
+    }
+}
+`
+    );
+
+    const cg = await OmniWeave.init(dir, { silent: true });
+    await cg.indexAll();
+
+    const bill = cg.getNodesByKind('method').find((n) => n.name === 'bill');
+    expect(bill).toBeDefined();
+    expect(synthesizedEdges(cg.getOutgoingEdges(bill!.id), 'spring-event')).toHaveLength(0);
+  });
+
+  it('does not treat non-mediator receivers as MediatR dispatchers', async () => {
+    write(
+      'src/ResetEmailCommand.cs',
+      `namespace Shop {
+    public class ResetEmailCommand {}
+}
+`
+    );
+    write(
+      'src/ResetEmailCommandHandler.cs',
+      `using MediatR;
+namespace Shop {
+    public class ResetEmailCommandHandler : IRequestHandler<ResetEmailCommand, bool> {
+        public Task<bool> Handle(ResetEmailCommand request, CancellationToken ct) {
+            return Task.FromResult(true);
+        }
+    }
+}
+`
+    );
+    write(
+      'src/UsersController.cs',
+      `namespace Shop {
+    public class UsersController {
+        private readonly EmailSender emailSender;
+        public Task Reset() {
+            var command = new ResetEmailCommand();
+            return emailSender.Send(command);
+        }
+    }
+}
+`
+    );
+
+    const cg = await OmniWeave.init(dir, { silent: true });
+    await cg.indexAll();
+
+    const reset = cg.getNodesByKind('method').find((n) => n.name === 'Reset');
+    expect(reset).toBeDefined();
+    expect(synthesizedEdges(cg.getOutgoingEdges(reset!.id), 'mediatr-dispatch')).toHaveLength(0);
+  });
+
+  it('does not bridge MediatR request names across namespaces', async () => {
+    write('src/ShopCommand.cs', 'namespace Shop { public class CancelOrderCommand {} }\n');
+    write('src/BillingCommand.cs', 'namespace Billing { public class CancelOrderCommand {} }\n');
+    write(
+      'src/BillingHandler.cs',
+      `using MediatR;
+namespace Billing {
+    public class CancelOrderCommandHandler : IRequestHandler<CancelOrderCommand, bool> {
+        public Task<bool> Handle(CancelOrderCommand request, CancellationToken ct) {
+            return Task.FromResult(true);
+        }
+    }
+}
+`
+    );
+    write(
+      'src/OrdersController.cs',
+      `namespace Shop {
+    public class OrdersController {
+        private readonly IMediator _mediator;
+        public Task Cancel() {
+            var command = new CancelOrderCommand();
+            return _mediator.Send(command);
+        }
+    }
+}
+`
+    );
+
+    const cg = await OmniWeave.init(dir, { silent: true });
+    await cg.indexAll();
+
+    const cancel = cg.getNodesByKind('method').find((n) => n.name === 'Cancel');
+    expect(cancel).toBeDefined();
+    expect(synthesizedEdges(cg.getOutgoingEdges(cancel!.id), 'mediatr-dispatch')).toHaveLength(0);
+  });
+
+  it('does not fall back from a missing namespaced Sidekiq worker to a simple-name worker', async () => {
+    write(
+      'app/billing_worker.rb',
+      `module Billing
+  class DestroyUserWorker
+    include Sidekiq::Worker
+    def perform(user_id)
+      user_id
+    end
+  end
+end
+`
+    );
+    write(
+      'app/user_service.rb',
+      `class UserService
+  def destroy(user)
+    Admin::DestroyUserWorker.perform_async(user.id)
+  end
+end
+`
+    );
+
+    const cg = await OmniWeave.init(dir, { silent: true });
+    await cg.indexAll();
+
+    const destroy = cg.getNodesByKind('method').find((n) => n.name === 'destroy');
+    expect(destroy).toBeDefined();
+    expect(synthesizedEdges(cg.getOutgoingEdges(destroy!.id), 'sidekiq-dispatch')).toHaveLength(0);
+  });
+
+  it('does not bridge Laravel event names across namespaces', async () => {
+    write('app/AppPlaybackStarted.php', "<?php\nnamespace App\\Events;\nclass PlaybackStarted {}\n");
+    write('app/BillingPlaybackStarted.php', "<?php\nnamespace Billing\\Events;\nclass PlaybackStarted {}\n");
+    write(
+      'app/BillingListener.php',
+      `<?php
+namespace Billing\\Listeners;
+use Billing\\Events\\PlaybackStarted;
+class BillingListener {
+    public function handle(PlaybackStarted $event) {}
+}
+`
+    );
+    write(
+      'app/PlaybackController.php',
+      `<?php
+namespace App\\Http;
+use App\\Events\\PlaybackStarted;
+class PlaybackController {
+    public function play($song) {
+        event(new PlaybackStarted($song));
+    }
+}
+`
+    );
+
+    const cg = await OmniWeave.init(dir, { silent: true });
+    await cg.indexAll();
+
+    const play = cg.getNodesByKind('method').find((n) => n.name === 'play');
+    expect(play).toBeDefined();
+    expect(synthesizedEdges(cg.getOutgoingEdges(play!.id), 'laravel-event')).toHaveLength(0);
   });
 });

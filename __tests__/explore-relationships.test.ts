@@ -195,4 +195,37 @@ export function runPythonReport(name: string): string {
     expect(text).toContain('## Flow (call path among the symbols you queried)');
     expect(text).toMatch(/1\. entryPoint[\s\S]*2\. normalizeInput[\s\S]*3\. buildPayload[\s\S]*4\. sendPayload/);
   });
+
+  it('labels framework synthesized call-path hops by their real dispatch family', async () => {
+    const runWorkflow = cg.getNodesByName('runWorkflow').find((n) => n.kind === 'function');
+    const emitDone = cg.getNodesByName('emitDone').find((n) => n.kind === 'function');
+    const handleDone = cg.getNodesByName('handleDone').find((n) => n.kind === 'function');
+    expect(runWorkflow).toBeTruthy();
+    expect(emitDone).toBeTruthy();
+    expect(handleDone).toBeTruthy();
+
+    (cg as unknown as EdgeInserter).queries.insertEdge({
+      source: runWorkflow!.id,
+      target: emitDone!.id,
+      kind: 'calls',
+      line: 4,
+      provenance: 'heuristic',
+      metadata: {
+        synthesizedBy: 'sidekiq-dispatch',
+        via: 'DestroyUserWorker',
+        registeredAt: 'app/jobs/destroy_user_worker.rb:12',
+        confidence: 0.85,
+      },
+    });
+
+    const text = await cg.buildContext('runWorkflow emitDone handleDone', {
+      format: 'markdown',
+      includeCode: false,
+    }) as string;
+
+    expect(text).toContain('## Call paths');
+    expect(text).toMatch(/runWorkflow\s+.\[Sidekiq job `DestroyUserWorker` @app\/jobs\/destroy_user_worker\.rb:12\]\s+emitDone/);
+    expect(text).toContain('callback/framework');
+    expect(text).not.toContain('event  @app/jobs/destroy_user_worker.rb:12');
+  });
 });

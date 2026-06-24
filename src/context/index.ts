@@ -456,6 +456,20 @@ export class ContextBuilder {
         ? `Vuex dispatch \`${String(m.via || 'action')}\`${at}`
         : m.synthesizedBy === 'zustand-store'
         ? `Zustand action \`${String(m.via || 'action')}\`${at}`
+        : m.synthesizedBy === 'celery-dispatch'
+        ? `Celery task \`${String(m.via || 'task')}\`${at}`
+        : m.synthesizedBy === 'spring-event'
+        ? `Spring event \`${String(m.via || 'event')}\`${at}`
+        : m.synthesizedBy === 'mediatr-dispatch'
+        ? `MediatR dispatch \`${String(m.via || 'request')}\`${at}`
+        : m.synthesizedBy === 'sidekiq-dispatch'
+        ? `Sidekiq job \`${String(m.via || 'worker')}\`${at}`
+        : m.synthesizedBy === 'laravel-event'
+        ? `Laravel event \`${String(m.via || 'event')}\`${at}`
+        : m.synthesizedBy === 'redux-thunk'
+        ? `Redux thunk \`${String(m.via || 'thunk')}\`${at}`
+        : m.synthesizedBy === 'fn-pointer-dispatch'
+        ? `fn-pointer dispatch \`${String(m.via || 'slot')}\`${at}`
         : `event ${m.event ? `\`${String(m.event)}\`` : ''}${at}`;
       synthByPair.set(`${e.source}>${e.target}`, label);
     }
@@ -477,7 +491,7 @@ export class ContextBuilder {
       ...kept.map((c) => `- ${renderChain(c)}`),
       '',
       hasSynth
-        ? '_Hops marked `[callback/event …]` are dynamic dispatch bridged by omniweave (with the registration site); the rest are direct calls. omniweave_node any symbol for its body._'
+        ? '_Hops marked `[callback/framework …]` are dynamic dispatch bridged by omniweave (with the registration site); the rest are direct calls. omniweave_node any symbol for its body._'
         : '_omniweave_node any symbol above for its source + its own callers/callees._',
     ];
     return '\n' + lines.join('\n') + '\n';

@@ -115,6 +115,7 @@ function dispatcherField(src: string): string | null {
 }
 
 const FN_KINDS = new Set(['method', 'function', 'component']);
+const TYPE_CONTAINER_KINDS = new Set<NodeKind>(['class', 'struct', 'interface']);
 
 /** Innermost function/method node whose line range contains `line`. */
 function enclosingFn(nodesInFile: Node[], line: number): Node | null {
@@ -127,6 +128,60 @@ function enclosingFn(nodesInFile: Node[], line: number): Node | null {
     }
   }
   return best;
+}
+
+/** Innermost class/struct/interface node whose line range contains `line`. */
+function enclosingTypeContainer(nodesInFile: Node[], line: number): Node | null {
+  let best: Node | null = null;
+  for (const n of nodesInFile) {
+    if (!TYPE_CONTAINER_KINDS.has(n.kind)) continue;
+    const end = n.endLine ?? n.startLine;
+    if (n.startLine <= line && end >= line) {
+      if (!best || n.startLine >= best.startLine) best = n;
+    }
+  }
+  return best;
+}
+
+type StringMaskMode = 'python' | 'cStyle' | 'ruby' | 'php';
+
+function isStringLiteralMaskedAt(source: string, index: number, mode: StringMaskMode): boolean {
+  const allowSingleQuote = mode !== 'cStyle';
+  const allowBacktick = mode === 'ruby' || mode === 'php';
+  const allowTripleQuote = mode === 'python';
+  let quote: '"' | "'" | '`' | null = null;
+  let tripleQuote: '"""' | "'''" | null = null;
+
+  for (let i = 0; i < index; i++) {
+    if (tripleQuote) {
+      if (source.startsWith(tripleQuote, i)) {
+        tripleQuote = null;
+        i += 2;
+      }
+      continue;
+    }
+
+    const c = source[i]!;
+    if (quote) {
+      if (c === '\\') {
+        i++;
+        continue;
+      }
+      if (c === quote) quote = null;
+      continue;
+    }
+
+    if (allowTripleQuote && (source.startsWith('"""', i) || source.startsWith("'''", i))) {
+      tripleQuote = source.startsWith('"""', i) ? '"""' : "'''";
+      i += 2;
+      continue;
+    }
+    if (c === '"' || (allowSingleQuote && c === "'") || (allowBacktick && c === '`')) {
+      quote = c as '"' | "'" | '`';
+    }
+  }
+
+  return quote !== null || tripleQuote !== null;
 }
 
 /**
@@ -2768,6 +2823,7 @@ function celeryDispatchEdges(ctx: ResolutionContext): Edge[] {
     let m: RegExpExecArray | null;
     let added = 0;
     while ((m = CELERY_DISPATCH_RE.exec(safe)) && added < CELERY_FANOUT_CAP) {
+      if (isStringLiteralMaskedAt(safe, m.index, 'python')) continue;
       const name = m[1]!;
       const line = safe.slice(0, m.index).split('\n').length;
       const disp = enclosingFn(nodesInFile, line);
@@ -2807,6 +2863,52 @@ const SPRING_ANNO_TYPE_RE = /@(?:EventListener|TransactionalEventListener)\s*\(\
 const SPRING_APP_LISTENER_RE = /\bApplicationListener\s*</;
 const SPRING_JAVA_EXT = /\.java$/;
 const SPRING_FANOUT_CAP = 80;
+const SPRING_LISTENER_DECL_LOOKAHEAD = 8;
+
+function javaPackageName(content: string): string | null {
+  return /^\s*package\s+([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*;/m.exec(content)?.[1] ?? null;
+}
+
+function javaImports(content: string): Map<string, string> {
+  const out = new Map<string, string>();
+  const re = /^\s*import\s+(?:static\s+)?([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*;/gm;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content))) {
+    const fq = m[1]!;
+    if (fq.endsWith('.*')) continue;
+    out.set(fq.split('.').pop()!, fq);
+  }
+  return out;
+}
+
+function buildJavaTypePackages(ctx: ResolutionContext): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const node of ctx.getNodesByKind('class')) {
+    if (!SPRING_JAVA_EXT.test(node.filePath)) continue;
+    const content = ctx.readFile(node.filePath);
+    if (!content) continue;
+    const pkg = javaPackageName(content) ?? '';
+    if (!out.has(node.name)) out.set(node.name, new Set());
+    out.get(node.name)!.add(pkg);
+  }
+  return out;
+}
+
+function javaTypeKey(
+  type: string,
+  filePackage: string | null,
+  imports: Map<string, string>,
+  knownTypes: Map<string, Set<string>>
+): string | null {
+  if (type.includes('.')) return type;
+  const imported = imports.get(type);
+  if (imported) return imported;
+  const packages = knownTypes.get(type);
+  if (!packages || packages.size === 0) return type;
+  const pkg = filePackage ?? '';
+  if (packages.has(pkg)) return pkg ? `${pkg}.${type}` : type;
+  return null;
+}
 
 /** The first parameter's type from a Java method `signature` (`"void (XEvent e)"` → `XEvent`).
  *  Skips a leading `final`/`@Anno`, strips generics, and requires a PascalCase class name (event
@@ -2825,18 +2927,38 @@ function springFirstParamType(sig: string | undefined): string | null {
   return /^[A-Z][A-Za-z0-9_]*$/.test(type) ? type : null;
 }
 
+function springApplicationListenerType(
+  method: Node,
+  nodesInFile: Node[],
+  lines: string[]
+): string | null {
+  const cls = enclosingTypeContainer(nodesInFile, method.startLine);
+  if (!cls || cls.kind !== 'class') return null;
+  const decl = lines
+    .slice(cls.startLine - 1, cls.startLine - 1 + SPRING_LISTENER_DECL_LOOKAHEAD)
+    .join('\n');
+  const generic = /\bApplicationListener\s*<\s*([A-Z][A-Za-z0-9_]*)/.exec(decl)?.[1] ?? null;
+  if (!generic) return null;
+  const param = springFirstParamType(method.signature);
+  return !param || param === generic ? generic : null;
+}
+
 function springEventEdges(ctx: ResolutionContext): Edge[] {
   // Pass 1 — event-type → listener methods, scanning only event-relevant files.
   const listeners = new Map<string, Node[]>();
+  const javaTypes = buildJavaTypePackages(ctx);
   for (const file of ctx.getAllFiles()) {
     if (!SPRING_JAVA_EXT.test(file)) continue;
     const content = ctx.readFile(file);
     if (!content) continue;
+    const pkg = javaPackageName(content);
+    const imports = javaImports(content);
     const hasAnno = content.includes('@EventListener') || content.includes('@TransactionalEventListener');
     const hasAppListener = SPRING_APP_LISTENER_RE.test(content);
     if (!hasAnno && !hasAppListener) continue;
     const lines = content.split('\n');
-    for (const node of ctx.getNodesInFile(file)) {
+    const nodesInFile = ctx.getNodesInFile(file);
+    for (const node of nodesInFile) {
       if (node.kind !== 'method') continue;
       // Collect this method's own leading annotation block (consecutive `@`-lines from startLine).
       const annoLines: string[] = [];
@@ -2847,16 +2969,20 @@ function springEventEdges(ctx: ResolutionContext): Edge[] {
       }
       const head = annoLines.join('\n');
       const annotated = hasAnno && SPRING_LISTENER_ANNO_RE.test(head);
-      const isAppListener = hasAppListener && node.name === 'onApplicationEvent';
-      if (!annotated && !isAppListener) continue;
-      let type = springFirstParamType(node.signature);
+      const appListenerType = hasAppListener && node.name === 'onApplicationEvent'
+        ? springApplicationListenerType(node, nodesInFile, lines)
+        : null;
+      if (!annotated && !appListenerType) continue;
+      let type = appListenerType ?? springFirstParamType(node.signature);
       if (!type && annotated) {
         const m = SPRING_ANNO_TYPE_RE.exec(head);
         if (m) type = m[1]!;
       }
       if (!type) continue;
-      let arr = listeners.get(type);
-      if (!arr) { arr = []; listeners.set(type, arr); }
+      const key = javaTypeKey(type, pkg, imports, javaTypes);
+      if (!key) continue;
+      let arr = listeners.get(key);
+      if (!arr) { arr = []; listeners.set(key, arr); }
       arr.push(node);
     }
   }
@@ -2874,8 +3000,14 @@ function springEventEdges(ctx: ResolutionContext): Edge[] {
     SPRING_PUBLISH_RE.lastIndex = 0;
     let m: RegExpExecArray | null;
     let added = 0;
+    const pkg = javaPackageName(content);
+    const imports = javaImports(content);
     while ((m = SPRING_PUBLISH_RE.exec(safe)) && added < SPRING_FANOUT_CAP) {
-      const targets = listeners.get(m[1]!);
+      if (isStringLiteralMaskedAt(safe, m.index, 'cStyle')) continue;
+      const eventType = m[1]!;
+      const key = javaTypeKey(eventType, pkg, imports, javaTypes);
+      if (!key) continue;
+      const targets = listeners.get(key);
       if (!targets || !targets.length) continue;
       const line = safe.slice(0, m.index).split('\n').length;
       const disp = enclosingFn(nodesInFile, line);
@@ -2891,7 +3023,7 @@ function springEventEdges(ctx: ResolutionContext): Edge[] {
           kind: 'calls',
           line,
           provenance: 'heuristic',
-          metadata: { synthesizedBy: 'spring-event', via: m[1]!, confidence: 0.8, registeredAt: `${file}:${line}` },
+          metadata: { synthesizedBy: 'spring-event', via: eventType, confidence: 0.8, registeredAt: `${file}:${line}` },
         });
         added++;
       }
@@ -2912,10 +3044,58 @@ function springEventEdges(ctx: ResolutionContext): Edge[] {
 // class base-list source (`: IRequestHandler<X,…>`), not a param signature.
 const MEDIATR_HANDLER_BASE_RE = /(?:IRequestHandler|INotificationHandler)\s*<\s*([A-Za-z_]\w*)/;
 const MEDIATR_DISPATCH_RE = /([A-Za-z_][\w.]*)\s*\.\s*(?:Send|Publish)\s*\(\s*(new\s+[A-Z]\w*|[A-Za-z_]\w*)/g;
-const MEDIATR_RECEIVER_RE = /(?:mediator|sender|publisher)/i;
 const MEDIATR_CS_EXT = /\.cs$/;
 const MEDIATR_FANOUT_CAP = 80;
 const MEDIATR_HANDLER_DECL_LOOKAHEAD = 4; // lines from a class startLine to find a wrapped base list
+
+function csharpNamespaceName(content: string): string | null {
+  return /^\s*namespace\s+([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*[;{]/m.exec(content)?.[1] ?? null;
+}
+
+function csharpImports(content: string): Map<string, string> {
+  const out = new Map<string, string>();
+  const re = /^\s*using\s+(?:[A-Za-z_]\w*\s*=\s*)?([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*;/gm;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content))) {
+    const fq = m[1]!;
+    out.set(fq.split('.').pop()!, fq);
+  }
+  return out;
+}
+
+function buildCsharpTypeNamespaces(ctx: ResolutionContext): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const node of ctx.getNodesByKind('class')) {
+    if (!MEDIATR_CS_EXT.test(node.filePath)) continue;
+    const content = ctx.readFile(node.filePath);
+    if (!content) continue;
+    const ns = csharpNamespaceName(content) ?? '';
+    if (!out.has(node.name)) out.set(node.name, new Set());
+    out.get(node.name)!.add(ns);
+  }
+  return out;
+}
+
+function csharpTypeKey(
+  type: string,
+  fileNamespace: string | null,
+  imports: Map<string, string>,
+  knownTypes: Map<string, Set<string>>
+): string | null {
+  if (type.includes('.')) return type;
+  const imported = imports.get(type);
+  if (imported) return imported;
+  const namespaces = knownTypes.get(type);
+  if (!namespaces || namespaces.size === 0) return type;
+  const ns = fileNamespace ?? '';
+  if (namespaces.has(ns)) return ns ? `${ns}.${type}` : type;
+  return null;
+}
+
+function isMediatrReceiver(receiver: string): boolean {
+  const last = receiver.split('.').pop() ?? receiver;
+  return /^(?:_?mediator|_?sender|_?publisher)$/i.test(last);
+}
 
 /** The type sent at a MediatR `.Send(arg)`/`.Publish(arg)` site: an inline `new X(…)`, else
  *  `arg` as an identifier resolved within the enclosing method — a `… arg = new X(…)` assignment
@@ -2942,10 +3122,13 @@ function resolveMediatrArgType(arg: string, lines: string[], methodStart: number
 function mediatrDispatchEdges(ctx: ResolutionContext): Edge[] {
   // Pass 1 — request/notification type → the Handle method of each handler class.
   const handlers = new Map<string, Node[]>();
+  const csharpTypes = buildCsharpTypeNamespaces(ctx);
   for (const file of ctx.getAllFiles()) {
     if (!MEDIATR_CS_EXT.test(file)) continue;
     const content = ctx.readFile(file);
     if (!content || (!content.includes('IRequestHandler<') && !content.includes('INotificationHandler<'))) continue;
+    const ns = csharpNamespaceName(content);
+    const imports = csharpImports(content);
     const lines = content.split('\n');
     const nodesInFile = ctx.getNodesInFile(file);
     for (const cls of nodesInFile) {
@@ -2953,7 +3136,8 @@ function mediatrDispatchEdges(ctx: ResolutionContext): Edge[] {
       const decl = lines.slice(cls.startLine - 1, cls.startLine - 1 + MEDIATR_HANDLER_DECL_LOOKAHEAD).join('\n');
       const m = MEDIATR_HANDLER_BASE_RE.exec(decl);
       if (!m) continue;
-      const type = m[1]!;
+      const type = csharpTypeKey(m[1]!, ns, imports, csharpTypes);
+      if (!type) continue;
       const end = cls.endLine ?? cls.startLine;
       const handle = nodesInFile.find(
         (n) => n.kind === 'method' && n.name === 'Handle' && n.startLine >= cls.startLine && n.startLine <= end
@@ -2979,12 +3163,17 @@ function mediatrDispatchEdges(ctx: ResolutionContext): Edge[] {
     MEDIATR_DISPATCH_RE.lastIndex = 0;
     let m: RegExpExecArray | null;
     let added = 0;
+    const ns = csharpNamespaceName(content);
+    const imports = csharpImports(content);
     while ((m = MEDIATR_DISPATCH_RE.exec(safe)) && added < MEDIATR_FANOUT_CAP) {
-      if (!MEDIATR_RECEIVER_RE.test(m[1]!)) continue; // not a mediator (MessagingCenter, HttpClient, …)
+      if (isStringLiteralMaskedAt(safe, m.index, 'cStyle')) continue;
+      if (!isMediatrReceiver(m[1]!)) continue; // not a mediator (emailSender, MessagingCenter, HttpClient, ...)
       const line = safe.slice(0, m.index).split('\n').length;
       const disp = enclosingFn(nodesInFile, line);
       if (!disp) continue;
-      const type = resolveMediatrArgType(m[2]!, safeLines, disp.startLine, line);
+      const rawType = resolveMediatrArgType(m[2]!, safeLines, disp.startLine, line);
+      if (!rawType) continue;
+      const type = csharpTypeKey(rawType, ns, imports, csharpTypes);
       if (!type) continue;
       const targets = handlers.get(type);
       if (!targets) continue;
@@ -2999,7 +3188,7 @@ function mediatrDispatchEdges(ctx: ResolutionContext): Edge[] {
           kind: 'calls',
           line,
           provenance: 'heuristic',
-          metadata: { synthesizedBy: 'mediatr-dispatch', via: type, confidence: 0.8, registeredAt: `${file}:${line}` },
+          metadata: { synthesizedBy: 'mediatr-dispatch', via: rawType, confidence: 0.8, registeredAt: `${file}:${line}` },
         });
         added++;
       }
@@ -3050,7 +3239,7 @@ function sidekiqDispatchEdges(ctx: ResolutionContext): Edge[] {
   const resolve = (ref: string): Node | null => {
     if (ref.includes('::')) {
       const q = ctx.getNodesByQualifiedName(ref).find((n) => n.kind === 'class' && performOf(n));
-      if (q) return performOf(q);
+      return q ? performOf(q) : null;
     }
     const workers = ctx.getNodesByName(ref.split('::').pop()!).filter((n) => n.kind === 'class' && performOf(n));
     return workers.length === 1 ? performOf(workers[0]!) : null;
@@ -3068,6 +3257,7 @@ function sidekiqDispatchEdges(ctx: ResolutionContext): Edge[] {
     let m: RegExpExecArray | null;
     let added = 0;
     while ((m = SIDEKIQ_DISPATCH_RE.exec(safe)) && added < SIDEKIQ_FANOUT_CAP) {
+      if (isStringLiteralMaskedAt(safe, m.index, 'ruby')) continue;
       const line = safe.slice(0, m.index).split('\n').length;
       const disp = enclosingFn(nodesInFile, line);
       if (!disp) continue;
@@ -3112,16 +3302,59 @@ function phpSimpleName(s: string): string {
   return s.replace(/^\\/, '').split('\\').pop()!.split('::').pop()!.trim();
 }
 
-/** The first-parameter class type(s) of a `handle(...)` declaration — union-split, short-named,
+function phpNamespaceName(content: string): string | null {
+  return /^\s*namespace\s+([^;{]+)\s*[;{]/m.exec(content)?.[1]?.trim().replace(/^\\/, '') ?? null;
+}
+
+function phpImports(content: string): Map<string, string> {
+  const out = new Map<string, string>();
+  const re = /^\s*use\s+(?!function\b|const\b)([^;]+);/gm;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content))) {
+    const raw = m[1]!.trim().replace(/^\\/, '');
+    const aliasMatch = /\s+as\s+([A-Za-z_]\w*)$/i.exec(raw);
+    const fq = raw.replace(/\s+as\s+[A-Za-z_]\w*$/i, '').trim();
+    const simple = aliasMatch?.[1] ?? phpSimpleName(fq);
+    out.set(simple, fq);
+  }
+  return out;
+}
+
+function phpTypeKey(ref: string, namespaceName: string | null, imports: Map<string, string>): string | null {
+  const trimmed = ref.trim();
+  if (!trimmed) return null;
+  const withoutNullable = trimmed.replace(/^\?/, '').replace(/^\\/, '');
+  if (!withoutNullable || /^(?:array|bool|callable|float|int|iterable|mixed|object|self|string|void)$/i.test(withoutNullable)) {
+    return null;
+  }
+  if (withoutNullable.includes('\\')) return withoutNullable;
+  const imported = imports.get(withoutNullable);
+  if (imported) return imported;
+  return namespaceName ? `${namespaceName}\\${withoutNullable}` : withoutNullable;
+}
+
+function buildPhpClassIndex(ctx: ResolutionContext): Map<string, Node> {
+  const out = new Map<string, Node>();
+  for (const node of ctx.getNodesByKind('class')) {
+    if (!LARAVEL_PHP_EXT.test(node.filePath)) continue;
+    const content = ctx.readFile(node.filePath);
+    if (!content) continue;
+    const ns = phpNamespaceName(content);
+    const key = ns ? `${ns}\\${node.name}` : node.name;
+    if (!out.has(key)) out.set(key, node);
+  }
+  return out;
+}
+
+/** The first-parameter class type(s) of a `handle(...)` declaration — union-split,
  *  primitives dropped. `handle(A|B $e)` → [A, B]; `handle(string $x)` / `handle()` → []. */
-function laravelHandleEventTypes(decl: string): string[] {
+function laravelHandleEventTypeRefs(decl: string): string[] {
   const m = /function\s+handle\s*\(\s*(?:\.\.\.\s*)?(\??[A-Za-z_\\][\w\\|]*)\s+&?\s*(?:\.\.\.\s*)?\$/.exec(decl);
   if (!m) return [];
   return m[1]!
-    .replace(/^\?/, '')
     .split('|')
-    .map((t) => phpSimpleName(t))
-    .filter((t) => /^[A-Z]\w*$/.test(t));
+    .map((t) => t.trim())
+    .filter((t) => /^[\\?]?[A-Z_][A-Za-z0-9_\\]*$/.test(t));
 }
 
 /** From an opening `[`, the bracket-balanced body up to its matching `]`. */
@@ -3135,8 +3368,10 @@ function phpArrayBody(src: string, openIdx: number): string | null {
 }
 
 function laravelEventEdges(ctx: ResolutionContext): Edge[] {
-  // event short name → its listener `handle` methods (deduped by node id).
+  // event type key (FQCN when provable, simple name only in namespace-less fixtures)
+  // → its listener `handle` methods (deduped by node id).
   const listeners = new Map<string, Map<string, Node>>();
+  const phpClasses = buildPhpClassIndex(ctx);
   const add = (event: string, handle: Node) => {
     let m = listeners.get(event);
     if (!m) { m = new Map(); listeners.set(event, m); }
@@ -3155,6 +3390,8 @@ function laravelEventEdges(ctx: ResolutionContext): Edge[] {
     if (!LARAVEL_PHP_EXT.test(file)) continue;
     const content = ctx.readFile(file);
     if (!content) continue;
+    const namespaceName = phpNamespaceName(content);
+    const imports = phpImports(content);
 
     // (A) typed listener handles — node-driven, so a commented-out method can't leak in.
     if (content.includes('function handle')) {
@@ -3162,7 +3399,10 @@ function laravelEventEdges(ctx: ResolutionContext): Edge[] {
       for (const node of ctx.getNodesInFile(file)) {
         if (node.kind !== 'method' || node.name !== 'handle') continue;
         const decl = lines.slice(node.startLine - 1, node.startLine + 2).join('\n');
-        for (const ev of laravelHandleEventTypes(decl)) add(ev, node);
+        for (const ev of laravelHandleEventTypeRefs(decl)) {
+          const key = phpTypeKey(ev, namespaceName, imports);
+          if (key) add(key, node);
+        }
       }
     }
 
@@ -3176,12 +3416,17 @@ function laravelEventEdges(ctx: ResolutionContext): Edge[] {
         LISTEN_ENTRY_RE.lastIndex = 0;
         let em: RegExpExecArray | null;
         while ((em = LISTEN_ENTRY_RE.exec(body))) {
-          const event = phpSimpleName(em[1] ?? em[2] ?? em[3] ?? '');
+          const rawEvent = em[1] ?? em[2] ?? em[3] ?? '';
+          const event = phpTypeKey(rawEvent, namespaceName, imports);
+          if (!event) continue;
           LISTEN_CLASS_RE.lastIndex = 0;
           let lm: RegExpExecArray | null;
           while ((lm = LISTEN_CLASS_RE.exec(em[4]!))) {
-            const ln = phpSimpleName(lm[1] ?? lm[2] ?? lm[3] ?? '');
-            const cls = ctx.getNodesByName(ln).find((n) => n.kind === 'class' && handleOf(n));
+            const rawListener = lm[1] ?? lm[2] ?? lm[3] ?? '';
+            const listenerKey = phpTypeKey(rawListener, namespaceName, imports);
+            const cls = listenerKey
+              ? phpClasses.get(listenerKey)
+              : ctx.getNodesByName(phpSimpleName(rawListener)).find((n) => n.kind === 'class' && handleOf(n));
             if (cls) add(event, handleOf(cls)!);
           }
         }
@@ -3199,11 +3444,16 @@ function laravelEventEdges(ctx: ResolutionContext): Edge[] {
     if (!content || !content.includes('event(')) continue;
     const safe = stripCommentsForRegex(content, 'php');
     const nodesInFile = ctx.getNodesInFile(file);
+    const namespaceName = phpNamespaceName(content);
+    const imports = phpImports(content);
     LARAVEL_DISPATCH_RE.lastIndex = 0;
     let m: RegExpExecArray | null;
     let added = 0;
     while ((m = LARAVEL_DISPATCH_RE.exec(safe)) && added < LARAVEL_FANOUT_CAP) {
-      const targets = listeners.get(phpSimpleName(m[1]!));
+      if (isStringLiteralMaskedAt(safe, m.index, 'php')) continue;
+      const eventKey = phpTypeKey(m[1]!, namespaceName, imports);
+      if (!eventKey) continue;
+      const targets = listeners.get(eventKey);
       if (!targets) continue;
       const line = safe.slice(0, m.index).split('\n').length;
       const disp = enclosingFn(nodesInFile, line);
@@ -3255,6 +3505,7 @@ function reduxThunkEdges(queries: QueryBuilder, ctx: ResolutionContext): Edge[] 
     let m: RegExpExecArray | null;
     let added = 0;
     while ((m = THUNK_DISPATCH_RE.exec(safe)) && added < THUNK_FANOUT_CAP) {
+      if (isJsLikeMaskedAt(src, m.index)) continue;
       const name = m[1]!;
       if (name === node.name) continue; // self-dispatch (recursive thunk) — skip
       const targets = ctx
