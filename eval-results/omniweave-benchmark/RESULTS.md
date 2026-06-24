@@ -53,12 +53,17 @@ different root cause — a Kotlin property name nests
 generic variable/field path could not read, so class/object properties were
 dropped — and was fixed the same way (a `kotlin.ts` `visitNode` that emits the
 property as `field`/`constant`/`variable` by enclosing scope), closing it from
-**−429 to exactly 0** (9310 = 9310). After both fixes **OmniWeave ties or exceeds
-codegraph on node extraction across all 14 languages.** The broader lesson,
-recorded openly: OmniWeave's fork had drifted behind upstream on a few
-*extraction-breadth* improvements; maintaining "OmniWeave ≥ codegraph everywhere"
-requires periodically syncing upstream's safe, additive wins — which this
-benchmark surfaced and these two commits closed.
+**−429 to exactly 0** (9310 = 9310). After these fixes (Swift, Kotlin, and the
+Ruby row below) **OmniWeave ties codegraph exactly on 11 of 14 languages**; the
+three residuals are long-tail fork drift of **≤7 nodes each** — SwiftPM
+`Package.swift` manifest constants + two edge-case `let`s (swift, −7), `#define`
+macros + test-harness globals (c, −4), and Next.js app-router `route` / React
+`component` nodes from an embedded docs app (ts, −3) — none a systematic
+capability gap. The broader lesson, recorded openly: OmniWeave's fork had drifted
+behind upstream on a few *extraction-breadth* improvements; maintaining
+"OmniWeave ≥ codegraph everywhere" requires periodically syncing upstream's safe,
+additive wins — which this benchmark surfaced and three commits (the systematic
+−715 / −429 / −49 gaps) closed.
 
 The same audit closed the Ruby row as well: class/module constants parse with a
 `constant` left-hand side (`API_VERSION = "v1"`), not an `identifier`, so they had
