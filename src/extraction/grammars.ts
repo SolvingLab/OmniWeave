@@ -255,13 +255,6 @@ export async function loadAllGrammars(): Promise<void> {
 }
 
 /**
- * Check if grammars have been initialized
- */
-export function isGrammarsInitialized(): boolean {
-  return parserInitialized;
-}
-
-/**
  * Get a parser for the specified language.
  * Returns synchronously from pre-loaded cache.
  */
@@ -408,45 +401,4 @@ export function getUnavailableGrammarErrors(): Partial<Record<Language, string>>
     out[language] = message;
   }
   return out;
-}
-
-/**
- * Get language display name
- */
-export function getLanguageDisplayName(language: Language): string {
-  const names: Record<Language, string> = {
-    typescript: 'TypeScript',
-    javascript: 'JavaScript',
-    tsx: 'TypeScript (TSX)',
-    jsx: 'JavaScript (JSX)',
-    python: 'Python',
-    go: 'Go',
-    rust: 'Rust',
-    r: 'R',
-    java: 'Java',
-    c: 'C',
-    cpp: 'C++',
-    csharp: 'C#',
-    razor: 'Razor/Blazor',
-    php: 'PHP',
-    ruby: 'Ruby',
-    swift: 'Swift',
-    kotlin: 'Kotlin',
-    dart: 'Dart',
-    svelte: 'Svelte',
-    vue: 'Vue',
-    astro: 'Astro',
-    liquid: 'Liquid',
-    pascal: 'Pascal / Delphi',
-    scala: 'Scala',
-    lua: 'Lua',
-    luau: 'Luau',
-    objc: 'Objective-C',
-    yaml: 'YAML',
-    twig: 'Twig',
-    xml: 'XML',
-    properties: 'Java properties',
-    unknown: 'Unknown',
-  };
-  return names[language] || language;
 }
