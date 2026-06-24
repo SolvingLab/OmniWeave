@@ -133,6 +133,35 @@ OmniweAVE, not the content question.)
   true ceiling of the gap is *un-measured here*. That, plus widening to the other four war-plan
   repos and a stronger model, is the honest next experiment before the route is settled.
 
+## Widening — repo 2: excalidraw (TypeScript), natural mode
+
+A second, different-stack repo (excalidraw @ `0642e72c`, indexed to 645 files / OmniWeave
+10,303 vs codegraph 10,271 nodes — OW ≥ CG) with its own GT-locked bank
+(`questions-excalidraw.json`: 2 `extends` structural + 2 string-literal content, every GT
+grep-verified file-unique). 24 runs, **0 INVALID**.
+
+| Question | axis | omniweave | codegraph | grep |
+|---|---|---|---|---|
+| S1-extends (CanvasError→Error) | structural | 100%✓ 2.0t | 100%✓ 2.0t | 100%✓ 1.5t |
+| S2-extends (AbortError→DOMException) | structural | 100%✓ 1.5t | 100%✓ 2.0t | 100%✓ 1.5t |
+| C1-literal ("Couldn't export canvas."→errors.ts) | content | 100%✓ 1.5t | 100%✓ 1.5t | 100%✓ 1.0t |
+| C2-literal (i18n string→en.json) | content | 100%✓ **8.5t / 17.5τ** | 100%✓ 4.0t | 100%✓ **2.0t / 8.0τ** |
+
+**Confirms django, and sharpens the economy claim with the case django lacked.** Correctness
+ties 24/24 across both stacks. C1 (a string in `errors.ts`, *symbol-correlated*) ties cheaply
+like django — the structural graph reaches it by proximity. **C2 is the symbol-UNcorrelated case
+django never tested: a UI string living in a JSON i18n file with no symbols.** There the
+structural-only OmniWeave arm paid **8.5 tool-calls / 17.5 turns vs grep's 2.0 / 8.0** — it
+flailed against a JSON value the graph is blind to before falling back to grep, **>4× the tool
+cost, still 100% correct.** This is precisely the economy `content_fts` would recover (cut C2's
+~8 calls to ~2): the gap is real and measurable, concentrated exactly where the structural index
+has no symbol — and it remains an *economy* delta at *equal correctness*, never an outcome win.
+
+**Two-repo verdict:** the content-index route is **economy (60–70%), not outcome (10–20%)**,
+now confirmed across Python and TypeScript; the economy value is **largest for non-symbol
+content** (JSON/i18n/config), which is the honest reason to build `content_fts` — and the honest
+reason never to call it "more correct."
+
 ## Reproduce
 
 ```bash

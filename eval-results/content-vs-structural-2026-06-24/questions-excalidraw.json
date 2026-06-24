@@ -1,0 +1,42 @@
+[
+  {
+    "id": "S1-extends",
+    "axis": "structural",
+    "subtype": "extends",
+    "question": "In this excalidraw source tree, what is the direct base class of the class `CanvasError`? Answer with just the base class name.",
+    "groundTruth": "Error",
+    "gtRegex": "\\bError\\b",
+    "gtSource": "packages/excalidraw/errors.ts:3  `export class CanvasError extends Error {`",
+    "rationale": "Structural extends edge (different stack from django — TypeScript). gtRegex matches a standalone 'Error', not the substring inside 'CanvasError'."
+  },
+  {
+    "id": "S2-extends",
+    "axis": "structural",
+    "subtype": "extends",
+    "question": "In this excalidraw source tree, what is the direct base class of the class `AbortError`? Answer with just the base class name.",
+    "groundTruth": "DOMException",
+    "gtRegex": "DOMException",
+    "gtSource": "packages/excalidraw/errors.ts:14  `export class AbortError extends DOMException {`",
+    "rationale": "Structural extends to a built-in (DOMException) — a base the graph records but grep also finds at the class def."
+  },
+  {
+    "id": "C1-literal",
+    "axis": "content",
+    "subtype": "literal-string",
+    "question": "In this excalidraw source tree, which SOURCE file contains the literal default error message \"Couldn't export canvas.\"? Answer with the file path.",
+    "groundTruth": "packages/excalidraw/errors.ts",
+    "gtRegex": "errors\\.ts",
+    "gtSource": "packages/excalidraw/errors.ts:4 (CanvasError default message) — verified file-unique (grep: only errors.ts).",
+    "rationale": "Pure content: a string literal default-parameter value, not a symbol. Symbol-correlated (lives near *Error symbols), like django C1 — the structural graph can still reach it by proximity."
+  },
+  {
+    "id": "C2-literal",
+    "axis": "content",
+    "subtype": "literal-string",
+    "question": "In this excalidraw source tree, which file contains the exact English UI string \"Couldn't create shareable link: the scene is too big\"? Answer with the file path.",
+    "groundTruth": "packages/excalidraw/locales/en.json",
+    "gtRegex": "locales/en\\.json|en\\.json",
+    "gtSource": "packages/excalidraw/locales/en.json:263 — verified file-unique (the English text is only in en.json; other locales carry translations).",
+    "rationale": "Pure content in a NON-code file (i18n JSON). Less symbol-correlated than C1 — the structural graph has no symbols for a JSON value, so this is the closer test of the genuine content gap."
+  }
+]
