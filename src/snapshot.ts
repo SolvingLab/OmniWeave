@@ -6,7 +6,7 @@ import { createDirectory, getOmniWeaveDir, isInitialized, unsafeIndexRootReason,
 import { DatabaseConnection, getDatabasePath, type SqliteDatabase } from './db';
 import { CURRENT_SCHEMA_VERSION } from './db/migrations';
 import { QueryBuilder } from './db/queries';
-import { detectLanguage, scanDirectory } from './extraction';
+import { detectLanguage, readContentOnlySearchFile, scanContentSearchFiles, scanDirectory, shouldIndexRawContent } from './extraction';
 import { loadExtensionOverrides } from './project-config';
 import { SNAPSHOT_IMPORT_METADATA_KEYS } from './snapshot-metadata';
 import { FileLock, validatePathWithinRoot } from './utils';
@@ -725,7 +725,7 @@ function validateStagedSnapshotDatabase(
     validateSnapshotDatabasePragmas(conn.getDb(), errors);
     validateSnapshotSqliteSchema(conn.getDb(), errors);
     validateSnapshotIndexedPathMembership(conn.getDb(), errors);
-    validateSnapshotContentIndexMatchesFiles(conn.getDb(), errors);
+    validateSnapshotContentIndex(conn.getDb(), errors, targetRoot);
     validateSnapshotGraphText(conn.getDb(), errors);
     if (targetRoot) {
       validateSnapshotTargetImportPolicy(targetRoot, conn.getDb(), errors);
@@ -832,6 +832,7 @@ function validateStagedSnapshotTargetImportPolicy(
   try {
     conn = DatabaseConnection.open(databasePath, { migrate: false, readOnly: true });
     validateSnapshotTargetImportPolicy(targetRoot, conn.getDb(), errors);
+    validateSnapshotContentIndex(conn.getDb(), errors, targetRoot);
   } catch (err) {
     errors.push(`Snapshot target import policy failed: ${err instanceof Error ? err.message : String(err)}`);
   } finally {
@@ -933,7 +934,6 @@ function validateSnapshotSqliteSchema(db: SqliteDatabase, errors: string[]): voi
 }
 
 function validateSnapshotIndexedPathMembership(db: SqliteDatabase, errors: string[]): void {
-  validateSnapshotPathMembership(db, 'content_fts', 'path', 'content_fts.path', errors);
   validateSnapshotPathMembership(db, 'nodes', 'file_path', 'nodes.file_path', errors);
   validateSnapshotPathMembership(db, 'unresolved_refs', 'file_path', 'unresolved_refs.file_path', errors);
 }
@@ -967,30 +967,67 @@ function validateSnapshotPathMembership(
   }
 }
 
-function validateSnapshotContentIndexMatchesFiles(db: SqliteDatabase, errors: string[]): void {
-  let rows: Array<{ path: unknown; content: unknown; contentHash: unknown }>;
+function validateSnapshotContentIndex(db: SqliteDatabase, errors: string[], targetRoot?: string): void {
+  let rows: Array<{ path: unknown; content: unknown; contentHash: unknown; language: unknown }>;
   try {
     rows = db.prepare(`
-      SELECT content_fts.path AS path, content_fts.content AS content, files.content_hash AS contentHash
+      SELECT content_fts.path AS path, content_fts.content AS content, files.content_hash AS contentHash, files.language AS language
       FROM content_fts
       LEFT JOIN files ON files.path = content_fts.path
-    `).all() as Array<{ path: unknown; content: unknown; contentHash: unknown }>;
+    `).all() as Array<{ path: unknown; content: unknown; contentHash: unknown; language: unknown }>;
   } catch (err) {
     errors.push(`Snapshot database cannot validate content_fts hashes: ${err instanceof Error ? err.message : String(err)}`);
     return;
   }
 
-  const mismatches: string[] = [];
+  const sourceMismatches: string[] = [];
+  const unsafeSourcePaths: string[] = [];
+  const targetMismatches: string[] = [];
+  const invalidTargetPaths: string[] = [];
+  const targetContentPaths = targetRoot ? new Set(scanContentSearchFiles(targetRoot)) : null;
+  const targetSourcePaths = targetRoot ? new Set(scanDirectory(targetRoot)) : null;
+
   for (const row of rows) {
-    if (typeof row.path !== 'string' || typeof row.contentHash !== 'string') {
+    if (typeof row.path !== 'string' || typeof row.content !== 'string') {
       continue;
     }
-    if (typeof row.content !== 'string' || hashContent(row.content) !== row.contentHash) {
-      mismatches.push(displayPathValue(row.path));
+    if (typeof row.contentHash === 'string') {
+      if (!shouldIndexRawContent(row.path, typeof row.language === 'string' ? row.language : undefined)) {
+        unsafeSourcePaths.push(displayPathValue(row.path));
+        continue;
+      }
+      if (hashContent(row.content) !== row.contentHash) {
+        sourceMismatches.push(displayPathValue(row.path));
+      }
+      continue;
+    }
+    if (!targetRoot || !targetContentPaths || !targetSourcePaths) {
+      continue;
+    }
+    if (targetSourcePaths.has(row.path) || !targetContentPaths.has(row.path)) {
+      invalidTargetPaths.push(displayPathValue(row.path));
+      continue;
+    }
+    const targetContent = readContentOnlySearchFile(targetRoot, row.path);
+    if (targetContent === null) {
+      invalidTargetPaths.push(displayPathValue(row.path));
+      continue;
+    }
+    if (hashContent(targetContent) !== hashContent(row.content)) {
+      targetMismatches.push(displayPathValue(row.path));
     }
   }
-  if (mismatches.length > 0) {
-    errors.push(`Snapshot database contains content_fts rows whose content does not match files.content_hash: ${summarizePaths(mismatches)}`);
+  if (sourceMismatches.length > 0) {
+    errors.push(`Snapshot database contains source content_fts rows whose content does not match files.content_hash: ${summarizePaths(sourceMismatches)}`);
+  }
+  if (unsafeSourcePaths.length > 0) {
+    errors.push(`Snapshot database contains source content_fts paths that are not safe for raw-content indexing: ${summarizePaths(unsafeSourcePaths)}`);
+  }
+  if (invalidTargetPaths.length > 0) {
+    errors.push(`Snapshot database contains content_fts paths that are neither indexed source files nor target content-search files: ${summarizePaths(invalidTargetPaths)}`);
+  }
+  if (targetMismatches.length > 0) {
+    errors.push(`Snapshot database contains content_fts rows whose content does not match the target file bytes: ${summarizePaths(targetMismatches)}`);
   }
 }
 

@@ -33,10 +33,24 @@ function writeProject(root: string, content = SOURCE): void {
   fs.writeFileSync(path.join(root, 'src', 'index.ts'), content);
 }
 
+function writeLocale(root: string, content = '{"wireframeToCode":"Wireframe to code"}\n'): void {
+  fs.mkdirSync(path.join(root, 'locales'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'locales', 'en.json'), content);
+}
+
 async function indexProject(root: string): Promise<void> {
   const cg = OmniWeave.initSync(root);
   await cg.indexAll();
   cg.destroy();
+}
+
+async function reindexProject(root: string): Promise<void> {
+  const cg = OmniWeave.openSync(root);
+  try {
+    await cg.indexAll();
+  } finally {
+    cg.destroy();
+  }
 }
 
 function refreshSnapshotDatabaseManifest(outputDir: string): void {
@@ -315,6 +329,87 @@ describe('snapshot import and verify', () => {
     } finally {
       cg.destroy();
     }
+  });
+
+  it('imports content-only search rows only when target bytes match', async () => {
+    writeLocale(sourceRoot);
+    writeLocale(targetRoot);
+    await reindexProject(sourceRoot);
+    await exportSnapshot(sourceRoot, outputDir, {
+      force: true,
+      omniweaveVersion: '9.9.9-test',
+      omniweaveBuildFingerprint: '9.9.9-test+buildabc',
+    });
+
+    const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+    expect(verification.ok).toBe(true);
+
+    await importSnapshot(outputDir, targetRoot);
+    const cg = OmniWeave.openSync(targetRoot);
+    try {
+      expect(cg.searchContent('Wireframe to code', 10).results.map((r) => r.path)).toEqual(['locales/en.json']);
+    } finally {
+      cg.destroy();
+    }
+  });
+
+  it('rejects forged content-only search rows that differ from target bytes', async () => {
+    writeLocale(sourceRoot);
+    writeLocale(targetRoot);
+    await reindexProject(sourceRoot);
+    await exportSnapshot(sourceRoot, outputDir, {
+      force: true,
+      omniweaveVersion: '9.9.9-test',
+      omniweaveBuildFingerprint: '9.9.9-test+buildabc',
+    });
+
+    const conn = DatabaseConnection.open(path.join(outputDir, SNAPSHOT_DATABASE_FILENAME));
+    try {
+      conn.getDb().prepare('DELETE FROM content_fts WHERE path = ?').run('locales/en.json');
+      conn.getDb().prepare(
+        'INSERT INTO content_fts (path, content) VALUES (?, ?)'
+      ).run('locales/en.json', '{"wireframeToCode":"Injected text"}\n');
+      conn.getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      conn.close();
+    }
+    refreshSnapshotDatabaseManifest(outputDir);
+
+    const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+
+    expect(verification.ok).toBe(false);
+    expect(verification.errors.join('\n')).toContain('content_fts rows whose content does not match the target file bytes');
+    await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
+    expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+  });
+
+  it('rejects content-only snapshot rows for sensitive target paths even when bytes match', async () => {
+    writeLocale(sourceRoot);
+    fs.writeFileSync(path.join(targetRoot, 'api-key.txt'), 'SECRET=sk-live-snapshot\n');
+    await reindexProject(sourceRoot);
+    await exportSnapshot(sourceRoot, outputDir, {
+      force: true,
+      omniweaveVersion: '9.9.9-test',
+      omniweaveBuildFingerprint: '9.9.9-test+buildabc',
+    });
+
+    const conn = DatabaseConnection.open(path.join(outputDir, SNAPSHOT_DATABASE_FILENAME));
+    try {
+      conn.getDb().prepare(
+        'INSERT INTO content_fts (path, content) VALUES (?, ?)'
+      ).run('api-key.txt', 'SECRET=sk-live-snapshot\n');
+      conn.getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      conn.close();
+    }
+    refreshSnapshotDatabaseManifest(outputDir);
+
+    const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+
+    expect(verification.ok).toBe(false);
+    expect(verification.errors.join('\n')).toContain('content_fts paths that are neither indexed source files nor target content-search files');
+    await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
+    expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
   });
 
   it('full reindex after source deletion removes imported snapshot facts and clears the warning', async () => {
@@ -721,7 +816,7 @@ describe('snapshot import and verify', () => {
     const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
 
     expect(verification.ok).toBe(false);
-    expect(verification.errors.join('\n')).toContain('content_fts.path values not present in files.path');
+    expect(verification.errors.join('\n')).toContain('content_fts paths that are neither indexed source files nor target content-search files');
     await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
     expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
   });
@@ -744,7 +839,7 @@ describe('snapshot import and verify', () => {
     const errors = verification.errors.join('\n');
 
     expect(verification.ok).toBe(false);
-    expect(errors).toContain('content_fts rows whose content does not match files.content_hash');
+    expect(errors).toContain('source content_fts rows whose content does not match files.content_hash');
     expect(errors).toContain('src/index.ts');
     expect(errors).not.toContain('```');
     expect(errors).not.toContain('ignore previous instructions');

@@ -51,6 +51,101 @@ describe('content_fts (raw file-content search)', () => {
     cg.close?.();
   });
 
+  it('indexes selected non-source text files without indexing secret-prone config values', async () => {
+    fs.mkdirSync(path.join(dir, 'locales'), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'secrets'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'locales', 'en.json'), '{"wireframeToCode":"Wireframe to code"}\n');
+    fs.writeFileSync(path.join(dir, 'README.md'), '# Wireframe to code in docs\n');
+    fs.writeFileSync(path.join(dir, '.env'), 'SECRET=sk-live-DO-NOT-LEAK\n');
+    fs.writeFileSync(path.join(dir, '.envrc'), 'export SECRET=sk-live-DO-NOT-LEAK\n');
+    fs.writeFileSync(path.join(dir, 'prod.env.txt'), 'SECRET=sk-live-DO-NOT-LEAK\n');
+    fs.writeFileSync(path.join(dir, 'api-key.txt'), 'SECRET=sk-live-DO-NOT-LEAK\n');
+    fs.writeFileSync(path.join(dir, 'private_key.md'), 'SECRET=sk-live-DO-NOT-LEAK\n');
+    fs.writeFileSync(path.join(dir, 'id_rsa.txt'), 'SECRET=sk-live-DO-NOT-LEAK\n');
+    fs.writeFileSync(path.join(dir, 'service-account.md'), 'SECRET=sk-live-DO-NOT-LEAK\n');
+    fs.writeFileSync(path.join(dir, 'secrets', 'README.md'), 'SECRET=sk-live-DO-NOT-LEAK\n');
+    fs.writeFileSync(path.join(dir, 'application.yml'), 'spring:\n  datasource:\n    password: sk-live-DO-NOT-LEAK\n');
+
+    const cg = await OmniWeave.init(dir, { silent: true });
+    await cg.indexAll();
+
+    expect(cg.searchContent('Wireframe to code', 10).results.map((r) => r.path).sort()).toEqual([
+      'README.md',
+      'locales/en.json',
+    ]);
+    expect(cg.searchContent('sk-live-DO-NOT-LEAK', 10).results).toEqual([]);
+
+    cg.close?.();
+  });
+
+  it('does not follow content-only symlinks outside the project root', async () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'content-fts-outside-'));
+    try {
+      fs.writeFileSync(path.join(outside, 'outside-secret.md'), '# outside raw-content marker\n');
+      fs.symlinkSync(path.join(outside, 'outside-secret.md'), path.join(dir, 'README.md'));
+
+      const cg = await OmniWeave.init(dir, { silent: true });
+      await cg.indexAll();
+
+      expect(cg.searchContent('outside raw-content marker', 10).results).toEqual([]);
+
+      cg.close?.();
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('does not index invalid UTF-8 content-only text files', async () => {
+    fs.writeFileSync(path.join(dir, 'README.md'), Buffer.from([0xff, 0xfe, 0xfd, 0x20, 0x61, 0x62, 0x63]));
+
+    const cg = await OmniWeave.init(dir, { silent: true });
+    await cg.indexAll();
+
+    expect(cg.contentIndexFileCount()).toBe(0);
+
+    cg.close?.();
+  });
+
+  it('purges legacy unsafe source content rows during ordinary sync', async () => {
+    const secret = 'legacy-raw-config-secret';
+    fs.writeFileSync(path.join(dir, 'application.properties'), `spring.datasource.password=${secret}\n`);
+
+    const cg = await OmniWeave.init(dir, { silent: true });
+    await cg.indexAll();
+    const raw = cg as unknown as {
+      queries: { upsertFileContent(path: string, content: string): void };
+    };
+    raw.queries.upsertFileContent('application.properties', `spring.datasource.password=${secret}\n`);
+    expect(cg.searchContent(secret, 10).results.map((r) => r.path)).toEqual(['application.properties']);
+    expect(cg.getChangedFiles().modified).toContain('application.properties');
+
+    await cg.sync();
+
+    expect(cg.searchContent(secret, 10).results).toEqual([]);
+    expect(cg.getChangedFiles().modified).not.toContain('application.properties');
+
+    cg.close?.();
+  });
+
+  it('syncs selected non-source text rows on add, modify, and delete', async () => {
+    fs.writeFileSync(path.join(dir, 'README.md'), '# old marker\n');
+
+    const cg = await OmniWeave.init(dir, { silent: true });
+    await cg.indexAll();
+    expect(cg.searchContent('old marker', 10).results.map((r) => r.path)).toEqual(['README.md']);
+
+    fs.writeFileSync(path.join(dir, 'README.md'), '# new marker\n');
+    await cg.sync();
+    expect(cg.searchContent('old marker', 10).results).toEqual([]);
+    expect(cg.searchContent('new marker', 10).results.map((r) => r.path)).toEqual(['README.md']);
+
+    fs.rmSync(path.join(dir, 'README.md'));
+    await cg.sync();
+    expect(cg.searchContent('new marker', 10).results).toEqual([]);
+
+    cg.close?.();
+  });
+
   it('reports truncation via hasMore and respects the limit', async () => {
     for (let i = 0; i < 5; i++) {
       fs.writeFileSync(path.join(dir, `f${i}.py`), `# marker_token_xyz in file ${i}\n`);

@@ -99,4 +99,14 @@ describe('config secret redaction (#383)', () => {
     expect(text).toContain('password'); // found the node
     expect(text).not.toContain(SECRET); // value redacted from the code path
   });
+
+  it('raw content search does not index redacted config values', async () => {
+    const res = await handler.execute('omniweave_search', {
+      query: `pattern:${SECRET}`,
+    });
+    const text = res.content.map((c) => c.text).join('\n');
+    expect(text).toContain('No files contain the literal');
+    expect(text).not.toContain('application.properties');
+    expect(text).not.toContain('application.yml');
+  });
 });

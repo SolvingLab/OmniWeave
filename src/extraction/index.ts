@@ -102,6 +102,73 @@ export function hashContent(content: string): string {
  */
 const MAX_FILE_SIZE = 1024 * 1024;
 
+const CONTENT_ONLY_EXTENSIONS = new Set([
+  '.adoc',
+  '.md',
+  '.mdx',
+  '.rst',
+  '.txt',
+]);
+
+const RAW_CONTENT_UNSAFE_LANGUAGES = new Set<Language>([
+  'properties',
+  'yaml',
+  'xml',
+]);
+
+/** Cheap first-pass binary detection before strict UTF-8 decode. */
+function hasNulByte(buf: Buffer): boolean {
+  const n = Math.min(buf.length, 8192);
+  for (let i = 0; i < n; i++) {
+    if (buf[i] === 0) return true;
+  }
+  return false;
+}
+
+function hasSensitiveRawContentPath(filePath: string): boolean {
+  const normalized = filePath.replace(/\\/g, '/').toLowerCase();
+  const base = path.posix.basename(normalized);
+  if (base === '.env' || base === '.envrc' || base.startsWith('.env.') || base.includes('.env.')) return true;
+  if (base.includes('credential') || base.includes('token')) return true;
+  if (/^(id_rsa|id_ed25519|id_dsa|id_ecdsa)([._-].*)?$/.test(base)) return true;
+  if (/(^|[._-])(private[._-]?key|api[._-]?key|service[._-]?account)([._-]|$)/.test(base)) return true;
+  if (/(\.|^)(pem|key|p12|pfx|jks|keystore|crt|cer|der)$/.test(base)) return true;
+  return /(^|\/)(secrets?|credentials?|tokens?)([._/-]|$)/.test(normalized);
+}
+
+function isLocaleJsonPath(filePath: string): boolean {
+  const normalized = filePath.replace(/\\/g, '/').toLowerCase();
+  return normalized.endsWith('.json') && /(^|\/)(locales?|i18n|translations?)\//.test(normalized);
+}
+
+function isContentOnlyFile(filePath: string): boolean {
+  if (hasSensitiveRawContentPath(filePath)) return false;
+  if (isLocaleJsonPath(filePath)) return true;
+  const dot = filePath.lastIndexOf('.');
+  if (dot < 0) return false;
+  return CONTENT_ONLY_EXTENSIONS.has(filePath.slice(dot).toLowerCase());
+}
+
+export function shouldIndexRawContent(filePath: string, language?: Language | string): boolean {
+  if (hasSensitiveRawContentPath(filePath)) return false;
+  if (language && RAW_CONTENT_UNSAFE_LANGUAGES.has(language as Language)) return false;
+  return true;
+}
+
+export function readContentOnlySearchFile(rootDir: string, filePath: string): string | null {
+  try {
+    const fullPath = validatePathWithinRoot(rootDir, filePath);
+    if (!fullPath) return null;
+    const stat = fs.statSync(fullPath);
+    if (!stat.isFile() || stat.size === 0 || stat.size > MAX_FILE_SIZE) return null;
+    const buf = fs.readFileSync(fullPath);
+    if (hasNulByte(buf) || !isValidUtf8(buf)) return null;
+    return buf.toString('utf-8');
+  } catch {
+    return null;
+  }
+}
+
 function sizeExceededResult(filePath: string, size: number): ExtractionResult {
   return {
     nodes: [],
@@ -607,6 +674,21 @@ export function scanDirectory(
   return scanDirectoryWalk(rootDir, onProgress);
 }
 
+export function scanContentSearchFiles(rootDir: string): string[] {
+  const overrides = loadExtensionOverrides(rootDir);
+  const isContentSearchFile = (filePath: string): boolean =>
+    isSourceFile(filePath, overrides) || isContentOnlyFile(filePath);
+
+  const gitFiles = getGitVisibleFiles(rootDir);
+  if (gitFiles) {
+    return [...gitFiles].filter(isContentSearchFile).sort();
+  }
+
+  const nonSource: string[] = [];
+  const source = scanDirectoryWalk(rootDir, undefined, nonSource);
+  return [...new Set([...source, ...nonSource])].sort();
+}
+
 /**
  * Async variant of scanDirectory that yields to the event loop periodically,
  * allowing worker threads to receive and render progress messages.
@@ -642,7 +724,8 @@ export async function scanDirectoryAsync(
  */
 function scanDirectoryWalk(
   rootDir: string,
-  onProgress?: (current: number, file: string) => void
+  onProgress?: (current: number, file: string) => void,
+  nonSourceOut?: string[]
 ): string[] {
   const files: string[] = [];
   let count = 0;
@@ -723,11 +806,13 @@ function scanDirectoryWalk(
             if (!isIgnored(fullPath, true, active)) {
               walk(fullPath, active);
             }
-          } else if (stat.isFile()) {
-            if (!isIgnored(fullPath, false, active) && isSourceFile(relativePath, overrides)) {
+          } else if (stat.isFile() && !isIgnored(fullPath, false, active)) {
+            if (isSourceFile(relativePath, overrides)) {
               files.push(relativePath);
               count++;
               onProgress?.(count, relativePath);
+            } else if (nonSourceOut && isContentOnlyFile(relativePath)) {
+              nonSourceOut.push(relativePath);
             }
           }
         } catch {
@@ -745,6 +830,8 @@ function scanDirectoryWalk(
           files.push(relativePath);
           count++;
           onProgress?.(count, relativePath);
+        } else if (nonSourceOut && !isIgnored(fullPath, false, active) && isContentOnlyFile(relativePath)) {
+          nonSourceOut.push(relativePath);
         }
       }
     }
@@ -1345,6 +1432,11 @@ export class ExtractionOrchestrator {
       (parseWorker as import('worker_threads').Worker).terminate().catch(() => {});
     }
 
+    // Content-index selected NON-source text files (docs/i18n text) after the
+    // source graph is current, so source rows and content-only rows stay separate.
+    this.purgeUnsafeSourceContentRows();
+    this.syncContentOnlyFiles(scanContentSearchFiles(this.rootDir), files);
+
     return {
       success: filesIndexed > 0 || errors.filter((e) => e.severity === 'error').length === 0,
       filesIndexed,
@@ -1355,6 +1447,71 @@ export class ExtractionOrchestrator {
       errors,
       durationMs: Date.now() - startTime,
     };
+  }
+
+  /**
+   * Content-index selected NON-source text files (docs/i18n text) that the source
+   * extractor skips. Source files are already content-indexed in
+   * storeExtractionResult. Secret-prone config formats stay out of raw snippets.
+   */
+  private syncContentOnlyFiles(
+    contentFiles: string[],
+    sourceFiles: readonly string[],
+  ): { added: number; modified: number; removed: number; changed: string[] } {
+    const sourceSet = new Set(sourceFiles);
+    const current = new Set(contentFiles.filter((filePath) => !sourceSet.has(filePath) && isContentOnlyFile(filePath)));
+    const existingRows = this.queries.nonSourceContentRows();
+    const existing = new Map(existingRows.map((row) => [row.path, row.content]));
+    let added = 0;
+    let modified = 0;
+    let removed = 0;
+    const changed: string[] = [];
+
+    for (const row of existingRows) {
+      if (!current.has(row.path)) {
+        this.queries.deleteFileContent(row.path);
+        removed++;
+        changed.push(row.path);
+      }
+    }
+
+    for (const filePath of current) {
+      const content = this.readContentOnlyFile(filePath);
+      if (content === null) {
+        if (existing.has(filePath)) {
+          this.queries.deleteFileContent(filePath);
+          removed++;
+          changed.push(filePath);
+        }
+        continue;
+      }
+      const previous = existing.get(filePath);
+      if (previous === undefined) {
+        this.queries.upsertFileContent(filePath, content);
+        added++;
+        changed.push(filePath);
+      } else if (hashContent(previous) !== hashContent(content)) {
+        this.queries.upsertFileContent(filePath, content);
+        modified++;
+        changed.push(filePath);
+      }
+    }
+    return { added, modified, removed, changed };
+  }
+
+  private purgeUnsafeSourceContentRows(): string[] {
+    const purged: string[] = [];
+    for (const row of this.queries.sourceContentRows()) {
+      if (!shouldIndexRawContent(row.path, row.language)) {
+        this.queries.deleteFileContent(row.path);
+        purged.push(row.path);
+      }
+    }
+    return purged;
+  }
+
+  private readContentOnlyFile(filePath: string): string | null {
+    return readContentOnlySearchFile(this.rootDir, filePath);
   }
 
   /**
@@ -1515,6 +1672,9 @@ export class ExtractionOrchestrator {
     // Check if file already exists and hasn't changed
     const existingFile = this.queries.getFileByPath(filePath);
     if (existingFile && existingFile.contentHash === contentHash) {
+      if (!shouldIndexRawContent(filePath, language)) {
+        this.queries.deleteFileContent(filePath);
+      }
       return; // No changes
     }
 
@@ -1607,8 +1767,10 @@ export class ExtractionOrchestrator {
     // MAX_FILE_SIZE (oversized files are already skipped before extraction, but
     // gate explicitly so this stays correct if that changes). Delete-then-insert
     // inside upsertFileContent keeps it idempotent across re-index and sync.
-    if (stats.size <= MAX_FILE_SIZE) {
+    if (stats.size <= MAX_FILE_SIZE && shouldIndexRawContent(filePath, language)) {
       this.queries.upsertFileContent(filePath, content);
+    } else {
+      this.queries.deleteFileContent(filePath);
     }
   }
 
@@ -1647,6 +1809,7 @@ export class ExtractionOrchestrator {
     // changes from `git pull`/`checkout`/`merge`/`rebase` — which `git status`
     // cannot see, because the working tree is clean afterward.
     const currentFiles = scanDirectory(this.rootDir);
+    const currentContentFiles = scanContentSearchFiles(this.rootDir);
     filesChecked = currentFiles.length;
     const currentSet = new Set(currentFiles);
 
@@ -1735,6 +1898,15 @@ export class ExtractionOrchestrator {
       nodesUpdated += result.nodes.length;
     }
 
+    const purgedUnsafeContent = this.purgeUnsafeSourceContentRows();
+    const contentChanges = this.syncContentOnlyFiles(currentContentFiles, currentFiles);
+    filesModified += purgedUnsafeContent.length;
+    filesAdded += contentChanges.added;
+    filesModified += contentChanges.modified;
+    filesRemoved += contentChanges.removed;
+    changedFilePaths.push(...purgedUnsafeContent);
+    changedFilePaths.push(...contentChanges.changed);
+
     return {
       filesChecked,
       filesAdded,
@@ -1753,7 +1925,9 @@ export class ExtractionOrchestrator {
    */
   getChangedFiles(): { added: string[]; modified: string[]; removed: string[] } {
     const currentFiles = scanDirectory(this.rootDir);
+    const currentContentFiles = scanContentSearchFiles(this.rootDir);
     const currentSet = new Set(currentFiles);
+    const currentContentOnly = new Set(currentContentFiles.filter((filePath) => !currentSet.has(filePath) && isContentOnlyFile(filePath)));
     const trackedFiles = this.queries.getAllFiles();
 
     // Build Map for O(1) lookups
@@ -1765,11 +1939,23 @@ export class ExtractionOrchestrator {
     const added: string[] = [];
     const modified: string[] = [];
     const removed: string[] = [];
+    const nonSourceRows = this.queries.nonSourceContentRows();
+    const trackedContentOnly = new Map(nonSourceRows.map((row) => [row.path, row.content]));
+    for (const row of this.queries.sourceContentRows()) {
+      if (!shouldIndexRawContent(row.path, row.language) && !modified.includes(row.path)) {
+        modified.push(row.path);
+      }
+    }
 
     // Find removed files
     for (const tracked of trackedFiles) {
       if (!currentSet.has(tracked.path) || !fs.existsSync(path.join(this.rootDir, tracked.path))) {
         removed.push(tracked.path);
+      }
+    }
+    for (const row of nonSourceRows) {
+      if (!currentContentOnly.has(row.path) || !fs.existsSync(path.join(this.rootDir, row.path))) {
+        removed.push(row.path);
       }
     }
 
@@ -1803,6 +1989,16 @@ export class ExtractionOrchestrator {
       if (!tracked) {
         added.push(filePath);
       } else if (tracked.contentHash !== contentHash) {
+        modified.push(filePath);
+      }
+    }
+    for (const filePath of currentContentOnly) {
+      const content = this.readContentOnlyFile(filePath);
+      if (content === null) continue;
+      const previous = trackedContentOnly.get(filePath);
+      if (previous === undefined) {
+        added.push(filePath);
+      } else if (hashContent(previous) !== hashContent(content)) {
         modified.push(filePath);
       }
     }

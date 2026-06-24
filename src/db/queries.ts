@@ -1606,6 +1606,33 @@ export class QueryBuilder {
     this.stmts.deleteFileContent.run(path);
   }
 
+  nonSourceContentRows(): Array<{ path: string; content: string }> {
+    try {
+      return this.db.prepare(`
+        SELECT content_fts.path AS path, content_fts.content AS content
+        FROM content_fts
+        LEFT JOIN files ON files.path = content_fts.path
+        WHERE files.path IS NULL
+        ORDER BY content_fts.path
+      `).all() as Array<{ path: string; content: string }>;
+    } catch {
+      return [];
+    }
+  }
+
+  sourceContentRows(): Array<{ path: string; language: Language }> {
+    try {
+      return this.db.prepare(`
+        SELECT content_fts.path AS path, files.language AS language
+        FROM content_fts
+        JOIN files ON files.path = content_fts.path
+        ORDER BY content_fts.path
+      `).all() as Array<{ path: string; language: Language }>;
+    } catch {
+      return [];
+    }
+  }
+
   /** How many files currently carry content in the trigram index (0 ⇒ not yet
    *  populated — an existing index migrated to schema 6 needs a full reindex). */
   contentIndexFileCount(): number {
