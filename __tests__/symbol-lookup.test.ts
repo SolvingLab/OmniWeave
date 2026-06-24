@@ -243,7 +243,7 @@ describe.skipIf(!HAS_SQLITE)('omniweave_node file hint — repository snapshot c
     fs.mkdirSync(snapshot, { recursive: true });
     fs.writeFileSync(
       path.join(firstParty, 'tools.ts'),
-      `export function targetSymbol(): string {\n  return 'first-party';\n}\n`
+      `export function targetSymbol(): string {\n  return 'first-party';\n}\n\nexport function quietSymbol(): string {\n  return 'first-party-quiet';\n}\n\nexport function callTarget(): string {\n  return targetSymbol();\n}\n`
     );
     fs.writeFileSync(
       path.join(firstParty, 'flow.ts'),
@@ -251,7 +251,7 @@ describe.skipIf(!HAS_SQLITE)('omniweave_node file hint — repository snapshot c
     );
     fs.writeFileSync(
       path.join(snapshot, 'tools.ts'),
-      `export function targetSymbol(): string {\n  return 'snapshot';\n}\n`
+      `export function targetSymbol(): string {\n  return 'snapshot';\n}\n\nexport function quietSymbol(): string {\n  return 'snapshot-quiet';\n}\n\nexport function snapshotTargetCaller(): string {\n  return targetSymbol();\n}\n`
     );
     fs.writeFileSync(
       path.join(snapshot, 'noise.ts'),
@@ -285,6 +285,41 @@ describe.skipIf(!HAS_SQLITE)('omniweave_node file hint — repository snapshot c
       expect(text).toContain("return 'first-party'");
       expect(text).not.toContain("return 'snapshot'");
     }
+  });
+
+  it('callers: broad lookup omits low-signal same-name snapshot definitions', async () => {
+    const res = await handler.execute('omniweave_callers', { symbol: 'targetSymbol' });
+    const text = res.content?.[0]?.text ?? '';
+
+    expect(text).toContain('Callers of targetSymbol');
+    expect(text).toContain('callTarget');
+    expect(text).not.toContain('snapshotTargetCaller');
+    expect(text).not.toContain('research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/tools.ts');
+    expect(text).toContain('Omitted 1 low-signal same-name definition');
+  });
+
+  it('callers: explicit snapshot file still inspects that support corpus', async () => {
+    const res = await handler.execute('omniweave_callers', {
+      symbol: 'targetSymbol',
+      file: 'research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/tools.ts',
+    });
+    const text = res.content?.[0]?.text ?? '';
+
+    expect(text).toContain('snapshotTargetCaller');
+    expect(text).toContain('research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/tools.ts');
+    expect(text).not.toContain('Omitted 1 low-signal same-name definition');
+  });
+
+  it('callers: explicit snapshot file does not leak aggregate notes on empty fan-in', async () => {
+    const res = await handler.execute('omniweave_callers', {
+      symbol: 'quietSymbol',
+      file: 'research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/tools.ts',
+    });
+    const text = res.content?.[0]?.text ?? '';
+
+    expect(text).toContain('No callers found for "quietSymbol"');
+    expect(text).not.toContain('Aggregated results across');
+    expect(text).not.toContain('src/mcp/tools.ts');
   });
 
   it('does not surface low-signal snapshot callees in a first-party node trail', async () => {

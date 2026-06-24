@@ -1732,12 +1732,12 @@ export class ToolHandler {
     if (groups.length === 1) {
       const { nodes: callers, labels, omittedLowSignal, omittedWeak } = collect(groups[0]!);
       const omissionNote = this.relationshipOmissionNote(omittedLowSignal, omittedWeak);
+      const note = fileFilter && !filteredOut ? '' : matches.note;
       if (callers.length === 0) {
-        return this.textResult(`No callers found for "${symbol}"${matches.note}${filterNote}${omissionNote}${definitionOmissionNote}`);
+        return this.textResult(`No callers found for "${symbol}"${note}${filterNote}${omissionNote}${definitionOmissionNote}`);
       }
       // A successful `file` narrowing makes the multi-symbol aggregation note
       // stale — suppress it.
-      const note = fileFilter && !filteredOut ? '' : matches.note;
       const formatted = this.formatNodeList(callers, `Callers of ${symbol}`, labels, limit, outputSurface) + note + filterNote + omissionNote + definitionOmissionNote;
       return this.textResult(this.truncateOutput(formatted));
     }
@@ -1796,12 +1796,12 @@ export class ToolHandler {
     if (groups.length === 1) {
       const { nodes: callees, labels, omittedLowSignal, omittedWeak } = collect(groups[0]!);
       const omissionNote = this.relationshipOmissionNote(omittedLowSignal, omittedWeak);
+      const note = fileFilter && !filteredOut ? '' : matches.note;
       if (callees.length === 0) {
-        return this.textResult(`No callees found for "${symbol}"${matches.note}${filterNote}${omissionNote}${definitionOmissionNote}`);
+        return this.textResult(`No callees found for "${symbol}"${note}${filterNote}${omissionNote}${definitionOmissionNote}`);
       }
       // A successful `file` narrowing makes the multi-symbol aggregation note
       // stale — suppress it.
-      const note = fileFilter && !filteredOut ? '' : matches.note;
       const formatted = this.formatNodeList(callees, `Callees of ${symbol}`, labels, limit, outputSurface) + note + filterNote + omissionNote + definitionOmissionNote;
       return this.textResult(this.truncateOutput(formatted));
     }
