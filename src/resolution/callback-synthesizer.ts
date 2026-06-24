@@ -2043,7 +2043,10 @@ function generalCrossLangEdges(ctx: ResolutionContext): Edge[] {
  * Synthesize dispatcher→callback edges (field observers + EventEmitters +
  * React re-render + JSX children + Vue templates + SvelteKit load + RN event
  * channel + Fabric native-impl + MyBatis Java↔XML + Gin middleware chain +
- * GoFrame reflective route binding + store action dispatch bridges).
+ * GoFrame reflective route binding + store action dispatch bridges +
+ * Celery .delay()/.apply_async() → task body + Spring publishEvent → @EventListener +
+ * MediatR Send/Publish → IRequestHandler/INotificationHandler +
+ * Sidekiq Worker.perform_async → #perform + Laravel event(new X) → listener handle).
  * Returns the count added. Never throws into indexing — callers wrap in try/catch.
  */
 // Pinia useStore().action() dispatch bridge.
@@ -2702,6 +2705,528 @@ function vuexDispatchEdges(ctx: ResolutionContext): Edge[] {
   return edges;
 }
 
+// ── Celery task .delay()/.apply_async() → task body (Python) ──────────────────
+// Celery decouples an enqueue site from the task function, linked by NAME: a
+// `@shared_task`/`@app.task`-decorated `def send_email(...)` is invoked elsewhere
+// as `send_email.delay(...)` / `send_email.apply_async(...)`. Bridge the enclosing
+// function of each dispatch site → the decorated task. Name-keyed with a decorator
+// gate (the bare name must resolve to a function carrying a celery task decorator),
+// so a non-task same-named helper is never bridged; ambiguous cross-module
+// collisions prefer a same-file task, else bail (precision over recall).
+const CELERY_DISPATCH_RE = /\b([A-Za-z_]\w*)\s*\.\s*(?:delay|apply_async)\s*\(/g;
+const CELERY_TASK_DECORATOR_RE = /@\s*(?:[A-Za-z_][\w.]*\.)?(?:shared_task|task)\b/;
+const CELERY_PY_EXT = /\.py$/;
+const CELERY_FANOUT_CAP = 80;
+const CELERY_DECORATOR_LOOKBACK = 12; // max lines above a `def` to scan for its decorators
+
+function celeryDispatchEdges(ctx: ResolutionContext): Edge[] {
+  // Memoize the decorator check per task-candidate node: it reads the file and scans a few
+  // lines above the def. Only called on names that are actually `.delay`/`.apply_async`
+  // receivers, so the candidate set stays small.
+  const taskCache = new Map<string, boolean>();
+  const isCeleryTask = (node: Node): boolean => {
+    let v = taskCache.get(node.id);
+    if (v !== undefined) return v;
+    v = false;
+    if (node.kind === 'function' && CELERY_PY_EXT.test(node.filePath)) {
+      const content = ctx.readFile(node.filePath);
+      if (content) {
+        const lines = content.split('\n');
+        // startLine is the `def` line (decorators sit ABOVE it). Walk upward, stopping at the
+        // previous declaration so a non-task def can never inherit the prior def's decorator.
+        const stop = Math.max(0, node.startLine - 1 - CELERY_DECORATOR_LOOKBACK);
+        for (let i = node.startLine - 2; i >= stop; i--) {
+          const t = (lines[i] ?? '').trim();
+          if (/^(?:async\s+def|def|class)\b/.test(t)) break; // previous decl → stop
+          if (CELERY_TASK_DECORATOR_RE.test(t)) { v = true; break; }
+        }
+      }
+    }
+    taskCache.set(node.id, v);
+    return v;
+  };
+
+  const resolve = (name: string, dispatchFile: string): Node | null => {
+    const cands = ctx.getNodesByName(name).filter((n) => n.kind === 'function' && isCeleryTask(n));
+    if (!cands.length) return null;
+    if (cands.length === 1) return cands[0]!;
+    // Cross-module name collision: prefer a task defined in the dispatching file, else bail
+    // (ambiguous — precision over recall, like vuex's root-key resolution).
+    return cands.find((c) => c.filePath === dispatchFile) ?? null;
+  };
+
+  const edges: Edge[] = [];
+  const seen = new Set<string>();
+  for (const file of ctx.getAllFiles()) {
+    if (!CELERY_PY_EXT.test(file)) continue;
+    const content = ctx.readFile(file);
+    if (!content || (!content.includes('.delay(') && !content.includes('.apply_async('))) continue;
+    const safe = stripCommentsForRegex(content, 'python');
+    const nodesInFile = ctx.getNodesInFile(file);
+    CELERY_DISPATCH_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    let added = 0;
+    while ((m = CELERY_DISPATCH_RE.exec(safe)) && added < CELERY_FANOUT_CAP) {
+      const name = m[1]!;
+      const line = safe.slice(0, m.index).split('\n').length;
+      const disp = enclosingFn(nodesInFile, line);
+      if (!disp) continue; // module-level dispatch — no source symbol to attribute
+      const target = resolve(name, file);
+      if (!target || target.id === disp.id) continue;
+      const key = `${disp.id}>${target.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      edges.push({
+        source: disp.id,
+        target: target.id,
+        kind: 'calls',
+        line,
+        provenance: 'heuristic',
+        metadata: { synthesizedBy: 'celery-dispatch', via: name, confidence: 0.8, registeredAt: `${file}:${line}` },
+      });
+      added++;
+    }
+  }
+  return edges;
+}
+
+// ── Spring publishEvent(new XEvent) → @EventListener (Java) ───────────────────
+// Spring decouples `applicationEventPublisher.publishEvent(new OrderPlaced(...))` from
+// every listener method of XEvent. Listeners are `@EventListener` /
+// `@TransactionalEventListener` methods (event type = the first param type, or the
+// `@EventListener(X.class)` value form) and the older `class … implements
+// ApplicationListener<X> { void onApplicationEvent(X e) }`. Keyed by exact type name,
+// usually cross-file. A repo with no `@EventListener`/`publishEvent` yields 0.
+// (Java method nodes INCLUDE their leading annotations in the range — startLine is the
+// first `@…` line — so the annotation block is scanned DOWNWARD from startLine, bounded
+// to consecutive `@`-lines so it can't bleed into an adjacent method.)
+const SPRING_PUBLISH_RE = /\.publishEvent\s*\(\s*new\s+([A-Z][A-Za-z0-9_]*)/g;
+const SPRING_LISTENER_ANNO_RE = /@(?:EventListener|TransactionalEventListener)\b/;
+const SPRING_ANNO_TYPE_RE = /@(?:EventListener|TransactionalEventListener)\s*\(\s*([A-Z][A-Za-z0-9_]*)\.class/;
+const SPRING_APP_LISTENER_RE = /\bApplicationListener\s*</;
+const SPRING_JAVA_EXT = /\.java$/;
+const SPRING_FANOUT_CAP = 80;
+
+/** The first parameter's type from a Java method `signature` (`"void (XEvent e)"` → `XEvent`).
+ *  Skips a leading `final`/`@Anno`, strips generics, and requires a PascalCase class name (event
+ *  types are classes) — so a no-arg or primitive-param method yields null. */
+function springFirstParamType(sig: string | undefined): string | null {
+  if (!sig) return null;
+  const open = sig.indexOf('(');
+  if (open < 0) return null;
+  const close = sig.indexOf(')', open);
+  const inner = sig.slice(open + 1, close < 0 ? sig.length : close).trim();
+  if (!inner) return null;
+  const first = inner.split(',')[0]!.trim();
+  const toks = first.split(/\s+/).filter((t) => t && t !== 'final' && !t.startsWith('@'));
+  if (toks.length < 2) return null; // need `Type name`
+  const type = toks[toks.length - 2]!.replace(/<.*$/, ''); // drop generic args
+  return /^[A-Z][A-Za-z0-9_]*$/.test(type) ? type : null;
+}
+
+function springEventEdges(ctx: ResolutionContext): Edge[] {
+  // Pass 1 — event-type → listener methods, scanning only event-relevant files.
+  const listeners = new Map<string, Node[]>();
+  for (const file of ctx.getAllFiles()) {
+    if (!SPRING_JAVA_EXT.test(file)) continue;
+    const content = ctx.readFile(file);
+    if (!content) continue;
+    const hasAnno = content.includes('@EventListener') || content.includes('@TransactionalEventListener');
+    const hasAppListener = SPRING_APP_LISTENER_RE.test(content);
+    if (!hasAnno && !hasAppListener) continue;
+    const lines = content.split('\n');
+    for (const node of ctx.getNodesInFile(file)) {
+      if (node.kind !== 'method') continue;
+      // Collect this method's own leading annotation block (consecutive `@`-lines from startLine).
+      const annoLines: string[] = [];
+      for (let i = node.startLine - 1; i < lines.length && i < node.startLine + 7; i++) {
+        const t = (lines[i] ?? '').trim();
+        if (!t.startsWith('@')) break; // reached the declaration → stop (no bleed into next method)
+        annoLines.push(t);
+      }
+      const head = annoLines.join('\n');
+      const annotated = hasAnno && SPRING_LISTENER_ANNO_RE.test(head);
+      const isAppListener = hasAppListener && node.name === 'onApplicationEvent';
+      if (!annotated && !isAppListener) continue;
+      let type = springFirstParamType(node.signature);
+      if (!type && annotated) {
+        const m = SPRING_ANNO_TYPE_RE.exec(head);
+        if (m) type = m[1]!;
+      }
+      if (!type) continue;
+      let arr = listeners.get(type);
+      if (!arr) { arr = []; listeners.set(type, arr); }
+      arr.push(node);
+    }
+  }
+  if (!listeners.size) return [];
+
+  // Pass 2 — link each publishEvent(new XEvent(...)) site → every listener of XEvent.
+  const edges: Edge[] = [];
+  const seen = new Set<string>();
+  for (const file of ctx.getAllFiles()) {
+    if (!SPRING_JAVA_EXT.test(file)) continue;
+    const content = ctx.readFile(file);
+    if (!content || !content.includes('.publishEvent(')) continue;
+    const safe = stripCommentsForRegex(content, 'java');
+    const nodesInFile = ctx.getNodesInFile(file);
+    SPRING_PUBLISH_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    let added = 0;
+    while ((m = SPRING_PUBLISH_RE.exec(safe)) && added < SPRING_FANOUT_CAP) {
+      const targets = listeners.get(m[1]!);
+      if (!targets || !targets.length) continue;
+      const line = safe.slice(0, m.index).split('\n').length;
+      const disp = enclosingFn(nodesInFile, line);
+      if (!disp) continue;
+      for (const target of targets) {
+        if (target.id === disp.id) continue;
+        const key = `${disp.id}>${target.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        edges.push({
+          source: disp.id,
+          target: target.id,
+          kind: 'calls',
+          line,
+          provenance: 'heuristic',
+          metadata: { synthesizedBy: 'spring-event', via: m[1]!, confidence: 0.8, registeredAt: `${file}:${line}` },
+        });
+        added++;
+      }
+    }
+  }
+  return edges;
+}
+
+// ── MediatR request/notification dispatch (C#/.NET) ───────────────────────────
+// MediatR decouples a Send/Publish call site from its Handle method through a mediator,
+// linked by the request/notification TYPE (the IRequestHandler<T,…> generic). Bridge it:
+// link the enclosing method at each mediator `.Send(x)`/`.Publish(x)` site → the `Handle`
+// method of the handler for x's type. The sent type is resolved from the argument — inline
+// `new X(…)`, a local `var v = new X(…)`, or a parameter/local declared `X v` — bounded to
+// the enclosing method. Precision rests on TWO gates: the receiver must be mediator-ish
+// (`mediator`/`sender`/`publisher`) AND the resolved type must be a known handler request
+// type. C# has no `signature` on method nodes, so the handler's request type is read from the
+// class base-list source (`: IRequestHandler<X,…>`), not a param signature.
+const MEDIATR_HANDLER_BASE_RE = /(?:IRequestHandler|INotificationHandler)\s*<\s*([A-Za-z_]\w*)/;
+const MEDIATR_DISPATCH_RE = /([A-Za-z_][\w.]*)\s*\.\s*(?:Send|Publish)\s*\(\s*(new\s+[A-Z]\w*|[A-Za-z_]\w*)/g;
+const MEDIATR_RECEIVER_RE = /(?:mediator|sender|publisher)/i;
+const MEDIATR_CS_EXT = /\.cs$/;
+const MEDIATR_FANOUT_CAP = 80;
+const MEDIATR_HANDLER_DECL_LOOKAHEAD = 4; // lines from a class startLine to find a wrapped base list
+
+/** The type sent at a MediatR `.Send(arg)`/`.Publish(arg)` site: an inline `new X(…)`, else
+ *  `arg` as an identifier resolved within the enclosing method — a `… arg = new X(…)` assignment
+ *  (wins), or a parameter/local declared `X arg`. Returns null when the type can't be seen. */
+function resolveMediatrArgType(arg: string, lines: string[], methodStart: number, dispatchLine: number): string | null {
+  const inl = /^new\s+([A-Z]\w*)/.exec(arg);
+  if (inl) return inl[1]!;
+  if (!/^[A-Za-z_]\w*$/.test(arg)) return null;
+  const assignRe = new RegExp(`\\b${arg}\\b\\s*=\\s*new\\s+([A-Z]\\w*)`);
+  const declRe = new RegExp(`\\b([A-Z]\\w*)\\b\\s+${arg}\\b`);
+  let declType: string | null = null;
+  for (let i = Math.max(0, methodStart - 1); i < dispatchLine && i < lines.length; i++) {
+    const ln = lines[i] ?? '';
+    const a = assignRe.exec(ln);
+    if (a) return a[1]!; // an explicit `arg = new X` is the most specific — take it
+    if (!declType) {
+      const d = declRe.exec(ln);
+      if (d) declType = d[1]!; // a `X arg` declaration — remember, but keep scanning for an assignment
+    }
+  }
+  return declType;
+}
+
+function mediatrDispatchEdges(ctx: ResolutionContext): Edge[] {
+  // Pass 1 — request/notification type → the Handle method of each handler class.
+  const handlers = new Map<string, Node[]>();
+  for (const file of ctx.getAllFiles()) {
+    if (!MEDIATR_CS_EXT.test(file)) continue;
+    const content = ctx.readFile(file);
+    if (!content || (!content.includes('IRequestHandler<') && !content.includes('INotificationHandler<'))) continue;
+    const lines = content.split('\n');
+    const nodesInFile = ctx.getNodesInFile(file);
+    for (const cls of nodesInFile) {
+      if (cls.kind !== 'class') continue;
+      const decl = lines.slice(cls.startLine - 1, cls.startLine - 1 + MEDIATR_HANDLER_DECL_LOOKAHEAD).join('\n');
+      const m = MEDIATR_HANDLER_BASE_RE.exec(decl);
+      if (!m) continue;
+      const type = m[1]!;
+      const end = cls.endLine ?? cls.startLine;
+      const handle = nodesInFile.find(
+        (n) => n.kind === 'method' && n.name === 'Handle' && n.startLine >= cls.startLine && n.startLine <= end
+      );
+      if (!handle) continue;
+      let arr = handlers.get(type);
+      if (!arr) { arr = []; handlers.set(type, arr); }
+      arr.push(handle);
+    }
+  }
+  if (!handlers.size) return [];
+
+  // Pass 2 — link each mediator-ish .Send(x)/.Publish(x) → the handler of x's type.
+  const edges: Edge[] = [];
+  const seen = new Set<string>();
+  for (const file of ctx.getAllFiles()) {
+    if (!MEDIATR_CS_EXT.test(file)) continue;
+    const content = ctx.readFile(file);
+    if (!content || (!content.includes('.Send(') && !content.includes('.Publish('))) continue;
+    const safe = stripCommentsForRegex(content, 'csharp');
+    const safeLines = safe.split('\n');
+    const nodesInFile = ctx.getNodesInFile(file);
+    MEDIATR_DISPATCH_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    let added = 0;
+    while ((m = MEDIATR_DISPATCH_RE.exec(safe)) && added < MEDIATR_FANOUT_CAP) {
+      if (!MEDIATR_RECEIVER_RE.test(m[1]!)) continue; // not a mediator (MessagingCenter, HttpClient, …)
+      const line = safe.slice(0, m.index).split('\n').length;
+      const disp = enclosingFn(nodesInFile, line);
+      if (!disp) continue;
+      const type = resolveMediatrArgType(m[2]!, safeLines, disp.startLine, line);
+      if (!type) continue;
+      const targets = handlers.get(type);
+      if (!targets) continue;
+      for (const target of targets) {
+        if (target.id === disp.id) continue;
+        const key = `${disp.id}>${target.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        edges.push({
+          source: disp.id,
+          target: target.id,
+          kind: 'calls',
+          line,
+          provenance: 'heuristic',
+          metadata: { synthesizedBy: 'mediatr-dispatch', via: type, confidence: 0.8, registeredAt: `${file}:${line}` },
+        });
+        added++;
+      }
+    }
+  }
+  return edges;
+}
+
+// ── Sidekiq job dispatch (Ruby) ───────────────────────────────────────────────
+// Sidekiq decouples a job's enqueue site from the worker's `perform`, linked by the WORKER
+// CLASS NAME: `DestroyUserWorker.perform_async(user.id)` (also `.perform_in`/`.perform_at`)
+// invokes the instance `perform` of a `class DestroyUserWorker; include Sidekiq::Worker`.
+// Bridge the enclosing method at each dispatch site → that worker's `perform`. Name-keyed
+// (like Celery) with a mixin gate (`include Sidekiq::Job|Worker`, an external gem module that
+// forms no resolvable edge). ActiveJob's `perform_later`/`_now` is a different shape and
+// deliberately not matched, so an ActiveJob-only app yields 0.
+const SIDEKIQ_DISPATCH_RE = /([A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*)\s*\.\s*perform_(?:async|in|at)\b/g;
+const SIDEKIQ_WORKER_RE = /\binclude\s+Sidekiq::(?:Job|Worker)\b/;
+const SIDEKIQ_RB_EXT = /\.rb$/;
+const SIDEKIQ_FANOUT_CAP = 80;
+
+function sidekiqDispatchEdges(ctx: ResolutionContext): Edge[] {
+  // class node id → its instance `perform` method (null if the class isn't a Sidekiq worker),
+  // memoized. Reads the class body for the mixin; only consulted for actual dispatch receivers.
+  const performCache = new Map<string, Node | null>();
+  const performOf = (cls: Node): Node | null => {
+    let v = performCache.get(cls.id);
+    if (v !== undefined) return v;
+    v = null;
+    const content = ctx.readFile(cls.filePath);
+    if (content) {
+      const end = cls.endLine ?? cls.startLine;
+      const body = content.split('\n').slice(cls.startLine - 1, end).join('\n');
+      if (SIDEKIQ_WORKER_RE.test(body)) {
+        v = ctx.getNodesInFile(cls.filePath).find(
+          (n) => n.kind === 'method' && n.name === 'perform' && n.startLine >= cls.startLine && n.startLine <= end
+        ) ?? null;
+      }
+    }
+    performCache.set(cls.id, v);
+    return v;
+  };
+
+  // Resolve a (possibly namespaced) worker reference to its `perform`. A namespaced ref is
+  // matched by EXACT qualified name first, so same-named workers in different namespaces
+  // resolve to the right one; an unqualified ref falls back to the simple name and links only
+  // when a single worker bears it — an ambiguous collision bails (precision over recall).
+  const resolve = (ref: string): Node | null => {
+    if (ref.includes('::')) {
+      const q = ctx.getNodesByQualifiedName(ref).find((n) => n.kind === 'class' && performOf(n));
+      if (q) return performOf(q);
+    }
+    const workers = ctx.getNodesByName(ref.split('::').pop()!).filter((n) => n.kind === 'class' && performOf(n));
+    return workers.length === 1 ? performOf(workers[0]!) : null;
+  };
+
+  const edges: Edge[] = [];
+  const seen = new Set<string>();
+  for (const file of ctx.getAllFiles()) {
+    if (!SIDEKIQ_RB_EXT.test(file)) continue;
+    const content = ctx.readFile(file);
+    if (!content || !/\.perform_(?:async|in|at)\b/.test(content)) continue;
+    const safe = stripCommentsForRegex(content, 'ruby');
+    const nodesInFile = ctx.getNodesInFile(file);
+    SIDEKIQ_DISPATCH_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    let added = 0;
+    while ((m = SIDEKIQ_DISPATCH_RE.exec(safe)) && added < SIDEKIQ_FANOUT_CAP) {
+      const line = safe.slice(0, m.index).split('\n').length;
+      const disp = enclosingFn(nodesInFile, line);
+      if (!disp) continue;
+      const target = resolve(m[1]!);
+      if (!target || target.id === disp.id) continue;
+      const key = `${disp.id}>${target.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      edges.push({
+        source: disp.id,
+        target: target.id,
+        kind: 'calls',
+        line,
+        provenance: 'heuristic',
+        metadata: { synthesizedBy: 'sidekiq-dispatch', via: m[1]!, confidence: 0.85, registeredAt: `${file}:${line}` },
+      });
+      added++;
+    }
+  }
+  return edges;
+}
+
+// ── Laravel events (PHP) ──────────────────────────────────────────────────────
+// Laravel decouples an event dispatch from its listener(s), linked by the EVENT CLASS:
+// `event(new PlaybackStarted($song))` reaches every listener's `handle(PlaybackStarted $e)`.
+// Bridge the enclosing method at each `event(new XEvent(...))` site → every listener's
+// `handle` for XEvent. Listeners come from TWO registration mechanisms (both real, both
+// needed): (A) auto-discovery — a `handle(EventType $e)` typed first param (also splits a
+// union A|B); (B) the `protected $listen = [ XEvent::class => [Listener::class, …] ]` map in
+// an EventServiceProvider, which also covers a listener whose `handle()` is UNTYPED. Only
+// `event(new X)` is matched — queued JOBS dispatch via `::dispatch()` and their `handle()`
+// takes an injected service, never an event type, so jobs are excluded by construction.
+const LARAVEL_DISPATCH_RE = /\bevent\s*\(\s*new\s+\\?([A-Za-z_][\w\\]*)/g;
+const LARAVEL_PHP_EXT = /\.php$/;
+const LARAVEL_FANOUT_CAP = 200;
+// A `$listen` entry: `Event::class => [Listener::class, …]`, key/values as `::class` or strings.
+const LISTEN_ENTRY_RE = /(?:([A-Za-z_\\][\w\\]*)::class|'([^']+)'|"([^"]+)")\s*=>\s*\[([^\]]*)\]/g;
+const LISTEN_CLASS_RE = /(?:([A-Za-z_\\][\w\\]*)::class|'([^']+)'|"([^"]+)")/g;
+
+/** Short class name from a PHP reference: `\App\Events\Foo` / `App\Events::Foo` → `Foo`. */
+function phpSimpleName(s: string): string {
+  return s.replace(/^\\/, '').split('\\').pop()!.split('::').pop()!.trim();
+}
+
+/** The first-parameter class type(s) of a `handle(...)` declaration — union-split, short-named,
+ *  primitives dropped. `handle(A|B $e)` → [A, B]; `handle(string $x)` / `handle()` → []. */
+function laravelHandleEventTypes(decl: string): string[] {
+  const m = /function\s+handle\s*\(\s*(?:\.\.\.\s*)?(\??[A-Za-z_\\][\w\\|]*)\s+&?\s*(?:\.\.\.\s*)?\$/.exec(decl);
+  if (!m) return [];
+  return m[1]!
+    .replace(/^\?/, '')
+    .split('|')
+    .map((t) => phpSimpleName(t))
+    .filter((t) => /^[A-Z]\w*$/.test(t));
+}
+
+/** From an opening `[`, the bracket-balanced body up to its matching `]`. */
+function phpArrayBody(src: string, openIdx: number): string | null {
+  let depth = 0;
+  for (let i = openIdx; i < src.length; i++) {
+    if (src[i] === '[') depth++;
+    else if (src[i] === ']' && --depth === 0) return src.slice(openIdx + 1, i);
+  }
+  return null;
+}
+
+function laravelEventEdges(ctx: ResolutionContext): Edge[] {
+  // event short name → its listener `handle` methods (deduped by node id).
+  const listeners = new Map<string, Map<string, Node>>();
+  const add = (event: string, handle: Node) => {
+    let m = listeners.get(event);
+    if (!m) { m = new Map(); listeners.set(event, m); }
+    m.set(handle.id, handle);
+  };
+  const handleOf = (cls: Node): Node | null =>
+    ctx
+      .getNodesInFile(cls.filePath)
+      .find(
+        (n) => n.kind === 'method' && n.name === 'handle'
+          && n.startLine >= cls.startLine && n.startLine <= (cls.endLine ?? cls.startLine)
+      ) ?? null;
+
+  // Pass 1 — build the event→handle map from both registration mechanisms.
+  for (const file of ctx.getAllFiles()) {
+    if (!LARAVEL_PHP_EXT.test(file)) continue;
+    const content = ctx.readFile(file);
+    if (!content) continue;
+
+    // (A) typed listener handles — node-driven, so a commented-out method can't leak in.
+    if (content.includes('function handle')) {
+      const lines = content.split('\n');
+      for (const node of ctx.getNodesInFile(file)) {
+        if (node.kind !== 'method' || node.name !== 'handle') continue;
+        const decl = lines.slice(node.startLine - 1, node.startLine + 2).join('\n');
+        for (const ev of laravelHandleEventTypes(decl)) add(ev, node);
+      }
+    }
+
+    // (B) the EventServiceProvider `$listen` map — parsed from comment-stripped source so a
+    // fully-commented map (on auto-discovery) contributes nothing.
+    if (content.includes('$listen')) {
+      const safe = stripCommentsForRegex(content, 'php');
+      const decl = safe.search(/\$listen\s*=\s*\[/);
+      const body = decl >= 0 ? phpArrayBody(safe, safe.indexOf('[', decl)) : null;
+      if (body) {
+        LISTEN_ENTRY_RE.lastIndex = 0;
+        let em: RegExpExecArray | null;
+        while ((em = LISTEN_ENTRY_RE.exec(body))) {
+          const event = phpSimpleName(em[1] ?? em[2] ?? em[3] ?? '');
+          LISTEN_CLASS_RE.lastIndex = 0;
+          let lm: RegExpExecArray | null;
+          while ((lm = LISTEN_CLASS_RE.exec(em[4]!))) {
+            const ln = phpSimpleName(lm[1] ?? lm[2] ?? lm[3] ?? '');
+            const cls = ctx.getNodesByName(ln).find((n) => n.kind === 'class' && handleOf(n));
+            if (cls) add(event, handleOf(cls)!);
+          }
+        }
+      }
+    }
+  }
+  if (!listeners.size) return [];
+
+  // Pass 2 — link each event(new X(...)) site → every listener of X.
+  const edges: Edge[] = [];
+  const seen = new Set<string>();
+  for (const file of ctx.getAllFiles()) {
+    if (!LARAVEL_PHP_EXT.test(file)) continue;
+    const content = ctx.readFile(file);
+    if (!content || !content.includes('event(')) continue;
+    const safe = stripCommentsForRegex(content, 'php');
+    const nodesInFile = ctx.getNodesInFile(file);
+    LARAVEL_DISPATCH_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    let added = 0;
+    while ((m = LARAVEL_DISPATCH_RE.exec(safe)) && added < LARAVEL_FANOUT_CAP) {
+      const targets = listeners.get(phpSimpleName(m[1]!));
+      if (!targets) continue;
+      const line = safe.slice(0, m.index).split('\n').length;
+      const disp = enclosingFn(nodesInFile, line);
+      if (!disp) continue;
+      for (const target of targets.values()) {
+        if (target.id === disp.id) continue;
+        const key = `${disp.id}>${target.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        edges.push({
+          source: disp.id,
+          target: target.id,
+          kind: 'calls',
+          line,
+          provenance: 'heuristic',
+          metadata: { synthesizedBy: 'laravel-event', via: phpSimpleName(m[1]!), confidence: 0.8, registeredAt: `${file}:${line}` },
+        });
+        added++;
+      }
+    }
+  }
+  return edges;
+}
+
 export function synthesizeCallbackEdges(queries: QueryBuilder, ctx: ResolutionContext): number {
   // Cross-file Go method→type `contains` edges must be synthesized AND persisted
   // FIRST: a method declared in a different file from its receiver type is
@@ -2747,6 +3272,11 @@ export function synthesizeCallbackEdges(queries: QueryBuilder, ctx: ResolutionCo
   const zustandEdges = zustandStoreEdges(ctx);
   const piniaEdges = piniaStoreEdges(ctx);
   const vuexEdges = vuexDispatchEdges(ctx);
+  const celeryEdges = celeryDispatchEdges(ctx);
+  const springEdges = springEventEdges(ctx);
+  const mediatrEdges = mediatrDispatchEdges(ctx);
+  const sidekiqEdges = sidekiqDispatchEdges(ctx);
+  const laravelEdges = laravelEventEdges(ctx);
   const workflowEdges = workflowCrossLangEdges(queries, ctx);
   const generalCrossLang = generalCrossLangEdges(ctx);
 
@@ -2776,6 +3306,11 @@ export function synthesizeCallbackEdges(queries: QueryBuilder, ctx: ResolutionCo
     ...zustandEdges,
     ...piniaEdges,
     ...vuexEdges,
+    ...celeryEdges,
+    ...springEdges,
+    ...mediatrEdges,
+    ...sidekiqEdges,
+    ...laravelEdges,
     ...workflowEdges,
     ...generalCrossLang,
   ]) {
