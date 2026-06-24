@@ -28,6 +28,8 @@ import {
   isRepositorySnapshotQuery,
   isTestFile,
   normalizeNameToken,
+  extractContentSearchPattern,
+  escapeContentSnippet,
 } from '../search/query-utils';
 import {
   existsSync,
@@ -664,17 +666,21 @@ const projectPathProperty: PropertySchema = {
 export const tools: ToolDefinition[] = [
   {
     name: 'omniweave_search',
-    description: 'Quick symbol search by name. Returns locations only (no code). Use omniweave_explore instead to get the actual source / understand an area in one call.',
+    description: 'Quick symbol search by name, or explicit raw file-content search via `query: "pattern:<literal>"` / `pattern`. Content hits are file/snippet evidence only, not structural facts. Use omniweave_explore to understand an area in one call.',
     inputSchema: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: 'Symbol name or partial name (e.g., "auth", "signIn", "UserService")',
+          description: 'Symbol name or partial name (e.g., "auth", "signIn", "UserService"). Prefix with `pattern:` for literal raw-content search.',
+        },
+        pattern: {
+          type: 'string',
+          description: 'Literal substring to find in raw file CONTENT (e.g. "CSRF verification failed"). Trigram-indexed: exact substring, NOT regex; needs >=3 chars. Use this when query (symbol search) cannot find the text because it is not a symbol. Takes precedence over query when set.',
         },
         kind: {
           type: 'string',
-          description: 'Filter by node kind',
+          description: 'Filter by node kind (symbol/query mode only)',
           enum: ['function', 'method', 'class', 'interface', 'type', 'variable', 'route', 'component'],
         },
         limit: {
@@ -684,7 +690,7 @@ export const tools: ToolDefinition[] = [
         },
         projectPath: projectPathProperty,
       },
-      required: ['query'],
+      required: [],
     },
   },
   {
@@ -1459,13 +1465,14 @@ export class ToolHandler {
       if (typeof pathCheck === 'object' && pathCheck !== undefined) {
         return pathCheck;
       }
-      // The `path` and `pattern` properties used by omniweave_files are
-      // also path-shaped — apply the same cap.
+      // The `path` property and omniweave_files' `pattern` glob are
+      // path-shaped — apply the same cap. omniweave_search.pattern is raw
+      // content text and is bounded by validateString inside handleSearch.
       if (args.path !== undefined) {
         const check = this.validateOptionalPath(args.path, 'path');
         if (typeof check === 'object' && check !== undefined) return check;
       }
-      if (args.pattern !== undefined) {
+      if (toolName === 'omniweave_files' && args.pattern !== undefined) {
         const check = this.validateOptionalPath(args.pattern, 'pattern');
         if (typeof check === 'object' && check !== undefined) return check;
       }
@@ -1533,17 +1540,31 @@ export class ToolHandler {
    * Handle omniweave_search
    */
   private async handleSearch(args: Record<string, unknown>): Promise<ToolResult> {
+    const cg = this.getOmniWeave(args.projectPath as string | undefined);
+    const rawLimit = Number(args.limit) || 10;
+    const limit = clamp(rawLimit, 1, 100);
+
+    // Content-pattern mode: a LITERAL substring over raw file CONTENT (trigram
+    // content_fts) — the axis symbol search cannot answer (an error message,
+    // a config value, a comment). Prefer `query: "pattern:<literal>"`; accept
+    // `pattern` too for programmatic clients that can pass optional fields.
+    if (args.pattern !== undefined) {
+      const pattern = this.validateString(args.pattern, 'pattern');
+      if (typeof pattern !== 'string') return pattern;
+      return this.handleContentSearch(cg, pattern, limit);
+    }
+
     const query = this.validateString(args.query, 'query');
     if (typeof query !== 'string') return query;
 
-    const cg = this.getOmniWeave(args.projectPath as string | undefined);
+    const contentPattern = extractContentSearchPattern(query);
+    if (contentPattern !== null) return this.handleContentSearch(cg, contentPattern, limit);
+
     const rawKind = args.kind as string | undefined;
     // The schema enum says 'type' (what agents naturally reach for); the
     // NodeKind is 'type_alias'. Without the mapping, kind: "type" silently
     // matched nothing — a filter value we advertise must work.
     const kind = rawKind === 'type' ? 'type_alias' : rawKind;
-    const rawLimit = Number(args.limit) || 10;
-    const limit = clamp(rawLimit, 1, 100);
 
     const results = cg.searchNodes(query, {
       limit,
@@ -1565,6 +1586,55 @@ export class ToolHandler {
 
     const formatted = this.formatSearchResults(ranked);
     return this.textResult(this.truncateOutput(formatted));
+  }
+
+  /**
+   * Content-pattern search — literal substring over raw file content (trigram
+   * content_fts). Every recoverable state is success-shaped (empty index, too-short
+   * pattern, no match are not tool failures). Snippets are escaped: the bytes are
+   * untrusted source and could come from an imported snapshot. Honest framing:
+   * literal substring only (not regex), and truncation is reported as "has more"
+   * because the content FTS query intentionally fetches limit+1, not a full count.
+   */
+  private handleContentSearch(cg: OmniWeave, pattern: string, limit: number): ToolResult {
+    if (pattern.length < 3) {
+      return this.textResult(
+        `Content search needs at least 3 characters — the content index is trigram-based, so "${escapeContentSnippet(pattern)}" is too short. Add more of the literal string. This is an input limit, not a tool failure.`
+      );
+    }
+    if (cg.contentIndexFileCount() === 0) {
+      return this.textResult(
+        [
+          `No content index yet.`,
+          `This project was indexed before file-content search existed (or the content index is empty).`,
+          `Re-index the project (a full index/sync) to populate it, then retry the pattern.`,
+          `This is an empty index state, not a tool failure.`,
+        ].join(' ')
+      );
+    }
+    const { results, hasMore } = cg.searchContent(pattern, limit);
+    if (results.length === 0) {
+      return this.textResult(
+        [
+          `No files contain the literal "${escapeContentSnippet(pattern)}".`,
+          `This is a literal-substring search (trigram), not regex.`,
+          `For a symbol (function/class/variable) use omniweave_search with "query" instead.`,
+          `This is an empty retrieval result, not a tool failure.`,
+        ].join(' ')
+      );
+    }
+    const shown = hasMore
+      ? `showing first ${results.length}; more files match — narrow the pattern or raise limit`
+      : `${results.length} file${results.length === 1 ? '' : 's'}`;
+    const header = [
+      `Files containing the literal "${escapeContentSnippet(pattern)}" (${shown}).`,
+      'Substring match, not regex. Raw-content file/snippet hits only; not calls/imports/structural facts.',
+    ].join(' ');
+    const lines = results.map((r) => {
+      const key = `omniweave_node file="${r.path.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+      return `- ${r.path}\n    snippet: …${escapeContentSnippet(r.snippet)}…\n    key: \`${key}\``;
+    });
+    return this.textResult(this.truncateOutput([header, ...lines].join('\n')));
   }
 
   /**

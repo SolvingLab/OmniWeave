@@ -8,6 +8,35 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { Node } from '../types';
 
+export const CONTENT_SEARCH_PREFIX = 'pattern:';
+
+/**
+ * Explicit raw-content search mode. Keeping it behind a prefix avoids turning
+ * ordinary symbol lookup into grep-shaped behavior.
+ */
+export function extractContentSearchPattern(query: string): string | null {
+  const trimmed = query.trim();
+  if (!trimmed.toLowerCase().startsWith(CONTENT_SEARCH_PREFIX)) return null;
+  return trimmed.slice(CONTENT_SEARCH_PREFIX.length).trim();
+}
+
+/**
+ * Neutralize raw file-content snippets for inline markdown display. The bytes
+ * are untrusted source (and may come from an imported snapshot), so control
+ * characters become plain text and backticks cannot open a fence.
+ */
+export function escapeContentSnippet(s: string): string {
+  let out = '';
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c === 0x0a || c === 0x0d) out += ' \\n ';
+    else if (c < 0x20 || c === 0x7f) out += ' ';
+    else if (s[i] === '`') out += "'";
+    else out += s[i];
+  }
+  return out;
+}
+
 /** Normalize a name to a comparable token: lowercase, alphanumerics only. */
 export function normalizeNameToken(raw: string): string {
   return raw.toLowerCase().replace(/[^a-z0-9]/g, '');

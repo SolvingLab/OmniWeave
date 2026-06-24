@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { OmniWeave } from '../src';
+import { ToolHandler } from '../src/mcp/tools';
 
 /**
  * Raw file-content trigram index (`content_fts`) — the one retrieval axis the
@@ -84,6 +85,48 @@ describe('content_fts (raw file-content search)', () => {
     await cg.sync();
     expect(q.searchContent('unique_marker_to_remove', 5).results).toEqual([]);
     expect(q.contentIndexFileCount()).toBe(1);
+
+    cg.close?.();
+  });
+
+  it('surfaces explicit MCP pattern mode with sanitized snippets', async () => {
+    fs.writeFileSync(
+      path.join(dir, 'literal.ts'),
+      'export const msg = "``` marker_content_search\\nsecond line";\n'
+    );
+
+    const cg = await OmniWeave.init(dir, { silent: true });
+    await cg.indexAll();
+
+    const result = await new ToolHandler(cg).execute('omniweave_search', {
+      query: 'pattern:marker_content_search',
+    });
+    const text = result.content[0]?.text ?? '';
+
+    expect(result.isError).toBeUndefined();
+    expect(text).toContain('Files containing the literal "marker_content_search"');
+    expect(text).toContain('literal.ts');
+    expect(text).toContain('Raw-content file/snippet hits only');
+    expect(text).toContain('key: `omniweave_node file="literal.ts"`');
+    expect(text).not.toContain('```');
+
+    cg.close?.();
+  });
+
+  it('keeps too-short MCP content patterns success-shaped', async () => {
+    fs.writeFileSync(path.join(dir, 'short.ts'), 'export const x = "ab";\n');
+
+    const cg = await OmniWeave.init(dir, { silent: true });
+    await cg.indexAll();
+
+    const result = await new ToolHandler(cg).execute('omniweave_search', {
+      query: 'pattern:ab',
+    });
+    const text = result.content[0]?.text ?? '';
+
+    expect(result.isError).toBeUndefined();
+    expect(text).toContain('at least 3 characters');
+    expect(text).toContain('not a tool failure');
 
     cg.close?.();
   });

@@ -33,7 +33,7 @@ import { detectWorktreeIndexMismatch, worktreeMismatchWarning } from '../sync/wo
 import { createShimmerProgress } from '../ui/shimmer-progress';
 import { getGlyphs } from '../ui/glyphs';
 import type { EdgeKind, Node } from '../types';
-import { isLowSignalSourceFile } from '../search/query-utils';
+import { escapeContentSnippet, extractContentSearchPattern, isLowSignalSourceFile } from '../search/query-utils';
 import { clamp } from '../utils';
 
 import { buildNode25BlockBanner, buildNodeTooOldBanner, isNodeTooOld } from './node-version-check';
@@ -1052,6 +1052,52 @@ program
       const cg = await OmniWeave.open(projectPath);
 
       const limit = parseCliIntOption(options.limit, 10, 1, 100);
+      const contentPattern = extractContentSearchPattern(search);
+      if (contentPattern !== null) {
+        if (contentPattern.length < 3) {
+          const message = `Content search needs at least 3 characters (trigram index); "${escapeContentSnippet(contentPattern)}" is too short.`;
+          if (options.json) {
+            console.log(JSON.stringify({ mode: 'content', pattern: contentPattern, results: [], hasMore: false, message }, null, 2));
+          } else {
+            info(message);
+          }
+          cg.destroy();
+          return;
+        }
+
+        const contentIndexFileCount = cg.contentIndexFileCount();
+        if (contentIndexFileCount === 0) {
+          const message = 'No content index yet. Run a full re-index to populate raw file-content search.';
+          if (options.json) {
+            console.log(JSON.stringify({ mode: 'content', pattern: contentPattern, contentIndexFileCount, results: [], hasMore: false, message }, null, 2));
+          } else {
+            info(`${message} This is an empty index state, not a tool failure.`);
+          }
+          cg.destroy();
+          return;
+        }
+
+        const content = cg.searchContent(contentPattern, limit);
+        if (options.json) {
+          console.log(JSON.stringify({ mode: 'content', pattern: contentPattern, contentIndexFileCount, ...content }, null, 2));
+        } else if (content.results.length === 0) {
+          info(`No files contain the literal "${escapeContentSnippet(contentPattern)}" (substring match, not regex).`);
+        } else {
+          const shown = content.hasMore
+            ? `showing first ${content.results.length}; more files match — narrow the pattern or raise limit`
+            : `${content.results.length} file${content.results.length === 1 ? '' : 's'}`;
+          console.log(chalk.bold(`\nContent Search Results for "${escapeContentSnippet(contentPattern)}" (${shown}):\n`));
+          console.log(chalk.dim('Raw-content file/snippet hits only; not calls/imports/structural facts.\n'));
+          for (const result of content.results) {
+            console.log(chalk.cyan(result.path));
+            console.log(chalk.dim(`  snippet: …${escapeContentSnippet(result.snippet)}…`));
+            console.log(chalk.dim(`  cmd: omniweave node ${cliArg(result.path)}`));
+            console.log();
+          }
+        }
+        cg.destroy();
+        return;
+      }
       const kind = options.kind === 'type' ? 'type_alias' : options.kind;
       const rawResults = cg.searchNodes(search, {
         limit,

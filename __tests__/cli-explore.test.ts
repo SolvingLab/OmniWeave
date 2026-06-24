@@ -431,6 +431,34 @@ export function snapshotCaller(): string {
     expect(result.stdout).not.toContain('omniweave_node');
   });
 
+  it('supports explicit CLI query pattern mode for raw content', () => {
+    const result = runCli(testDir, ['query', 'pattern:ranking budget truncation', '--limit', '1']);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('Content Search Results for "ranking budget truncation"');
+    expect(result.stdout).toContain('Raw-content file/snippet hits only');
+    expect(result.stdout).toContain('snippet:');
+    expect(result.stdout).toContain('cmd: omniweave node ');
+    expect(result.stdout).not.toContain('```');
+  });
+
+  it('prints machine-readable CLI content pattern results', () => {
+    const result = runCli(testDir, ['query', 'pattern:ranking budget truncation', '--limit', '1', '--json']);
+
+    expect(result.status).toBe(0);
+    const payload = JSON.parse(result.stdout) as {
+      mode: string;
+      pattern: string;
+      contentIndexFileCount: number;
+      results: Array<{ path: string; snippet: string }>;
+    };
+    expect(payload.mode).toBe('content');
+    expect(payload.pattern).toBe('ranking budget truncation');
+    expect(payload.contentIndexFileCount).toBeGreaterThan(0);
+    expect(payload.results.length).toBe(1);
+    expect(payload.results[0]?.path).toMatch(/tools\.ts$/);
+  });
+
   it('uses MCP-style bounded integer parsing for CLI query limits', () => {
     const capped = runCli(testDir, ['query', 'reconcile', '--limit', '2']);
     const invalid = runCli(testDir, ['query', 'reconcile', '--limit', '2abc']);
