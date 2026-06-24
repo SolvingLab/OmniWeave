@@ -2265,6 +2265,39 @@ function resolveRelativeJsImport(
   return null;
 }
 
+/**
+ * Resolve a PATH-ALIASED store import (`@/store/auth`, `~/stores/user`,
+ * `src/store/x`, `@scope/store/auth`) that `resolveRelativeJsImport` can't —
+ * `@/`-style aliases are the dominant real-world Pinia import shape and aren't
+ * relative to the importer. Match the import's tail against the KNOWN
+ * store-factory files by path suffix and bind ONLY on a unique match: the target
+ * must already define a `defineStore` factory (factoriesByFile keys), and the
+ * suffix must identify exactly one such file. Ambiguous / no match → null (never
+ * guesses). This recovers genuine cross-file dispatch recall without loosening
+ * the store-factory / store-file precision gates the caller still applies — a
+ * specifier with no factory-file suffix match (an npm package, a non-store
+ * module) resolves to nothing, exactly like before.
+ */
+function resolveAliasJsImportToFactoryFile(
+  specifier: string,
+  factoriesByFile: Map<string, Set<string>>,
+): string | null {
+  if (specifier.startsWith('.')) return null; // relative — resolveRelativeJsImport owns it
+  const tail = specifier
+    .replace(/^(?:@[\w.-]*|~|src)\//, '') // drop a leading alias segment (@/ ~ src @scope/)
+    .replace(/\.(?:[mc]?[jt]sx?|vue)$/, ''); // and any extension
+  if (!tail || tail.includes('*') || tail.startsWith('.')) return null;
+  let match: string | null = null;
+  for (const factoryFile of factoriesByFile.keys()) {
+    const norm = normalizedFilePath(factoryFile).replace(/\.(?:[mc]?[jt]sx?|vue)$/, '');
+    if (norm === tail || norm.endsWith('/' + tail)) {
+      if (match && match !== factoryFile) return null; // ambiguous suffix — refuse to guess
+      match = factoryFile;
+    }
+  }
+  return match;
+}
+
 function visiblePiniaFactories(
   file: string,
   content: string,
@@ -2282,7 +2315,8 @@ function visiblePiniaFactories(
   while ((im = PINIA_IMPORT_RE.exec(content))) {
     if (isJsLikeMaskedAt(content, im.index)) continue;
     if (im[1]) continue;
-    const targetFile = resolveRelativeJsImport(file, im[3]!, indexedFiles);
+    const targetFile = resolveRelativeJsImport(file, im[3]!, indexedFiles)
+      ?? resolveAliasJsImportToFactoryFile(im[3]!, factoriesByFile);
     if (!targetFile) continue;
     const targetFactories = factoriesByFile.get(targetFile);
     if (!targetFactories) continue;
