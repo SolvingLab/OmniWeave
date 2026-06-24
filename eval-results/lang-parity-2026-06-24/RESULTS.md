@@ -70,9 +70,9 @@ semantic-search-mcp  | 1048   | 1021   | 1048           | 1021           | +27  
 
 ## Full 14-language rerun
 
-The follow-up full corpus rerun is recorded in `RESULTS-full14-2026-06-24.md`, with raw lines in
-`parity-full14-2026-06-24.jsonl` and per-kind decomposition in
-`per-kind-decomposition-2026-06-24.json`.
+The follow-up full corpus rerun is recorded in `RESULTS-full14.md`, with raw lines in
+`parity-full14.jsonl` and per-kind decomposition in
+`per-kind-decomposition.json`.
 
 ## Reproduce
 

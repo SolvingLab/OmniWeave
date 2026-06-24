@@ -23,7 +23,7 @@ artifact that cannot be reproduced or whose verdict is cherry-picked does not be
 | `content-fts-2026-06-24/` | 06-24 | Raw-content trigram index foundation | `README.md` | The one new general lever (`pattern:` search); storage 1.49×; adoption-gated economy |
 | `framework-parity-2026-06-24/` | 06-24 | Framework dispatch-synthesizer parity (8/8) | `RESULTS-dispatch.md` | dispatch-parity 6/6 OW≥CG (a TIE, not a win); `dispatch-fixtures/` are the controlled gate |
 | `adversarial-synthesizer-2026-06-24/` | 06-24 | False-positive battery (6 traps designed to fool synthesizers) | `RESULTS.md` | 6/6 PASS — zero fabricated edges; precision under hostile input |
-| `lang-parity-2026-06-24/` | 06-24 | Cross-language node/edge parity vs codegraph (full 14) | `RESULTS-full14-2026-06-24.md` | Structural edges OW≥CG on all 14 (TS calls +34); deficit is `references`-only (CG-liberal/OW-precise); Swift/Kotlin gaps closed |
+| `lang-parity-2026-06-24/` | 06-24 | Cross-language node/edge parity vs codegraph (full 14) | `RESULTS-full14.md` | Structural edges OW≥CG on all 14 (TS calls +34); deficit is `references`-only (CG-liberal/OW-precise); Swift/Kotlin gaps closed |
 | `spec-audit-2026-06-24/` | 06-24 | 工程交付强制规范 §0–§10 audit (56 invariants) | `RESULTS.md` | 48 PASS / 5 PARTIAL / 3 FAIL → all actionable findings fixed red→green |
 | `raison-detre-2026-06-24/` | 06-24 | Existential verdict — is there a defensible general moat? | `README.md` + `debate.md` | Niche fork, no defensible *general* moat; S4 dispatch is the one scale-invariant delta |
 | `general-moat-2026-06-24/` | 06-24 | General-moat ambition + framework-synthesizer gap scan | `README.md` | Strategy doc for the "fusion (content+structure+bridge+honest)" bet |
@@ -47,24 +47,35 @@ artifact that cannot be reproduced or whose verdict is cherry-picked does not be
 4. **Honesty header** in every entry doc: state the claim being tested and that it is not a
    correctness claim; include tie/no-help/ceiling cases.
 
-## Deferred housekeeping (needs a quiescent repo — see note)
+## Housekeeping applied this session (the convention, enforced)
 
-These naming fixes are **intentionally not applied yet** because a concurrent work-stream
-was committing to this repo every few minutes during this session (rebuilds, wide
-`git add`, edits to `CHECKPOINT.md` + active artifact dirs). Renaming now would break the
-1–5 cross-references each path has in `CHECKPOINT.md` / `README.md` / `NEXT-SESSION-*.md` /
-`CLAUDE.md`↔`AGENTS.md` (the last two are sync-locked) and collide with the active commits.
-Apply once the repo is quiescent:
+- **Redundant inner dates removed** — `lang-parity-2026-06-24/` files lost the date the
+  folder already carries: `RESULTS-full14-2026-06-24.md` → `RESULTS-full14.md`,
+  `parity-full14-2026-06-24.jsonl` → `parity-full14.jsonl`,
+  `per-kind-decomposition-2026-06-24.json` → `per-kind-decomposition.json`; all
+  cross-references (this index, `CHECKPOINT.md`, the folder's `RESULTS.md`) updated.
+- **Next-session handoffs collapsed to the sole authority** — four competing root
+  `NEXT-SESSION-*.md` reduced to the one `NEXT-SESSION-GENERAL-MOAT.md` it self-declares
+  authoritative; the three superseded earlier-loop handoffs were removed (their substance
+  lives in `spec-audit-*`/`raison-detre-*`; git preserves the originals) and the lone
+  `value-ref-decision/README.md` citation was de-pointed.
+- **Working dirs stay gitignored** — `.bench-out*`, `.parity-out` are ignored; no working
+  artifacts are tracked.
 
-- `lang-parity-2026-06-24/`: drop the redundant inner date — `RESULTS-full14-2026-06-24.md`
-  → `RESULTS-full14.md`, `parity-full14-2026-06-24.jsonl` → `parity-full14.jsonl`,
-  `per-kind-decomposition-2026-06-24.json` → `per-kind-decomposition.json` (+ update the one
-  `CHECKPOINT.md` reference).
-- `framework-parity-2026-06-24/`: it has both `RESULTS.md` and `RESULTS-dispatch.md` +
-  `measure.mjs`/`measure-dispatch.mjs` — fine as two distinct measurements (Pinia/Vuex vs
-  dispatch), but cross-link them from one entry doc.
-- Root `NEXT-SESSION-*.md`: **DONE this session** — collapsed four competing handoffs to the
-  one `NEXT-SESSION-GENERAL-MOAT.md` (self-declared sole authority); the three superseded
-  earlier-loop handoffs (`-AUDIT-AND-PROOF`, `-GOAL`, `-OW-RAISON-DETRE`) were removed (their
-  substance lives in `spec-audit-*`/`raison-detre-*`, and git preserves the originals), and the
-  lone `value-ref-decision/README.md` citation was de-pointed.
+## Acceptable multi-doc artifacts (NOT defects — distinct roles)
+
+The convention says "one canonical *entry* doc". A few folders carry extra **supporting**
+docs alongside that entry; these are intentional, not duplicates:
+
+- `omniweave-benchmark/`: `README.md` (entry) + `METHODOLOGY.md` + `RESULTS.md` — a
+  publication-grade benchmark with paper-style sections. It is the one undated folder: a
+  living named deliverable, not a dated experiment snapshot.
+- `framework-parity-2026-06-24/`: `RESULTS.md` (Pinia/Vuex store parity) + `RESULTS-dispatch.md`
+  (dispatch-synthesizer parity) — two distinct measurements, two runners (`measure.mjs` /
+  `measure-dispatch.mjs`).
+- `lang-parity-2026-06-24/`: `RESULTS.md` (the adversarial drill-down that found the
+  references-only deficit) + `RESULTS-full14.md` (the full 14-language sweep that confirmed it).
+- `agent-ab-2026-06-13/`: keeps per-round `HANDOFF-round{3..6}.md` + `round{2,3,4}/` subdirs —
+  a multi-round saga; the round files are self-contained history (no external references).
+- `content-vs-structural-2026-06-24/` (`MANIFEST.md`) and `raison-detre-2026-06-24/`
+  (`debate.md`) — manifest / adversarial-debate supporting docs beside the `README.md` entry.
