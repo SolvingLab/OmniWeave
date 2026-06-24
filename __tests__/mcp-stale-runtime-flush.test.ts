@@ -40,13 +40,20 @@ describe('MCPSession stale runtime replies', () => {
 
     const { MCPSession } = await import('../src/mcp/session');
     const transport = new FakeTransport();
-    const session = new MCPSession(transport, {} as MCPEngine);
+    let ownerMessage = '';
+    const session = new MCPSession(transport, {} as MCPEngine, {
+      onStaleRuntime: (message) => {
+        ownerMessage = message;
+        transport.events.push('owner-stale');
+      },
+    });
     session.start();
 
     await transport.deliver({ jsonrpc: '2.0', id: 7, method: 'tools/list' });
 
-    expect(transport.events).toEqual(['flush-error:7', 'stop']);
+    expect(transport.events).toEqual(['flush-error:7', 'stop', 'owner-stale']);
     expect(transport.errorMessage).toContain('OmniWeave MCP runtime is stale');
+    expect(ownerMessage).toBe(transport.errorMessage);
   });
 });
 

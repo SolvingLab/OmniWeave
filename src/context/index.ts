@@ -29,20 +29,13 @@ import {
   isLowSignalSourceFile,
   isRepositorySnapshotFile,
   isRepositorySnapshotQuery,
+  queryAllowsLowSignalSources,
   extractSearchTerms,
   scorePathRelevance,
   getStemVariants,
   isDistinctiveIdentifier,
 } from '../search/query-utils';
 import { LOW_CONFIDENCE_MARKER } from './markers';
-
-function queryAllowsLowSignalSources(query: string): boolean {
-  return /\b(test|tests|testing|spec|specs)\b/i.test(query)
-    || /\b(research|external|upstream|vendor|vendored|third[-_ ]?party)\b/i.test(query)
-    || /\b(?:repo|repository|codebase|source)\s+snapshots?\b/i.test(query)
-    || /\bsnapshots?\s+(?:repo|repository|codebase|source)\b/i.test(query)
-    || /(?:^|\/)research\/[^/]+\/repos(?:\/|$)/i.test(query);
-}
 
 function isSpecificSymbolToken(token: string): boolean {
   return /[.\/]|::/.test(token) || isDistinctiveIdentifier(token);

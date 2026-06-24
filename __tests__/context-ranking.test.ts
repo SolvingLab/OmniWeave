@@ -20,6 +20,7 @@ import {
   isDistinctiveIdentifier,
   isLowSignalSourceQuery,
   isRepositorySnapshotQuery,
+  queryAllowsLowSignalSources,
   scorePathRelevance,
   deriveProjectNameTokens,
 } from '../src/search/query-utils';
@@ -133,8 +134,22 @@ describe('project-name down-weighting in path relevance (#720)', () => {
   it('does not treat bare product snapshot/verify terms as low-signal source intent', () => {
     expect(isRepositorySnapshotQuery('snapshot verify import targetChecked')).toBe(false);
     expect(isLowSignalSourceQuery('snapshot verify import targetChecked')).toBe(false);
+    expect(queryAllowsLowSignalSources('snapshot verify import targetChecked')).toBe(false);
     expect(isRepositorySnapshotQuery('external snapshot Symbol')).toBe(true);
     expect(isRepositorySnapshotQuery('repo snapshot Symbol')).toBe(true);
+    expect(queryAllowsLowSignalSources('external snapshot Symbol')).toBe(true);
+    expect(queryAllowsLowSignalSources('repo snapshot Symbol')).toBe(true);
+  });
+
+  it('keeps the old low-signal query export as a compatibility alias', () => {
+    for (const query of [
+      'unit tests for rankExploreRelationships',
+      'research/2026-06-23-codegraph-ecosystem/repos/codegraph tools',
+      'snapshot verify import targetChecked',
+      'mcp tools explore',
+    ]) {
+      expect(isLowSignalSourceQuery(query)).toBe(queryAllowsLowSignalSources(query));
+    }
   });
 
   it('does not treat the ordinary word repo as an external-snapshot request', () => {

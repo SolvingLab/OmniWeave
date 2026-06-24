@@ -75,6 +75,12 @@ export interface MCPSessionOptions {
    * where the project lives.
    */
   explicitProjectPath?: string | null;
+  /**
+   * Owner-level shutdown hook for stale on-disk builds. A session can flush the
+   * JSON-RPC error and close its own transport, but only the owner knows whether
+   * that should stop the direct stdio process or the shared daemon.
+   */
+  onStaleRuntime?: (message: string) => void | Promise<void>;
 }
 
 /**
@@ -88,6 +94,7 @@ export class MCPSession {
   private rootsAttempted = false;
   private resolvePromise: Promise<void> | null = null;
   private explicitProjectPath: string | null;
+  private onStaleRuntime: ((message: string) => void | Promise<void>) | null;
 
   constructor(
     private transport: JsonRpcTransport,
@@ -95,6 +102,7 @@ export class MCPSession {
     opts: MCPSessionOptions = {},
   ) {
     this.explicitProjectPath = opts.explicitProjectPath ?? null;
+    this.onStaleRuntime = opts.onStaleRuntime ?? null;
   }
 
   /**
@@ -167,6 +175,7 @@ export class MCPSession {
     process.stderr.write(`[OmniWeave MCP] ${message}\n`);
     await this.transport.sendErrorAndFlush(request.id, ErrorCodes.InternalError, message);
     this.stop();
+    if (this.onStaleRuntime) await this.onStaleRuntime(message);
     return true;
   }
 

@@ -287,6 +287,9 @@ export class Daemon {
       const transport = new SocketTransport(socket);
       const session = new MCPSession(transport, this.engine, {
         explicitProjectPath: this.projectRoot,
+        onStaleRuntime: () => {
+          void this.stop('stale build fingerprint');
+        },
       });
       transport.onClose(() => this.dropClient(session));
       this.clients.add(session);

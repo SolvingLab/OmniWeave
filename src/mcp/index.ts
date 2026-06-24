@@ -325,6 +325,7 @@ export class MCPServer {
     const transport = new StdioTransport();
     this.session = new MCPSession(transport, this.engine, {
       explicitProjectPath: this.projectPath,
+      onStaleRuntime: () => this.stop(),
     });
 
     if (this.projectPath) {

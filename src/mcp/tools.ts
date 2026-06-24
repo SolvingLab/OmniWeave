@@ -27,6 +27,7 @@ import {
   isRepositorySnapshotFile,
   isRepositorySnapshotQuery,
   isTestFile,
+  queryAllowsLowSignalSources,
   normalizeNameToken,
   extractContentSearchPattern,
   escapeContentSnippet,
@@ -107,14 +108,6 @@ const RUST_PATH_PREFIXES = new Set(['crate', 'super', 'self']);
 const CONTAINER_NODE_KINDS = new Set<NodeKind>([
   'class', 'struct', 'interface', 'trait', 'protocol', 'enum', 'namespace', 'module',
 ]);
-
-function queryAllowsLowSignalSources(query: string): boolean {
-  return /\b(test|tests|testing|spec|specs)\b/i.test(query)
-    || /\b(research|external|upstream|vendor|vendored|third[-_ ]?party)\b/i.test(query)
-    || /\b(?:repo|repository|codebase|source)\s+snapshots?\b/i.test(query)
-    || /\bsnapshots?\s+(?:repo|repository|codebase|source)\b/i.test(query)
-    || /(?:^|\/)research\/[^/]+\/repos(?:\/|$)/i.test(query);
-}
 
 interface AmbiguousExploreToken {
   token: string;

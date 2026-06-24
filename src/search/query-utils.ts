@@ -376,10 +376,12 @@ export function isRepositorySnapshotQuery(query: string): boolean {
     || /(?:^|\/)research\/[^/]+\/repos(?:\/|$)/i.test(query);
 }
 
-export function isLowSignalSourceQuery(query: string): boolean {
+export function queryAllowsLowSignalSources(query: string): boolean {
   return /\b(test|tests|testing|spec|specs)\b/i.test(query)
     || isRepositorySnapshotQuery(query);
 }
+
+export const isLowSignalSourceQuery = queryAllowsLowSignalSources;
 
 /**
  * Check if a path is in a non-production directory (integration, sample, example, etc.)
