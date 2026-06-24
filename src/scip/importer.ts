@@ -466,7 +466,9 @@ function resolveDefinition(
   language: Language,
   definitions: Map<string, DefinitionRecord[]>,
 ): DefinitionRecord | null {
-  const candidates = (definitions.get(symbol) ?? []).filter((record) => record.language === language);
+  const candidates = (definitions.get(symbol) ?? []).filter((record) =>
+    compatibleScipFactLanguage(record.language, language)
+  );
   return candidates.length === 1 ? candidates[0]! : null;
 }
 
@@ -711,6 +713,10 @@ function resolveScipDocumentLanguage(
 }
 
 function compatibleDocumentLanguage(scipLanguage: Language, indexedLanguage: Language): boolean {
+  return compatibleScipFactLanguage(scipLanguage, indexedLanguage);
+}
+
+function compatibleScipFactLanguage(scipLanguage: Language, indexedLanguage: Language): boolean {
   if (scipLanguage === indexedLanguage) return true;
   return sameLanguageFamily(scipLanguage, indexedLanguage, 'typescript', 'tsx') ||
     sameLanguageFamily(scipLanguage, indexedLanguage, 'javascript', 'jsx');
