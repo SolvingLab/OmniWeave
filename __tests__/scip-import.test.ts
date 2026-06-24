@@ -426,6 +426,37 @@ describe('SCIP importer', () => {
     }
   });
 
+  it('does not promote SCIP references into callers output', async () => {
+    fs.writeFileSync(path.join(projectRoot, 'src', 'a.ts'), [
+      'export function target(): string {',
+      "  return 'ok';",
+      '}',
+      'export function caller(): string {',
+      "  return 'idle';",
+      '}',
+      '',
+    ].join('\n'));
+    await reindexProject(projectRoot);
+    writeScipIndex(indexPath);
+    await importScipIndex(projectRoot, indexPath);
+
+    const cg = OmniWeave.openSync(projectRoot);
+    try {
+      const caller = cg.searchNodes('caller', { limit: 5 }).find((match) => match.node.filePath === 'src/a.ts')?.node;
+      expect(caller).toBeDefined();
+      expect(cg.getOutgoingEdges(caller!.id).some((edge) => edge.provenance === 'scip' && edge.kind === 'references')).toBe(true);
+      expect(cg.getOutgoingEdges(caller!.id).some((edge) => edge.kind === 'calls')).toBe(false);
+
+      const callers = await new ToolHandler(cg).execute('omniweave_callers', { symbol: 'target' });
+      const text = callers.content[0]?.text ?? '';
+      expect(text).toContain('No callers found for "target"');
+      expect(text).toContain('Omitted 1 non-execution reference/type/import relationship');
+      expect(text).not.toContain('caller (function)');
+    } finally {
+      cg.destroy();
+    }
+  });
+
   it('skips SCIP facts with malformed occurrence ranges', async () => {
     writeMalformedRangeScipIndex(indexPath);
 
