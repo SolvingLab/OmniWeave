@@ -574,7 +574,7 @@ export class FileWatcher {
           this.pendingFiles.delete(filePath);
         }
       }
-      this.onSyncComplete?.(result);
+      this.notifySyncComplete(result);
     } catch (err) {
       if (err instanceof LockUnavailableError) {
         // Lock-failure no-op (another writer holds the lock). pendingFiles
@@ -586,7 +586,7 @@ export class FileWatcher {
       } else {
         const error = err instanceof Error ? err : new Error(String(err));
         logWarn('Watch sync failed', { error: error.message });
-        this.onSyncError?.(error);
+        this.notifySyncError(error);
       }
       // Failure: leave pendingFiles untouched. Every edit it tracks is
       // still unindexed; the rescheduled sync sees the same set.
@@ -627,6 +627,36 @@ export class FileWatcher {
       });
     }
     return result;
+  }
+
+  private notifySyncComplete(result: { filesChanged: number; durationMs: number }): void {
+    if (!this.onSyncComplete) return;
+    try {
+      this.onSyncComplete(result);
+    } catch (err) {
+      this.logCallbackError('onSyncComplete', err);
+    }
+  }
+
+  private notifySyncError(error: Error): void {
+    if (!this.onSyncError) return;
+    try {
+      this.onSyncError(error);
+    } catch (err) {
+      this.logCallbackError('onSyncError', err);
+    }
+  }
+
+  private logCallbackError(callbackName: 'onSyncComplete' | 'onSyncError', err: unknown): void {
+    const error = err instanceof Error ? err : new Error(String(err));
+    try {
+      logWarn('File watcher callback failed', {
+        callback: callbackName,
+        error: error.message,
+      });
+    } catch {
+      // Preserve the already-completed sync state even if the logger/stdio path is broken.
+    }
   }
 }
 

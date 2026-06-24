@@ -338,6 +338,42 @@ describe('FileWatcher', () => {
       watcher.stop();
     });
 
+    it('should not treat onSyncComplete failures as sync failures', async () => {
+      const syncFn = vi.fn().mockResolvedValue({ filesChanged: 1, durationMs: 10 });
+      const onSyncComplete = vi.fn(() => {
+        throw new Error('callback failed');
+      });
+      const onSyncError = vi.fn();
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const watcher = newWatcher(syncFn, {
+        debounceMs: 50,
+        onSyncComplete,
+        onSyncError,
+      });
+
+      try {
+        watcher.start();
+        await watcher.waitUntilReady();
+        __emitWatchEventForTests(testDir, 'src/callback.ts');
+
+        await waitFor(() => onSyncComplete.mock.calls.length > 0);
+        await waitFor(
+          () => !watcher.getPendingFiles().some((p) => p.path === 'src/callback.ts'),
+        );
+        await new Promise((resolve) => setTimeout(resolve, 125));
+
+        expect(syncFn).toHaveBeenCalledTimes(1);
+        expect(onSyncError).not.toHaveBeenCalled();
+        expect(warnSpy).toHaveBeenCalledWith(
+          '[OmniWeave] File watcher callback failed',
+          { callback: 'onSyncComplete', error: 'callback failed' },
+        );
+      } finally {
+        warnSpy.mockRestore();
+        watcher.stop();
+      }
+    });
+
     it('should call onSyncError when sync throws', async () => {
       const syncFn = vi.fn().mockRejectedValue(new Error('sync failed'));
       const onSyncError = vi.fn();
