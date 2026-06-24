@@ -88,4 +88,6 @@ research/**/pdf/*.xdv
 
 # agent-eval working dirs (raw transcripts/indexes — reproducible, not committed)
 scripts/agent-eval/.bench-out/
+scripts/agent-eval/.bench-out*/
 scripts/agent-eval/.parity-out/
+scripts/agent-eval/.parity-out*/

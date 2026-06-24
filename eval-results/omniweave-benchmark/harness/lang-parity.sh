@@ -11,7 +11,7 @@
 #
 # Usage: lang-parity.sh <dir-of-cloned-repos> | <repo-dir> [more repo dirs...]
 set -uo pipefail
-ENGINE="$(cd "$(dirname "$0")/../.." && pwd)"
+ENGINE="$(cd "$(dirname "$0")/../../.." && pwd)"
 OWBIN="$ENGINE/dist/bin/omniweave.js"
 CGBIN="${CGBIN:-$ENGINE/research/2026-06-23-codegraph-ecosystem/repos/codegraph/dist/bin/codegraph.js}"
 if [ "$#" -lt 1 ]; then

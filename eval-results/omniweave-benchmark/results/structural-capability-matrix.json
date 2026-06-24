@@ -1,0 +1,255 @@
+[
+  {
+    "name": "capstone",
+    "ow": {
+      "n": 40,
+      "methods": 2,
+      "overrides": 2,
+      "crossLang": 2,
+      "produces": 5,
+      "consumes": 4,
+      "invokes": 2,
+      "bridge": 13
+    },
+    "cg": {
+      "n": 13,
+      "methods": 0,
+      "overrides": 0,
+      "crossLang": 0,
+      "produces": 0,
+      "consumes": 0,
+      "invokes": 0,
+      "bridge": 0
+    }
+  },
+  {
+    "name": "polyglot",
+    "ow": {
+      "n": 27,
+      "methods": 0,
+      "overrides": 0,
+      "crossLang": 7,
+      "produces": 0,
+      "consumes": 0,
+      "invokes": 0,
+      "bridge": 7
+    },
+    "cg": {
+      "n": 27,
+      "methods": 0,
+      "overrides": 0,
+      "crossLang": 0,
+      "produces": 0,
+      "consumes": 0,
+      "invokes": 0,
+      "bridge": 0
+    }
+  },
+  {
+    "name": "DESeq2",
+    "ow": {
+      "n": 292,
+      "methods": 15,
+      "overrides": 4,
+      "crossLang": 0,
+      "produces": 0,
+      "consumes": 0,
+      "invokes": 0,
+      "bridge": 0
+    },
+    "cg": {
+      "n": 292,
+      "methods": 0,
+      "overrides": 0,
+      "crossLang": 0,
+      "produces": 0,
+      "consumes": 0,
+      "invokes": 0,
+      "bridge": 0
+    }
+  },
+  {
+    "name": "MAESTRO",
+    "ow": {
+      "n": 7424,
+      "methods": 23,
+      "overrides": 0,
+      "crossLang": 0,
+      "produces": 421,
+      "consumes": 395,
+      "invokes": 0,
+      "bridge": 816
+    },
+    "cg": {
+      "n": 5149,
+      "methods": 23,
+      "overrides": 0,
+      "crossLang": 0,
+      "produces": 0,
+      "consumes": 0,
+      "invokes": 0,
+      "bridge": 0
+    }
+  },
+  {
+    "name": "SummarizedExperiment",
+    "ow": {
+      "n": 339,
+      "methods": 92,
+      "overrides": 11,
+      "crossLang": 0,
+      "produces": 0,
+      "consumes": 0,
+      "invokes": 0,
+      "bridge": 0
+    },
+    "cg": {
+      "n": 339,
+      "methods": 0,
+      "overrides": 0,
+      "crossLang": 0,
+      "produces": 0,
+      "consumes": 0,
+      "invokes": 0,
+      "bridge": 0
+    }
+  },
+  {
+    "name": "GenomicRanges",
+    "ow": {
+      "n": 540,
+      "methods": 166,
+      "overrides": 11,
+      "crossLang": 0,
+      "produces": 0,
+      "consumes": 0,
+      "invokes": 0,
+      "bridge": 0
+    },
+    "cg": {
+      "n": 540,
+      "methods": 0,
+      "overrides": 0,
+      "crossLang": 0,
+      "produces": 0,
+      "consumes": 0,
+      "invokes": 0,
+      "bridge": 0
+    }
+  },
+  {
+    "name": "S4Vectors",
+    "ow": {
+      "n": 1800,
+      "methods": 500,
+      "overrides": 195,
+      "crossLang": 0,
+      "produces": 0,
+      "consumes": 0,
+      "invokes": 0,
+      "bridge": 0
+    },
+    "cg": {
+      "n": 1833,
+      "methods": 0,
+      "overrides": 0,
+      "crossLang": 0,
+      "produces": 0,
+      "consumes": 0,
+      "invokes": 0,
+      "bridge": 0
+    }
+  },
+  {
+    "name": "rna-seq-star-deseq2",
+    "ow": {
+      "n": 297,
+      "methods": 0,
+      "overrides": 0,
+      "crossLang": 6,
+      "produces": 53,
+      "consumes": 35,
+      "invokes": 10,
+      "bridge": 104
+    },
+    "cg": {
+      "n": 53,
+      "methods": 0,
+      "overrides": 0,
+      "crossLang": 0,
+      "produces": 0,
+      "consumes": 0,
+      "invokes": 0,
+      "bridge": 0
+    }
+  },
+  {
+    "name": "chipseq-snakemake",
+    "ow": {
+      "n": 919,
+      "methods": 0,
+      "overrides": 0,
+      "crossLang": 10,
+      "produces": 155,
+      "consumes": 81,
+      "invokes": 39,
+      "bridge": 285
+    },
+    "cg": {
+      "n": 181,
+      "methods": 0,
+      "overrides": 0,
+      "crossLang": 0,
+      "produces": 0,
+      "consumes": 0,
+      "invokes": 0,
+      "bridge": 0
+    }
+  },
+  {
+    "name": "nfcore-sarek",
+    "ow": {
+      "n": 745,
+      "methods": 0,
+      "overrides": 0,
+      "crossLang": 0,
+      "produces": 512,
+      "consumes": 4,
+      "invokes": 0,
+      "bridge": 516
+    },
+    "cg": {
+      "n": 41,
+      "methods": 0,
+      "overrides": 0,
+      "crossLang": 0,
+      "produces": 0,
+      "consumes": 0,
+      "invokes": 0,
+      "bridge": 0
+    }
+  },
+  {
+    "name": "nfcore-rnaseq",
+    "ow": {
+      "n": 712,
+      "methods": 0,
+      "overrides": 0,
+      "crossLang": 7,
+      "produces": 344,
+      "consumes": 12,
+      "invokes": 0,
+      "bridge": 363
+    },
+    "cg": {
+      "n": 182,
+      "methods": 0,
+      "overrides": 0,
+      "crossLang": 0,
+      "produces": 0,
+      "consumes": 0,
+      "invokes": 0,
+      "bridge": 0
+    }
+  }
+]

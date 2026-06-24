@@ -17,13 +17,13 @@
 # Keys are read from the environment only — never written to disk or echoed.
 set -uo pipefail
 
-ENGINE="$(cd "$(dirname "$0")/../.." && pwd)"
+ENGINE="$(cd "$(dirname "$0")/../../.." && pwd)"
 OWBIN="$ENGINE/dist/bin/omniweave.js"
 CGBIN="${CGBIN:-$ENGINE/research/2026-06-23-codegraph-ecosystem/repos/codegraph/dist/bin/codegraph.js}"
 DATASETS_DIR="${DATASETS_DIR:?set DATASETS_DIR to the real-clone dir}"
-MANIFEST="${1:-$ENGINE/scripts/agent-eval/benchmark-questions.json}"
+MANIFEST="${1:-$ENGINE/eval-results/omniweave-benchmark/questions/benchmark-questions.json}"
 OUT="${OUT:-$ENGINE/scripts/agent-eval/.bench-out}"
-HOOK="$ENGINE/scripts/agent-eval/force-mcp-hook.sh"
+HOOK="$ENGINE/eval-results/omniweave-benchmark/harness/force-mcp-hook.sh"
 PRO="${PRO:-mimo-v2.5-pro}"; SMALL="${SMALL:-mimo-v2.5}"
 mkdir -p "$OUT"; : > "$OUT/results.jsonl"
 command -v claude >/dev/null || { echo "claude CLI missing"; exit 1; }

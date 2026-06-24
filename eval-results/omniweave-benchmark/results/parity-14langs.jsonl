@@ -1,0 +1,14 @@
+{"name":"c","ow_nodes":75,"cg_nodes":79,"ow_edges":289,"cg_edges":294,"std_calls_diff":0,"std_total_diff":5,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
+{"name":"cpp","ow_nodes":7296,"cg_nodes":7296,"ow_edges":15210,"cg_edges":15217,"std_calls_diff":0,"std_total_diff":7,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
+{"name":"csharp","ow_nodes":30,"cg_nodes":30,"ow_edges":62,"cg_edges":62,"std_calls_diff":0,"std_total_diff":0,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
+{"name":"go","ow_nodes":910,"cg_nodes":910,"ow_edges":4331,"cg_edges":4427,"std_calls_diff":0,"std_total_diff":96,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
+{"name":"java","ow_nodes":8566,"cg_nodes":8566,"ow_edges":23225,"cg_edges":23612,"std_calls_diff":0,"std_total_diff":387,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
+{"name":"js","ow_nodes":1083,"cg_nodes":1083,"ow_edges":3617,"cg_edges":3644,"std_calls_diff":0,"std_total_diff":27,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
+{"name":"kotlin","ow_nodes":8881,"cg_nodes":9310,"ow_edges":23751,"cg_edges":24209,"std_calls_diff":14,"std_total_diff":458,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
+{"name":"lua","ow_nodes":1927,"cg_nodes":1927,"ow_edges":4127,"cg_edges":4127,"std_calls_diff":0,"std_total_diff":0,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
+{"name":"php","ow_nodes":582,"cg_nodes":582,"ow_edges":1277,"cg_edges":1285,"std_calls_diff":0,"std_total_diff":8,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
+{"name":"python","ow_nodes":1299,"cg_nodes":1299,"ow_edges":2875,"cg_edges":2960,"std_calls_diff":0,"std_total_diff":85,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
+{"name":"ruby","ow_nodes":1751,"cg_nodes":1800,"ow_edges":3306,"cg_edges":3441,"std_calls_diff":13,"std_total_diff":135,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
+{"name":"rust","ow_nodes":3731,"cg_nodes":3731,"ow_edges":15542,"cg_edges":15686,"std_calls_diff":0,"std_total_diff":144,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
+{"name":"swift","ow_nodes":3477,"cg_nodes":4192,"ow_edges":12566,"cg_edges":13728,"std_calls_diff":338,"std_total_diff":1162,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
+{"name":"ts","ow_nodes":5076,"cg_nodes":5079,"ow_edges":24727,"cg_edges":25350,"std_calls_diff":0,"std_total_diff":623,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
