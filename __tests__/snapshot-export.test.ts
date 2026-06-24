@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { spawnSync } from 'child_process';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import OmniWeave from '../src/index';
-import { getDatabasePath } from '../src/db';
+import { DatabaseConnection, getDatabasePath } from '../src/db';
 import {
   exportSnapshot,
   SNAPSHOT_DATABASE_FILENAME,
@@ -93,6 +93,20 @@ describe('snapshot export', () => {
       manifestPath: path.join(outputDir, SNAPSHOT_MANIFEST_FILENAME),
     });
     expect(fs.existsSync(staleWal)).toBe(false);
+  });
+
+  it('refuses to export when the source graph has no recorded schema version', async () => {
+    const schemaSpy = vi.spyOn(DatabaseConnection.prototype, 'getSchemaVersion').mockReturnValue(null);
+    try {
+      await expect(exportSnapshot(projectRoot, outputDir, {
+        omniweaveVersion: '9.9.9-test',
+      })).rejects.toThrow(/Cannot export snapshot without a recorded graph schema version/);
+    } finally {
+      schemaSpy.mockRestore();
+    }
+
+    expect(fs.existsSync(path.join(outputDir, SNAPSHOT_MANIFEST_FILENAME))).toBe(false);
+    expect(fs.existsSync(path.join(outputDir, SNAPSHOT_DATABASE_FILENAME))).toBe(false);
   });
 
   it('refuses to export into the active OmniWeave index directory even when forced', async () => {

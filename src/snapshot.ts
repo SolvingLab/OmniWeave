@@ -70,7 +70,7 @@ export interface SnapshotManifest {
   omniweaveVersion: string;
   omniweaveBuildFingerprint?: string;
   createdAt: string;
-  schemaVersion: number | null;
+  schemaVersion: number;
   sourceRoot: {
     path?: string;
     fingerprint: string;
@@ -207,6 +207,11 @@ export async function exportSnapshot(
       stats = queries.getStats();
       stats.dbSizeBytes = conn.getSize();
       schema = conn.getSchemaVersion();
+      if (!schema) {
+        throw new Error(
+          'Cannot export snapshot without a recorded graph schema version; reindex with the current OmniWeave before exporting'
+        );
+      }
       files = queries.getAllFiles();
     } finally {
       conn.close();
@@ -239,7 +244,7 @@ export async function exportSnapshot(
         ? { omniweaveBuildFingerprint: options.omniweaveBuildFingerprint }
         : {}),
       createdAt: new Date().toISOString(),
-      schemaVersion: schema?.version ?? null,
+      schemaVersion: schema.version,
       sourceRoot: {
         fingerprint: fingerprintIndexedFiles(files),
         indexedFileCount: files.length,
