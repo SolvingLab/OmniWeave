@@ -117,6 +117,16 @@ function syncSnapshotNodeKindCountForTest(outputDir: string, oldKind: string, ne
   });
 }
 
+function addSnapshotEdgeKindCountForTest(outputDir: string, kind: string): void {
+  updateSnapshotManifestForTest(outputDir, (manifest) => {
+    const graph = manifest.graph as Record<string, unknown>;
+    graph.edgeCount = (graph.edgeCount as number) + 1;
+    const edgesByKind = { ...(graph.edgesByKind as Record<string, number>) };
+    edgesByKind[kind] = (edgesByKind[kind] ?? 0) + 1;
+    graph.edgesByKind = edgesByKind;
+  });
+}
+
 async function withFakeHome<T>(home: string, fn: () => T | Promise<T>): Promise<T> {
   const oldHome = process.env.HOME;
   const oldUserProfile = process.env.USERPROFILE;
@@ -669,6 +679,50 @@ describe('snapshot import and verify', () => {
 
     expect(verification.ok).toBe(false);
     expect(verification.errors.join('\n')).toContain('failed foreign_key_check');
+    await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
+    expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+  });
+
+  it('rejects snapshots whose core table SQL weakens edge foreign keys', async () => {
+    const weakenedEdgesSql = `CREATE TABLE edges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL,
+    target TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    metadata TEXT,
+    line INTEGER,
+    col INTEGER,
+    provenance TEXT DEFAULT NULL
+)`;
+    const conn = DatabaseConnection.open(path.join(outputDir, SNAPSHOT_DATABASE_FILENAME));
+    try {
+      conn.getDb().exec('PRAGMA foreign_keys = OFF');
+      conn.getDb().exec('PRAGMA writable_schema = ON');
+      conn.getDb().prepare(
+        `UPDATE sqlite_schema
+         SET sql = ?
+         WHERE type = 'table' AND name = 'edges'`
+      ).run(weakenedEdgesSql);
+      conn.getDb().exec('PRAGMA writable_schema = OFF');
+      conn.getDb().prepare(
+        `INSERT INTO edges (source, target, kind, metadata, line, col, provenance)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      ).run('ghost-source-node', 'ghost-target-node', 'calls', '{}', 1, 1, 'tree-sitter');
+      conn.getDb().exec('PRAGMA foreign_keys = ON');
+      conn.getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      conn.close();
+    }
+    addSnapshotEdgeKindCountForTest(outputDir, 'calls');
+    refreshSnapshotDatabaseManifest(outputDir);
+
+    const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+    const errors = verification.errors.join('\n');
+
+    expect(verification.ok).toBe(false);
+    expect(errors).toContain('sqlite_schema SQL that differs from the current OmniWeave schema');
+    expect(errors).toContain('table:edges:edges');
+    expect(errors).toContain('edges with missing node endpoints');
     await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
     expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
   });

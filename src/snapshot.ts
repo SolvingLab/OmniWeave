@@ -63,30 +63,7 @@ const ALLOWED_SNAPSHOT_SCHEMA_OBJECTS = new Set([
   'trigger:nodes_ai:nodes',
   'trigger:nodes_au:nodes',
 ]);
-const SNAPSHOT_SCHEMA_EXACT_SQL_OBJECTS = new Set([
-  'index:idx_edges_kind:edges',
-  'index:idx_edges_provenance:edges',
-  'index:idx_edges_source_kind:edges',
-  'index:idx_edges_target_kind:edges',
-  'index:idx_files_language:files',
-  'index:idx_files_modified_at:files',
-  'index:idx_nodes_file_line:nodes',
-  'index:idx_nodes_file_path:nodes',
-  'index:idx_nodes_kind:nodes',
-  'index:idx_nodes_language:nodes',
-  'index:idx_nodes_lower_name:nodes',
-  'index:idx_nodes_name:nodes',
-  'index:idx_nodes_qualified_name:nodes',
-  'index:idx_unresolved_file_path:unresolved_refs',
-  'index:idx_unresolved_from_name:unresolved_refs',
-  'index:idx_unresolved_from_node:unresolved_refs',
-  'index:idx_unresolved_name:unresolved_refs',
-  'table:content_fts:content_fts',
-  'table:nodes_fts:nodes_fts',
-  'trigger:nodes_ad:nodes',
-  'trigger:nodes_ai:nodes',
-  'trigger:nodes_au:nodes',
-]);
+const SNAPSHOT_SCHEMA_EXACT_SQL_OBJECTS = new Set(ALLOWED_SNAPSHOT_SCHEMA_OBJECTS);
 let trustedSnapshotSchemaSql: Map<string, string | null> | null = null;
 
 export interface SnapshotManifest {
@@ -759,6 +736,7 @@ function validateStagedSnapshotDatabase(
     validateSnapshotDatabasePragmas(conn.getDb(), errors);
     validateSnapshotSqliteSchema(conn.getDb(), errors);
     validateSnapshotIndexedPathMembership(conn.getDb(), errors);
+    validateSnapshotGraphEndpointMembership(conn.getDb(), errors);
     validateSnapshotContentIndex(conn.getDb(), errors, targetRoot);
     validateSnapshotGraphText(conn.getDb(), errors);
     if (targetRoot) {
@@ -1021,6 +999,51 @@ function normalizeSqliteSchemaSql(sql: string | null): string | null {
 function validateSnapshotIndexedPathMembership(db: SqliteDatabase, errors: string[]): void {
   validateSnapshotPathMembership(db, 'nodes', 'file_path', 'nodes.file_path', errors);
   validateSnapshotPathMembership(db, 'unresolved_refs', 'file_path', 'unresolved_refs.file_path', errors);
+}
+
+function validateSnapshotGraphEndpointMembership(db: SqliteDatabase, errors: string[]): void {
+  let missingEdges: Array<{ id: unknown; source: unknown; target: unknown }>;
+  try {
+    missingEdges = db.prepare(`
+      SELECT edges.id, edges.source, edges.target
+      FROM edges
+      LEFT JOIN nodes source_nodes ON source_nodes.id = edges.source
+      LEFT JOIN nodes target_nodes ON target_nodes.id = edges.target
+      WHERE source_nodes.id IS NULL OR target_nodes.id IS NULL
+    `).all() as Array<{ id: unknown; source: unknown; target: unknown }>;
+  } catch (err) {
+    errors.push(`Snapshot database cannot validate edge endpoints: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+
+  if (missingEdges.length > 0) {
+    errors.push(
+      `Snapshot database contains edges with missing node endpoints: ${summarizePaths(missingEdges.map((row) => (
+        `edge ${formatSnapshotDiagnosticValue(row.id)} (${formatSnapshotDiagnosticValue(row.source)} -> ${formatSnapshotDiagnosticValue(row.target)})`
+      )))}`
+    );
+  }
+
+  let missingRefs: Array<{ id: unknown; fromNodeId: unknown }>;
+  try {
+    missingRefs = db.prepare(`
+      SELECT unresolved_refs.id, unresolved_refs.from_node_id AS fromNodeId
+      FROM unresolved_refs
+      LEFT JOIN nodes ON nodes.id = unresolved_refs.from_node_id
+      WHERE nodes.id IS NULL
+    `).all() as Array<{ id: unknown; fromNodeId: unknown }>;
+  } catch (err) {
+    errors.push(`Snapshot database cannot validate unresolved_ref endpoints: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+
+  if (missingRefs.length > 0) {
+    errors.push(
+      `Snapshot database contains unresolved_refs with missing source nodes: ${summarizePaths(missingRefs.map((row) => (
+        `unresolved_ref ${formatSnapshotDiagnosticValue(row.id)} (${formatSnapshotDiagnosticValue(row.fromNodeId)})`
+      )))}`
+    );
+  }
 }
 
 function validateSnapshotPathMembership(
