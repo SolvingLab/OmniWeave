@@ -14,13 +14,13 @@ from real indexed graphs and real-LLM runs (see `METHODOLOGY.md`); raw data is i
 | Go (cobra) | 910 | 910 | 0 | 96 | 0/0 |
 | Java (gson) | 8566 | 8566 | 0 | 387 | 0/0 |
 | JS (express) | 1083 | 1083 | 0 | 27 | 0/0 |
-| Kotlin (koin) | 8881 | 9310 | 14 | 458 | 0/0 |
+| Kotlin (koin) | 9310 | 9310 | 0 | 15 | 0/0 |
 | Lua (plenary) | 1927 | 1927 | 0 | 0 | 0/0 |
 | PHP (FastRoute) | 582 | 582 | 0 | 8 | 0/0 |
 | Python (requests) | 1299 | 1299 | 0 | 85 | 0/0 |
 | Ruby (sinatra) | 1751 | 1800 | 13 | 135 | 0/0 |
 | Rust (ripgrep) | 3731 | 3731 | 0 | 144 | 0/0 |
-| Swift (Alamofire) | 3477 | 4192 | 338 | 1162 | 0/0 |
+| Swift (Alamofire) | 4185 | 4192 | 0 | 115 | 0/0 |
 | TS (zod) | 5076 | 5079 | 0 | 623 | 0/0 |
 
 **A1. No standard-edge regression.** 10/14 repos have identical node counts and
@@ -177,8 +177,9 @@ scattered concepts) it honestly ties.
    sufficiency but is an artificial constraint.
 3. **Small greppable repos** under-state the moat: the workflow win is largest at
    scale where grep reads many files; we measured turns, not wall-clock at scale.
-4. **Swift/Kotlin node deficit** (Part A3) needs a clean-environment re-measure;
-   the extractors are byte-identical to the base, so it is not a code regression,
-   but the number is reported as-observed.
+4. **Swift/Kotlin node deficit** (Part A3) is now re-measured and closed at the
+   node layer (Swift −7, Kotlin 0). The remaining Swift/Kotlin deltas are
+   standard-edge drift (115 / 15), not missing symbols, and should be audited as
+   edge-specific maintenance before being framed as a regression.
 5. **Effort, not correctness, is the claim** — and effort has run-to-run variance;
    we report means over multiple runs and the full per-cell data is in `results/`.

@@ -97,9 +97,9 @@ export const kotlinExtractor: LanguageExtractor = {
     if (node.type === 'property_declaration') {
       const varDecl = node.namedChildren.find((c: SyntaxNode) => c.type === 'variable_declaration');
       const nameNode = varDecl?.namedChildren.find((c: SyntaxNode) => c.type === 'simple_identifier');
-      if (!nameNode) return false; // destructuring `val (a,b)` etc. — leave to default
+      if (!varDecl || !nameNode) return true; // destructuring `val (a,b)` etc. — skip
       const name = getNodeText(nameNode, ctx.source);
-      if (!name) return false;
+      if (!name) return true;
 
       let scope: 'local' | 'const' | 'instance' = 'const';
       for (let p = node.parent; p; p = p.parent) {
@@ -117,7 +117,13 @@ export const kotlinExtractor: LanguageExtractor = {
       const binding = node.namedChildren.find((c: SyntaxNode) => c.type === 'binding_pattern_kind');
       const isVal = binding != null && getNodeText(binding, ctx.source) === 'val';
       const kind = scope === 'instance' ? 'field' : isVal ? 'constant' : 'variable';
-      const typeNode = node.childForFieldName('type');
+      const typeNode = varDecl.namedChildren.find(
+        (c: SyntaxNode) =>
+          c.type === 'user_type' ||
+          c.type === 'nullable_type' ||
+          c.type === 'function_type' ||
+          c.type === 'type_identifier',
+      );
       const sig = typeNode
         ? `${isVal ? 'val' : 'var'} ${name}: ${getNodeText(typeNode, ctx.source)}`
         : undefined;

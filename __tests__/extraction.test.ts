@@ -1487,6 +1487,54 @@ class UserRepository(private val database: Database) {
     expect(classNode?.name).toBe('UserRepository');
   });
 
+  it('should extract Kotlin properties by storage scope without local or destructuring noise', () => {
+    const code = `
+const val TOP_CONST: String = "top"
+val topReadOnly: Int = 1
+var topMutable = 2
+
+class User {
+    val id: String = "u"
+    var name: String = "Ada"
+
+    fun update() {
+        val localValue = 1
+        var localMutable = 2
+        val (left, right) = Pair(1, 2)
+    }
+
+    companion object {
+        const val TYPE: String = "user"
+        var count = 0
+    }
+}
+
+object Registry {
+    val key: String = "registry"
+    var enabled = true
+}
+`;
+    const result = extractFromSource('Properties.kt', code);
+    const byName = new Map(result.nodes.map((n) => [n.name, n]));
+
+    expect(byName.get('TOP_CONST')?.kind).toBe('constant');
+    expect(byName.get('topReadOnly')?.kind).toBe('constant');
+    expect(byName.get('topMutable')?.kind).toBe('variable');
+    expect(byName.get('id')?.kind).toBe('field');
+    expect(byName.get('name')?.kind).toBe('field');
+    expect(byName.get('TYPE')?.kind).toBe('constant');
+    expect(byName.get('count')?.kind).toBe('variable');
+    expect(byName.get('key')?.kind).toBe('constant');
+    expect(byName.get('enabled')?.kind).toBe('variable');
+
+    expect(byName.get('id')?.signature).toBe('val id: String');
+    expect(byName.get('name')?.signature).toBe('var name: String');
+    expect(byName.has('localValue')).toBe(false);
+    expect(byName.has('localMutable')).toBe(false);
+    expect(byName.has('left')).toBe(false);
+    expect(byName.has('right')).toBe(false);
+  });
+
   it('should extract function declarations', () => {
     const code = `
 fun calculateTotal(items: List<Item>): Double {
