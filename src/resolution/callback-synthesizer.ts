@@ -3609,6 +3609,114 @@ function rtkQueryEdges(queries: QueryBuilder, ctx: ResolutionContext): Edge[] {
   return edges;
 }
 
+// ── Module-level variable / constant references (same-file) ──────────────────
+// "Which functions use this module constant?" is a core impact-analysis query an
+// agent asks before changing a config value / shared constant. A function body or
+// another module-var's initializer that uses a module-level `variable`/`constant`
+// by name is a real dependency, but extraction only records references to types
+// (param/return/field), never to value symbols — so the edge is missing and the
+// agent falls back to grep (which also hits comments/strings/the definition).
+// Bridge it, SAME-FILE + exact-name only (the entire codegraph delta on real repos
+// is same-file), with precision tighter than a raw text match: comment/string
+// stripped, word-boundary, the name must NOT be re-declared/assigned/parameter-bound
+// inside the source (shadowing → the use is the local, not the module symbol), and a
+// name shared with a function/class in the file is dropped (ambiguous). Heuristic +
+// confidence — a name-match inference, not a parsed edge.
+const MODULEVAR_REF_FANOUT = 300; // per source symbol — a config-heavy module is legitimate fan-out
+const MODULEVAR_REF_SOURCE_KINDS = new Set<NodeKind>(['function', 'method', 'variable', 'constant']);
+
+/** Module-level `variable`/`constant` use inside `body` is genuine only if `body`
+ *  does not locally bind the name (param, `let/const/var/def` decl, assignment, or
+ *  for-binding) — a local binding shadows the module symbol. Conservative: any doubt
+ *  → treat as shadowed and skip (漏边 over 错边). */
+function shadowsModuleVar(body: string, firstLine: string, name: string): boolean {
+  const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Parameter of the source (its declaration/first line `(... name ...)`).
+  const paren = firstLine.match(/\(([^)]*)\)/);
+  if (paren && new RegExp(`(?:^|[,(\\s*])${esc}(?:\\s*[:=,)]|$)`).test(paren[1]!)) return true;
+  // Local re-declaration.
+  if (new RegExp(`\\b(?:const|let|var|def|func|fn|val)\\s+${esc}\\b`).test(body)) return true;
+  // Local assignment (`name =`, excluding ==, >=, <=, !=, =>).
+  if (new RegExp(`(?:^|[^=!<>])\\b${esc}\\s*=(?![=>])`, 'm').test(body)) return true;
+  // for-loop binding — the loop VARIABLE only (right after `for`, optionally
+  // parenthesised / `let|const|var`-declared), NOT a name buried in the iterable
+  // (`for i in range(NAME)` must not count NAME as bound).
+  if (new RegExp(`\\bfor\\s*\\(?\\s*(?:const\\s+|let\\s+|var\\s+)?${esc}\\b\\s*(?:,|\\bin\\b|\\bof\\b|=)`).test(body)) return true;
+  return false;
+}
+
+function moduleVarReferenceEdges(ctx: ResolutionContext): Edge[] {
+  const edges: Edge[] = [];
+  const seen = new Set<string>();
+  for (const file of ctx.getAllFiles()) {
+    if (isGeneratedFile(file) || isWorkflowFile(file)) continue;
+    const nodesInFile = ctx.getNodesInFile(file);
+    const lang = nodesInFile[0]?.language;
+    if (!lang) continue;
+
+    // Module-level value symbols (not enclosed by any function/method).
+    const moduleVars = nodesInFile.filter(
+      (n) => (n.kind === 'variable' || n.kind === 'constant') && enclosingFn(nodesInFile, n.startLine) === null
+    );
+    if (moduleVars.length === 0) continue;
+
+    // Names shared by another value symbol — or by a function/class — are ambiguous
+    // (a use can't be uniquely attributed). Drop them: precision over recall.
+    const callableNames = new Set<string>();
+    for (const n of nodesInFile) {
+      if (n.kind === 'function' || n.kind === 'method' || n.kind === 'class' || n.kind === 'struct' || n.kind === 'interface') {
+        callableNames.add(n.name);
+      }
+    }
+    const byName = new Map<string, Node>();
+    const ambiguous = new Set<string>();
+    for (const v of moduleVars) {
+      if (v.name.length < 2 || callableNames.has(v.name)) { ambiguous.add(v.name); continue; }
+      if (byName.has(v.name)) ambiguous.add(v.name);
+      else byName.set(v.name, v);
+    }
+    for (const a of ambiguous) byName.delete(a);
+    if (byName.size === 0) continue;
+
+    const content = ctx.readFile(file);
+    if (!content) continue;
+    const stripLang = lang === 'tsx' || lang === 'jsx' ? 'javascript' : lang;
+    const safe = stripCommentsForRegex(content, stripLang as Parameters<typeof stripCommentsForRegex>[1]);
+    const lines = safe.split('\n');
+
+    for (const src of nodesInFile) {
+      if (!MODULEVAR_REF_SOURCE_KINDS.has(src.kind)) continue;
+      const end = src.endLine ?? src.startLine;
+      const body = lines.slice(src.startLine - 1, end).join('\n');
+      if (!body) continue;
+      const firstLine = lines[src.startLine - 1] ?? '';
+      let added = 0;
+      for (const [name, target] of byName) {
+        if (added >= MODULEVAR_REF_FANOUT) break;
+        if (target.id === src.id) continue; // self
+        // The use must be in the body AND not on the source's own declaration line
+        // only (a module-var source whose sole mention of `name` is its own decl line
+        // is not a reference). Require a word-boundary hit somewhere in the body.
+        if (!new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(body)) continue;
+        if (shadowsModuleVar(body, firstLine, name)) continue;
+        const key = `${src.id}>${target.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        edges.push({
+          source: src.id,
+          target: target.id,
+          kind: 'references',
+          line: src.startLine,
+          provenance: 'heuristic',
+          metadata: { synthesizedBy: 'module-var-ref', via: name, confidence: 0.8 },
+        });
+        added++;
+      }
+    }
+  }
+  return edges;
+}
+
 export function synthesizeCallbackEdges(queries: QueryBuilder, ctx: ResolutionContext): number {
   // Cross-file Go method→type `contains` edges must be synthesized AND persisted
   // FIRST: a method declared in a different file from its receiver type is
@@ -3664,6 +3772,10 @@ export function synthesizeCallbackEdges(queries: QueryBuilder, ctx: ResolutionCo
   const cFnPtrEdges = cFnPointerDispatchEdges(queries, ctx);
   const workflowEdges = workflowCrossLangEdges(queries, ctx);
   const generalCrossLang = generalCrossLangEdges(ctx);
+  // Same-file module-var `references` — a `references` (not `calls`) edge to a
+  // value symbol, so it cannot collide with the call-target dedup below; inserted
+  // separately to keep the source>target merge key kind-blind only for calls.
+  const moduleVarRefs = moduleVarReferenceEdges(ctx);
 
   const merged: Edge[] = [];
   const seen = new Set<string>();
@@ -3708,5 +3820,6 @@ export function synthesizeCallbackEdges(queries: QueryBuilder, ctx: ResolutionCo
     merged.push(e);
   }
   if (merged.length > 0) queries.insertEdges(merged);
-  return merged.length + goImpl.length + goMethodContains.length + rS4.length;
+  if (moduleVarRefs.length > 0) queries.insertEdges(moduleVarRefs);
+  return merged.length + goImpl.length + goMethodContains.length + rS4.length + moduleVarRefs.length;
 }
