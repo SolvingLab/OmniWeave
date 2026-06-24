@@ -1555,9 +1555,9 @@ export class ToolHandler {
         default:
           return this.errorResult(`Unknown tool: ${toolName}`);
       }
-      const withWorktree = this.withWorktreeNotice(result, args.projectPath as string | undefined);
-      const withStaleness = this.withStalenessNotice(withWorktree, args.projectPath as string | undefined, outputSurface);
-      const withSnapshotImport = this.withSnapshotImportNotice(withStaleness, args.projectPath as string | undefined);
+      const withStaleness = this.withStalenessNotice(result, args.projectPath as string | undefined, outputSurface);
+      const withWorktree = this.withWorktreeNotice(withStaleness, args.projectPath as string | undefined);
+      const withSnapshotImport = this.withSnapshotImportNotice(withWorktree, args.projectPath as string | undefined);
       if (toolName === 'omniweave_explore') {
         const [first, ...rest] = withSnapshotImport.content;
         if (first && first.type === 'text') {

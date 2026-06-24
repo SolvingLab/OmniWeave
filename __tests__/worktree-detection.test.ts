@@ -212,6 +212,25 @@ describe('worktree mismatch surfaces on hot read tools (issue #155)', () => {
       process.env.PATH = savedPath;
     }
   });
+
+  it('keeps empty-result stale guidance when worktree notice is prepended', async () => {
+    handler.setDefaultProjectHint(worktree);
+    fs.writeFileSync(
+      path.join(mainRepo, 'src', 'pending.ts'),
+      'export function borrowedPendingOnly() { return 2; }\n',
+    );
+
+    const res = await handler.execute('omniweave_explore', {
+      query: 'borrowedPendingOnly',
+      maxFiles: 3,
+    });
+    const text = res.content[0].text;
+
+    expect(text).toContain('different git worktree');
+    expect(text).toContain('empty explore result may be stale');
+    expect(text).toContain('src/pending.ts');
+    expect(text).toContain('No relevant code found for "borrowedPendingOnly"');
+  });
 });
 
 describe('worktree mismatch verdict re-resolves when the index root changes', () => {
