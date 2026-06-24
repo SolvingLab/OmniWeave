@@ -142,6 +142,14 @@ describe('CLI explore parity', () => {
       `export function buildExploreOutput(): string {
   return 'ranking budget truncation call path edge significance';
 }
+
+export function targetSymbol(): string {
+  return 'first-party';
+}
+
+export function callTarget(): string {
+  return targetSymbol();
+}
 `
     );
     fs.writeFileSync(
@@ -216,6 +224,14 @@ export function repeated(): string {
       path.join(snapshotMcp, 'tools.ts'),
       `export function buildExploreOutput(): string {
   return 'external snapshot ranking budget truncation call path';
+}
+
+export function targetSymbol(): string {
+  return 'snapshot';
+}
+
+export function snapshotTargetCaller(): string {
+  return targetSymbol();
 }
 `
     );
@@ -518,6 +534,30 @@ export function snapshotCaller(): string {
     expect(result.stdout).not.toContain('omniweave_node');
     expect(result.stdout).not.toContain('snapshotCaller');
     expect(result.stdout).toContain('Omitted 1 low-signal relationship');
+  });
+
+  it('keeps CLI callers from surfacing same-name repository snapshot definitions by default', () => {
+    const result = runCli(testDir, ['callers', 'targetSymbol']);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('callTarget');
+    expect(result.stdout).not.toContain('snapshotTargetCaller');
+    expect(result.stdout).not.toContain('research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/tools.ts');
+    expect(result.stdout).toContain('Omitted 1 low-signal same-name definition');
+  });
+
+  it('lets CLI callers inspect a repository snapshot definition when file is explicit', () => {
+    const result = runCli(testDir, [
+      'callers',
+      'targetSymbol',
+      '--file',
+      'research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/tools.ts',
+    ]);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('snapshotTargetCaller');
+    expect(result.stdout).toContain('research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/mcp/tools.ts');
+    expect(result.stdout).not.toContain('Omitted 1 low-signal same-name definition');
   });
 
   it('narrows CLI callers to one same-named definition by file', () => {

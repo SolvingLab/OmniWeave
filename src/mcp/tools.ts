@@ -1575,10 +1575,7 @@ export class ToolHandler {
     let pool = nodes;
     let filteredOut = false;
     if (fileFilter) {
-      const wanted = fileFilter.replace(/^\.\//, '');
-      const narrowed = pool.filter(
-        (n) => n.filePath === wanted || n.filePath.endsWith(wanted) || n.filePath.endsWith(`/${wanted}`)
-      );
+      const narrowed = pool.filter((n) => this.nodeMatchesFileFilter(n, fileFilter));
       if (narrowed.length > 0) {
         pool = narrowed;
       } else {
@@ -1593,6 +1590,48 @@ export class ToolHandler {
       else byDef.set(key, [n]);
     }
     return { groups: [...byDef.values()], filteredOut };
+  }
+
+  private nodeMatchesFileFilter(node: Node, fileFilter: string): boolean {
+    const wanted = fileFilter.replace(/^\.\//, '');
+    return node.filePath === wanted || node.filePath.endsWith(wanted) || node.filePath.endsWith(`/${wanted}`);
+  }
+
+  private aggregatedSymbolsNote(symbol: string, nodes: Node[]): string {
+    if (nodes.length <= 1) return '';
+    const locations = nodes.map((node) => `${node.kind} at ${node.filePath}:${node.startLine}`);
+    return `\n\n> **Note:** Aggregated results across ${nodes.length} symbols named "${symbol}": ${locations.join(', ')}`;
+  }
+
+  private preferFirstPartyDefinitions(
+    matches: { nodes: Node[]; note: string },
+    symbol: string,
+    fileFilter: string | undefined,
+  ): { nodes: Node[]; note: string; omittedLowSignalDefinitions: number } {
+    if (matches.nodes.length <= 1) return { ...matches, omittedLowSignalDefinitions: 0 };
+
+    // An explicit file hint is an intentional request to inspect that definition,
+    // including research snapshots. If the hint misses entirely, fall back to the
+    // ordinary first-party preference below before showing "all definitions".
+    if (fileFilter && matches.nodes.some((node) => this.nodeMatchesFileFilter(node, fileFilter))) {
+      return { ...matches, omittedLowSignalDefinitions: 0 };
+    }
+
+    const firstParty = matches.nodes.filter((node) => !isLowSignalSourceFile(node.filePath));
+    if (firstParty.length === 0 || firstParty.length === matches.nodes.length) {
+      return { ...matches, omittedLowSignalDefinitions: 0 };
+    }
+
+    return {
+      nodes: firstParty,
+      note: this.aggregatedSymbolsNote(symbol, firstParty),
+      omittedLowSignalDefinitions: matches.nodes.length - firstParty.length,
+    };
+  }
+
+  private lowSignalDefinitionOmissionNote(count: number): string {
+    if (count <= 0) return '';
+    return `\n\n_Omitted ${count} low-signal same-name definition${count === 1 ? '' : 's'} from test/example/research snapshot sources; pass an explicit file path if that support corpus is the target._`;
   }
 
   /** Section heading for one distinct definition in grouped output. */
@@ -1680,7 +1719,9 @@ export class ToolHandler {
       return this.textResult(`Symbol "${symbol}" not found in the codebase`);
     }
 
-    const { groups, filteredOut } = this.groupDefinitions(allMatches.nodes, fileFilter);
+    const matches = this.preferFirstPartyDefinitions(allMatches, symbol, fileFilter);
+    const definitionOmissionNote = this.lowSignalDefinitionOmissionNote(matches.omittedLowSignalDefinitions);
+    const { groups, filteredOut } = this.groupDefinitions(matches.nodes, fileFilter);
     const filterNote = filteredOut
       ? `\n\n> **Note:** no definition of "${symbol}" matches file "${fileFilter}" — showing all definitions instead.`
       : '';
@@ -1692,12 +1733,12 @@ export class ToolHandler {
       const { nodes: callers, labels, omittedLowSignal, omittedWeak } = collect(groups[0]!);
       const omissionNote = this.relationshipOmissionNote(omittedLowSignal, omittedWeak);
       if (callers.length === 0) {
-        return this.textResult(`No callers found for "${symbol}"${allMatches.note}${filterNote}${omissionNote}`);
+        return this.textResult(`No callers found for "${symbol}"${matches.note}${filterNote}${omissionNote}${definitionOmissionNote}`);
       }
       // A successful `file` narrowing makes the multi-symbol aggregation note
       // stale — suppress it.
-      const note = fileFilter && !filteredOut ? '' : allMatches.note;
-      const formatted = this.formatNodeList(callers, `Callers of ${symbol}`, labels, limit, outputSurface) + note + filterNote + omissionNote;
+      const note = fileFilter && !filteredOut ? '' : matches.note;
+      const formatted = this.formatNodeList(callers, `Callers of ${symbol}`, labels, limit, outputSurface) + note + filterNote + omissionNote + definitionOmissionNote;
       return this.textResult(this.truncateOutput(formatted));
     }
 
@@ -1724,7 +1765,7 @@ export class ToolHandler {
       const omissionNote = this.relationshipOmissionNote(omittedLowSignal, omittedWeak);
       if (omissionNote) lines.push(omissionNote.trim());
     }
-    return this.textResult(this.truncateOutput(lines.join('\n') + filterNote));
+    return this.textResult(this.truncateOutput(lines.join('\n') + filterNote + definitionOmissionNote));
   }
 
   /**
@@ -1743,7 +1784,9 @@ export class ToolHandler {
       return this.textResult(`Symbol "${symbol}" not found in the codebase`);
     }
 
-    const { groups, filteredOut } = this.groupDefinitions(allMatches.nodes, fileFilter);
+    const matches = this.preferFirstPartyDefinitions(allMatches, symbol, fileFilter);
+    const definitionOmissionNote = this.lowSignalDefinitionOmissionNote(matches.omittedLowSignalDefinitions);
+    const { groups, filteredOut } = this.groupDefinitions(matches.nodes, fileFilter);
     const filterNote = filteredOut
       ? `\n\n> **Note:** no definition of "${symbol}" matches file "${fileFilter}" — showing all definitions instead.`
       : '';
@@ -1754,12 +1797,12 @@ export class ToolHandler {
       const { nodes: callees, labels, omittedLowSignal, omittedWeak } = collect(groups[0]!);
       const omissionNote = this.relationshipOmissionNote(omittedLowSignal, omittedWeak);
       if (callees.length === 0) {
-        return this.textResult(`No callees found for "${symbol}"${allMatches.note}${filterNote}${omissionNote}`);
+        return this.textResult(`No callees found for "${symbol}"${matches.note}${filterNote}${omissionNote}${definitionOmissionNote}`);
       }
       // A successful `file` narrowing makes the multi-symbol aggregation note
       // stale — suppress it.
-      const note = fileFilter && !filteredOut ? '' : allMatches.note;
-      const formatted = this.formatNodeList(callees, `Callees of ${symbol}`, labels, limit, outputSurface) + note + filterNote + omissionNote;
+      const note = fileFilter && !filteredOut ? '' : matches.note;
+      const formatted = this.formatNodeList(callees, `Callees of ${symbol}`, labels, limit, outputSurface) + note + filterNote + omissionNote + definitionOmissionNote;
       return this.textResult(this.truncateOutput(formatted));
     }
 
@@ -1784,7 +1827,7 @@ export class ToolHandler {
       const omissionNote = this.relationshipOmissionNote(omittedLowSignal, omittedWeak);
       if (omissionNote) lines.push(omissionNote.trim());
     }
-    return this.textResult(this.truncateOutput(lines.join('\n') + filterNote));
+    return this.textResult(this.truncateOutput(lines.join('\n') + filterNote + definitionOmissionNote));
   }
 
   /**
@@ -1803,7 +1846,9 @@ export class ToolHandler {
       return this.textResult(`Symbol "${symbol}" not found in the codebase`);
     }
 
-    const { groups, filteredOut } = this.groupDefinitions(allMatches.nodes, fileFilter);
+    const matches = this.preferFirstPartyDefinitions(allMatches, symbol, fileFilter);
+    const definitionOmissionNote = this.lowSignalDefinitionOmissionNote(matches.omittedLowSignalDefinitions);
+    const { groups, filteredOut } = this.groupDefinitions(matches.nodes, fileFilter);
     const filterNote = filteredOut
       ? `\n\n> **Note:** no definition of "${symbol}" matches file "${fileFilter}" — showing all definitions instead.`
       : '';
@@ -1834,7 +1879,7 @@ export class ToolHandler {
 
     // Single definition (or same-file overloads): the familiar merged report.
     if (groups.length === 1) {
-      const formatted = this.formatImpact(symbol, impactOf(groups[0]!), depth) + (fileFilter && !filteredOut ? "" : allMatches.note) + filterNote;
+      const formatted = this.formatImpact(symbol, impactOf(groups[0]!), depth) + (fileFilter && !filteredOut ? "" : matches.note) + filterNote + definitionOmissionNote;
       return this.textResult(this.truncateOutput(formatted));
     }
 
@@ -1852,7 +1897,7 @@ export class ToolHandler {
         this.formatImpact(`${head.qualifiedName} (${head.filePath}${line})`, impactOf(group), depth)
       );
     }
-    return this.textResult(this.truncateOutput(sections.join('\n') + filterNote));
+    return this.textResult(this.truncateOutput(sections.join('\n') + filterNote + definitionOmissionNote));
   }
 
   /**
@@ -4342,11 +4387,8 @@ export class ToolHandler {
       return aGen - bGen;
     });
 
-    const locations = ranked.map(r =>
-      `${r.node.kind} at ${r.node.filePath}:${r.node.startLine}`
-    );
-    const note = `\n\n> **Note:** Aggregated results across ${ranked.length} symbols named "${symbol}": ${locations.join(', ')}`;
-    return { nodes: ranked.map(r => r.node), note };
+    const nodes = ranked.map(r => r.node);
+    return { nodes, note: this.aggregatedSymbolsNote(symbol, nodes) };
   }
 
   /**
