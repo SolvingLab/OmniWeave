@@ -1,0 +1,4 @@
+{"name":"lang-c","ow_nodes":75,"cg_nodes":79,"ow_edges":289,"cg_edges":294,"std_calls_diff":0,"std_total_diff":5,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
+{"name":"lang-go","ow_nodes":910,"cg_nodes":910,"ow_edges":4331,"cg_edges":4427,"std_calls_diff":0,"std_total_diff":96,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
+{"name":"lang-php","ow_nodes":582,"cg_nodes":582,"ow_edges":1277,"cg_edges":1285,"std_calls_diff":0,"std_total_diff":8,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
+{"name":"lang-ruby","ow_nodes":1800,"cg_nodes":1800,"ow_edges":3368,"cg_edges":3441,"std_calls_diff":0,"std_total_diff":73,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
