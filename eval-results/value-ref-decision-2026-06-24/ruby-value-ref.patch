@@ -1,0 +1,259 @@
+diff --git a/__tests__/extraction.test.ts b/__tests__/extraction.test.ts
+index 4e5bbea..c831bed 100644
+--- a/__tests__/extraction.test.ts
++++ b/__tests__/extraction.test.ts
+@@ -2598,6 +2598,54 @@ end
+       expect(byName.has('local_value')).toBe(false);
+     });
+ 
++    it('should extract scoped Ruby constant references from initializers and method bodies', () => {
++      const code = `
++module Sinatra
++  class Request
++    HEADER_PARAM = /\\s*;\\s*/
++    HEADER_VALUE_WITH_PARAMS = /#{HEADER_PARAM}/
++    class Parser; end
++
++    def accept
++      HEADER_VALUE_WITH_PARAMS
++      HEADER_VALUE_WITH_PARAMS
++    end
++
++    def parser_class
++      Parser
++    end
++  end
++end
++`;
++      const result = extractFromSource('request.rb', code);
++      const byQualifiedName = new Map(result.nodes.map((n) => [n.qualifiedName, n]));
++      const headerValue = byQualifiedName.get('Sinatra::Request::HEADER_VALUE_WITH_PARAMS');
++      const accept = byQualifiedName.get('Sinatra::Request::accept');
++      expect(headerValue?.kind).toBe('constant');
++      expect(accept?.kind).toBe('method');
++
++      const refs = result.unresolvedReferences.filter((r) => r.referenceKind === 'references');
++      expect(refs).toEqual(expect.arrayContaining([
++        expect.objectContaining({
++          fromNodeId: headerValue?.id,
++          referenceName: 'Sinatra::Request::HEADER_PARAM',
++        }),
++        expect.objectContaining({
++          fromNodeId: accept?.id,
++          referenceName: 'Sinatra::Request::HEADER_VALUE_WITH_PARAMS',
++        }),
++      ]));
++      expect(refs.filter((r) =>
++        r.fromNodeId === accept?.id &&
++        r.referenceName === 'Sinatra::Request::HEADER_VALUE_WITH_PARAMS'
++      )).toHaveLength(1);
++      expect(refs).not.toEqual(expect.arrayContaining([
++        expect.objectContaining({ referenceName: 'Sinatra' }),
++        expect.objectContaining({ referenceName: 'Sinatra::Request' }),
++        expect.objectContaining({ referenceName: 'Sinatra::Request::Parser' }),
++      ]));
++    });
++
+     it('should handle nested modules with classes', () => {
+       const code = `
+ module Discourse
+diff --git a/src/extraction/tree-sitter.ts b/src/extraction/tree-sitter.ts
+index c723006..70e3b71 100644
+--- a/src/extraction/tree-sitter.ts
++++ b/src/extraction/tree-sitter.ts
+@@ -230,6 +230,8 @@ export class TreeSitterExtractor {
+   // (see flushFnRefCandidates).
+   private fnRefSpec: FnRefSpec | undefined;
+   private fnRefCandidates: Array<FnRefCandidate & { fromNodeId: string }> = [];
++  private rubyValueConstantNames: Set<string> | null = null;
++  private rubyConstantReadKeys: Set<string> = new Set();
+ 
+   constructor(filePath: string, source: string, language?: Language) {
+     this.filePath = filePath;
+@@ -293,6 +295,10 @@ export class TreeSitterExtractor {
+       if (!this.tree) {
+         throw new Error('Parser returned null tree');
+       }
++      if (this.language === 'ruby') {
++        this.rubyValueConstantNames = new Set();
++        this.collectRubyValueConstantNames(this.tree.rootNode, []);
++      }
+ 
+       // Create file node representing the source file
+       const fileNode: Node = {
+@@ -549,6 +555,7 @@ export class TreeSitterExtractor {
+     // below (the captured container types have no other handler there), so it
+     // can never shadow or be shadowed by an extraction branch.
+     this.maybeCaptureFnRefs(node, nodeType);
++    this.extractRubyConstantRead(node);
+ 
+     // Check for function declarations
+     // For Python/Ruby, function_definition inside a class should be treated as method
+@@ -1008,6 +1015,144 @@ export class TreeSitterExtractor {
+     return left?.type === 'constant';
+   }
+ 
++  private extractRubyConstantRead(node: SyntaxNode, ownerIdOverride?: string): void {
++    if (this.language !== 'ruby' || node.type !== 'constant') return;
++    if (this.nodeStack.length === 0 && !ownerIdOverride) return;
++    if (this.isRubyConstantDefinitionSite(node)) return;
++
++    const ownerId = ownerIdOverride ?? this.nodeStack[this.nodeStack.length - 1];
++    if (!ownerId) return;
++
++    const name = getNodeText(node, this.source);
++    if (!/^[A-Z][A-Za-z0-9_]*$/.test(name)) return;
++
++    const referenceName = this.scopeRubyConstantReference(name, ownerId);
++    if (!this.hasRubyValueConstantTarget(referenceName)) return;
++
++    const owner = this.nodes.find((n) => n.id === ownerId);
++    if (!owner || !this.isRubyValueConstantReferenceSource(owner)) return;
++    if (owner?.qualifiedName === referenceName) return;
++
++    const key = `${ownerId}|${referenceName}`;
++    if (this.rubyConstantReadKeys.has(key)) return;
++    this.rubyConstantReadKeys.add(key);
++
++    this.unresolvedReferences.push({
++      fromNodeId: ownerId,
++      referenceName,
++      referenceKind: 'references',
++      line: node.startPosition.row + 1,
++      column: node.startPosition.column,
++    });
++  }
++
++  private scanRubyConstantReads(node: SyntaxNode, ownerId: string): void {
++    this.extractRubyConstantRead(node, ownerId);
++
++    if (
++      this.extractor?.functionTypes.includes(node.type) ||
++      this.extractor?.classTypes.includes(node.type) ||
++      this.extractor?.methodTypes.includes(node.type)
++    ) {
++      return;
++    }
++
++    for (let i = 0; i < node.namedChildCount; i++) {
++      const child = node.namedChild(i);
++      if (child) this.scanRubyConstantReads(child, ownerId);
++    }
++  }
++
++  private hasRubyValueConstantTarget(referenceName: string): boolean {
++    if (this.rubyValueConstantNames) return this.rubyValueConstantNames.has(referenceName);
++    return this.nodes.some(
++      (n) =>
++        n.language === 'ruby' &&
++        (n.kind === 'constant' || n.kind === 'variable') &&
++        n.qualifiedName === referenceName,
++    );
++  }
++
++  private isRubyValueConstantReferenceSource(owner: Node): boolean {
++    return owner.kind === 'method' || owner.kind === 'constant' || owner.kind === 'variable';
++  }
++
++  private collectRubyValueConstantNames(node: SyntaxNode, scope: string[]): void {
++    if (this.language !== 'ruby') return;
++
++    if (this.extractor?.methodTypes.includes(node.type)) return;
++
++    if (node.type === 'assignment') {
++      const left = getChildByField(node, 'left') ?? node.namedChild(0);
++      if (left?.type === 'constant') {
++        this.rubyValueConstantNames?.add(this.qualifyRubyName(getNodeText(left, this.source), scope));
++      }
++    }
++
++    if (node.type === 'class' || node.type === 'module') {
++      const nameNode = getChildByField(node, 'name') ?? node.namedChild(0);
++      const name = nameNode ? getNodeText(nameNode, this.source) : '';
++      const qualifiedName = name ? this.qualifyRubyName(name, scope) : '';
++      const nextScope = qualifiedName ? qualifiedName.split('::').filter(Boolean) : scope;
++      const body = getChildByField(node, this.extractor?.bodyField ?? 'body') ?? node;
++      for (let i = 0; i < body.namedChildCount; i++) {
++        const child = body.namedChild(i);
++        if (child) this.collectRubyValueConstantNames(child, nextScope);
++      }
++      return;
++    }
++
++    for (let i = 0; i < node.namedChildCount; i++) {
++      const child = node.namedChild(i);
++      if (child) this.collectRubyValueConstantNames(child, scope);
++    }
++  }
++
++  private qualifyRubyName(name: string, scope: string[]): string {
++    if (name.includes('::')) return name.replace(/^::/, '');
++    return scope.length > 0 ? `${scope.join('::')}::${name}` : name;
++  }
++
++  private isRubyConstantDefinitionSite(node: SyntaxNode): boolean {
++    const parent = node.parent;
++    if (!parent) return false;
++
++    if (parent.type === 'assignment') {
++      const left = getChildByField(parent, 'left') ?? parent.namedChild(0);
++      if (left && left.startIndex === node.startIndex && left.endIndex === node.endIndex) return true;
++    }
++
++    if (parent.type === 'class' || parent.type === 'module') {
++      const name = getChildByField(parent, 'name') ?? parent.namedChild(0);
++      if (name && name.startIndex === node.startIndex && name.endIndex === node.endIndex) return true;
++    }
++
++    // Qualified constants (`Foo::BAR`) are multi-token paths; do not emit a
++    // partial edge for the `Foo` or `BAR` child until we add whole-path handling.
++    return parent.type === 'scope_resolution';
++  }
++
++  private scopeRubyConstantReference(name: string, ownerId: string): string {
++    const owner = this.nodes.find((n) => n.id === ownerId);
++    if (!owner) return name;
++    if (owner.kind === 'file') return name;
++
++    let scope = owner.qualifiedName;
++    if (
++      owner.kind !== 'class' &&
++      owner.kind !== 'module' &&
++      owner.kind !== 'struct' &&
++      owner.kind !== 'interface' &&
++      owner.kind !== 'trait' &&
++      owner.kind !== 'enum'
++    ) {
++      const sep = scope.lastIndexOf('::');
++      scope = sep > 0 ? scope.slice(0, sep) : '';
++    }
++
++    return scope ? `${scope}::${name}` : name;
++  }
++
+   /**
+    * Extract a function
+    */
+@@ -1773,10 +1918,13 @@ export class TreeSitterExtractor {
+         const initValue = right ? getNodeText(right, this.source).slice(0, 100) : undefined;
+         const initSignature = initValue ? `= ${initValue}${initValue.length >= 100 ? '...' : ''}` : undefined;
+ 
+-        this.createNode(variableKind, name, node, {
++        const varNode = this.createNode(variableKind, name, node, {
+           docstring,
+           signature: initSignature,
+         });
++        if (this.language === 'ruby' && variableKind === 'constant' && varNode && right) {
++          this.scanRubyConstantReads(right, varNode.id);
++        }
+       }
+     } else if (this.language === 'go') {
+       // Go: var_declaration, short_var_declaration, const_declaration
+@@ -3377,6 +3525,7 @@ export class TreeSitterExtractor {
+       // Function-as-value capture (#756) — function bodies are walked here,
+       // not in visitNode, so the capture hook must fire in both walkers.
+       this.maybeCaptureFnRefs(node, nodeType);
++      this.extractRubyConstantRead(node);
+ 
+       // Rocket route-registration macros (`routes![…]` / `catchers![…]`): the
+       // handler paths live in a raw token tree the call walker can't see.
