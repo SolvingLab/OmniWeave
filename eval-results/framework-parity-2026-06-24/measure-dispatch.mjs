@@ -28,6 +28,7 @@ const FRAMEWORKS = {
   mediatr: 'mediatr-dispatch',
   sidekiq: 'sidekiq-dispatch',
   laravel: 'laravel-event',
+  rtk: 'rtk-query',
 };
 
 const fail = (msg) => { console.error(`INVALID: ${msg}`); process.exit(1); };

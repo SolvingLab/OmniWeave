@@ -3556,6 +3556,59 @@ function reduxThunkEdges(queries: QueryBuilder, ctx: ResolutionContext): Edge[] 
   return edges;
 }
 
+// ── RTK Query generated-hook → endpoint (TS/JS) ──────────────────────────────
+// RTK Query generates one `useGetXQuery`/`useUpdateYMutation` hook per endpoint
+// (`createApi({ endpoints: b => ({ getX: b.query(...) }) })`). Components call the
+// hook; the fetch logic lives in the endpoint's queryFn. The hook↔endpoint link is
+// pure NAMING CONVENTION (no static edge): strip `use` + the optional `Lazy` variant
+// + the `Query|Mutation` suffix, lowercase the head → the endpoint key. The hook is
+// extracted (tree-sitter `extractRtkHookBindings`) with a sentinel signature; the
+// endpoint is a same-file function node (tree-sitter `extractRtkEndpoints`). Gated on
+// the sentinel so it only fires on genuinely-generated hooks — 0 on any non-RTK repo.
+const RTK_HOOK_DERIVE_RE = /^use([A-Z][A-Za-z0-9]*?)(?:Query|Mutation)$/;
+// MUST match the signature set in tree-sitter.ts `extractRtkHookBindings`.
+const RTK_GENERATED_HOOK_SIGNATURE = '= RTK Query generated hook';
+
+/** Derive the endpoint key from a generated-hook name (`useLazyGetRecordsQuery`
+ *  → `getRecords`), or null if it doesn't fit the convention. */
+function rtkEndpointNameFromHook(hook: string): string | null {
+  const m = RTK_HOOK_DERIVE_RE.exec(hook);
+  if (!m) return null;
+  let mid = m[1]!;
+  if (mid.startsWith('Lazy')) mid = mid.slice(4); // useLazyGetX → getX (same endpoint)
+  if (!mid) return null;
+  return mid.charAt(0).toLowerCase() + mid.slice(1);
+}
+
+function rtkQueryEdges(queries: QueryBuilder, ctx: ResolutionContext): Edge[] {
+  const edges: Edge[] = [];
+  const seen = new Set<string>();
+  for (const hook of queries.iterateNodesByKind('function')) {
+    // Only our extracted generated-hook bindings (sentinel) — not a real hook fn.
+    if (hook.signature !== RTK_GENERATED_HOOK_SIGNATURE) continue;
+    const endpointName = rtkEndpointNameFromHook(hook.name);
+    if (!endpointName) continue;
+    // The endpoint is a same-file function by the derived name (RTK colocates the
+    // api definition and its generated-hook exports in one module).
+    const target = ctx
+      .getNodesByName(endpointName)
+      .find((n) => n.kind === 'function' && n.filePath === hook.filePath);
+    if (!target || target.id === hook.id) continue;
+    const key = `${hook.id}>${target.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    edges.push({
+      source: hook.id,
+      target: target.id,
+      kind: 'calls',
+      line: hook.startLine,
+      provenance: 'heuristic',
+      metadata: { synthesizedBy: 'rtk-query', via: endpointName, confidence: 0.8, registeredAt: `${hook.filePath}:${hook.startLine}` },
+    });
+  }
+  return edges;
+}
+
 export function synthesizeCallbackEdges(queries: QueryBuilder, ctx: ResolutionContext): number {
   // Cross-file Go method→type `contains` edges must be synthesized AND persisted
   // FIRST: a method declared in a different file from its receiver type is
@@ -3607,6 +3660,7 @@ export function synthesizeCallbackEdges(queries: QueryBuilder, ctx: ResolutionCo
   const sidekiqEdges = sidekiqDispatchEdges(ctx);
   const laravelEdges = laravelEventEdges(ctx);
   const reduxThunk = reduxThunkEdges(queries, ctx);
+  const rtkEdges = rtkQueryEdges(queries, ctx);
   const cFnPtrEdges = cFnPointerDispatchEdges(queries, ctx);
   const workflowEdges = workflowCrossLangEdges(queries, ctx);
   const generalCrossLang = generalCrossLangEdges(ctx);
@@ -3643,6 +3697,7 @@ export function synthesizeCallbackEdges(queries: QueryBuilder, ctx: ResolutionCo
     ...sidekiqEdges,
     ...laravelEdges,
     ...reduxThunk,
+    ...rtkEdges,
     ...cFnPtrEdges,
     ...workflowEdges,
     ...generalCrossLang,
