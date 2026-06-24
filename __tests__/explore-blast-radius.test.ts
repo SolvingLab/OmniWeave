@@ -51,6 +51,11 @@ describe('omniweave_explore — blast radius', () => {
       `export function typedTarget(): TargetResult { return { value: 1 }; }\n`,
     );
     fs.writeFileSync(
+      path.join(src, 'many-seeds.ts'),
+      Array.from({ length: 9 }, (_, i) => `export function seed${i + 1}() { return ${i + 1}; }\n`).join('') +
+      `export function targetCaller() { return seed9(); }\n`,
+    );
+    fs.writeFileSync(
       path.join(src, 'feature.test.ts'),
       `import { target } from './feature';\n` +
       `export function checkTarget() { return target(); }\n`,
@@ -122,5 +127,23 @@ describe('omniweave_explore — blast radius', () => {
 
     expect(blast).not.toContain('`TargetResult`');
     expect(blast).not.toContain('typedTarget');
+  });
+
+  it('uses named seeds, not just capped search roots, as blast-radius entry points', async () => {
+    const query = 'seed1 seed2 seed3 seed4 seed5 seed6 seed7 seed8 seed9';
+    const sg = await cg.findRelevantContext(query, {
+      searchLimit: 8,
+      traversalDepth: 3,
+      maxNodes: 200,
+      minScore: 0.2,
+    });
+
+    expect(sg.roots.map((id) => sg.nodes.get(id)?.name)).not.toContain('seed9');
+
+    const res = await handler.execute('omniweave_explore', { query });
+    const blast = blastSection(res.content[0].text);
+
+    expect(blast).toContain('`seed9`');
+    expect(blast).toContain('production caller in `src/many-seeds.ts`');
   });
 });

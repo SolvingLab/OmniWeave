@@ -2459,8 +2459,8 @@ export class ToolHandler {
    * that have no dependents (nothing to warn about), and returns '' when none
    * qualify so a leaf-only exploration stays clean.
    */
-  private buildBlastRadiusSection(cg: OmniWeave, subgraph: Subgraph): string {
-    const ROOT_CAP = 5; // only the symbols the query actually targeted
+  private buildBlastRadiusSection(cg: OmniWeave, subgraph: Subgraph, preferredRootIds: Iterable<string> = []): string {
+    const ROOT_CAP = 5; // max rendered entries; leaf roots do not consume it
     const FILE_CAP = 4; // caller files listed per symbol before "+N more"
     const MEANINGFUL = new Set<string>([
       'function', 'method', 'class', 'interface', 'struct', 'trait', 'protocol',
@@ -2468,10 +2468,16 @@ export class ToolHandler {
     ]);
     const rel = (p: string) => p.replace(/\\/g, '/');
 
-    const roots = subgraph.roots
+    const rootIds: string[] = [];
+    const seenRoots = new Set<string>();
+    for (const id of [...preferredRootIds, ...subgraph.roots]) {
+      if (seenRoots.has(id)) continue;
+      seenRoots.add(id);
+      rootIds.push(id);
+    }
+    const roots = rootIds
       .map((id) => subgraph.nodes.get(id))
-      .filter((n): n is Node => !!n && MEANINGFUL.has(n.kind))
-      .slice(0, ROOT_CAP);
+      .filter((n): n is Node => !!n && MEANINGFUL.has(n.kind));
     if (roots.length === 0) return '';
 
     const entries: string[] = [];
@@ -2519,6 +2525,7 @@ export class ToolHandler {
       entries.push(
         `- \`${root.name}\` (${rel(root.filePath)}:${root.startLine}) — ${uniq.length} production caller${uniq.length === 1 ? '' : 's'}${where}${tests}${omittedNote}`,
       );
+      if (entries.length >= ROOT_CAP) break;
     }
     if (entries.length === 0) return '';
 
@@ -2995,7 +3002,7 @@ export class ToolHandler {
     // Blast radius (always-on, compact): for the entry symbols, who depends on
     // them + which tests cover them — locations only, no source — so the agent
     // knows what to update/verify before editing without a separate call.
-    const blastRadius = this.buildBlastRadiusSection(cg, subgraph);
+    const blastRadius = this.buildBlastRadiusSection(cg, subgraph, namedSeedIds);
     if (blastRadius) lines.push(blastRadius);
 
     // Relationship map — supporting graph facts, not necessarily the main call path.
