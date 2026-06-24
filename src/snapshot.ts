@@ -563,14 +563,18 @@ function validateSnapshotManifest(
     errors.push('Snapshot manifest createdAt must be a string');
   }
   if (
-    manifest.schemaVersion !== null &&
-    (!Number.isSafeInteger(manifest.schemaVersion) || manifest.schemaVersion < 0)
+    !Number.isSafeInteger(manifest.schemaVersion) ||
+    (typeof manifest.schemaVersion === 'number' && manifest.schemaVersion < 0)
   ) {
-    errors.push('Snapshot manifest schemaVersion must be a non-negative integer or null');
+    errors.push('Snapshot manifest schemaVersion must be a non-negative integer');
   } else if (typeof manifest.schemaVersion === 'number' && manifest.schemaVersion > CURRENT_SCHEMA_VERSION) {
-      errors.push(
-        `Snapshot schema version ${manifest.schemaVersion} is newer than this OmniWeave supports (${CURRENT_SCHEMA_VERSION})`
-      );
+    errors.push(
+      `Snapshot schema version ${manifest.schemaVersion} is newer than this OmniWeave supports (${CURRENT_SCHEMA_VERSION})`
+    );
+  } else if (typeof manifest.schemaVersion === 'number' && manifest.schemaVersion < CURRENT_SCHEMA_VERSION) {
+    errors.push(
+      `Snapshot schema version ${manifest.schemaVersion} is older than this OmniWeave supports (${CURRENT_SCHEMA_VERSION}); reindex with the current OmniWeave before exporting`
+    );
   }
   if (!isRecord(raw.sourceRoot)) {
     errors.push('Snapshot manifest sourceRoot must be an object');

@@ -191,6 +191,19 @@ describe('snapshot import and verify', () => {
     expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
   });
 
+  it('rejects snapshots from an older graph schema version instead of migrating them', async () => {
+    updateSnapshotManifestForTest(outputDir, (manifest) => {
+      manifest.schemaVersion = CURRENT_SCHEMA_VERSION - 1;
+    });
+
+    const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
+
+    expect(verification.ok).toBe(false);
+    expect(verification.errors.join('\n')).toContain('older than this OmniWeave supports');
+    await expect(importSnapshot(outputDir, targetRoot)).rejects.toThrow(/Invalid snapshot/);
+    expect(fs.existsSync(getDatabasePath(targetRoot))).toBe(false);
+  });
+
   it('rejects snapshots whose database schema is newer than supported even when the manifest is current', async () => {
     const conn = DatabaseConnection.open(path.join(outputDir, SNAPSHOT_DATABASE_FILENAME));
     try {
@@ -212,9 +225,17 @@ describe('snapshot import and verify', () => {
   });
 
   it('rejects snapshots whose manifest schema does not match the database schema', async () => {
-    updateSnapshotManifestForTest(outputDir, (manifest) => {
-      manifest.schemaVersion = CURRENT_SCHEMA_VERSION - 1;
-    });
+    const conn = DatabaseConnection.open(path.join(outputDir, SNAPSHOT_DATABASE_FILENAME));
+    try {
+      conn.getDb().prepare('DELETE FROM schema_versions').run();
+      conn.getDb().prepare(
+        'INSERT INTO schema_versions (version, applied_at, description) VALUES (?, ?, ?)'
+      ).run(CURRENT_SCHEMA_VERSION - 1, Date.now(), 'old schema');
+      conn.getDb().exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    } finally {
+      conn.close();
+    }
+    refreshSnapshotDatabaseManifest(outputDir);
 
     const verification = await verifySnapshot(outputDir, { projectRoot: targetRoot });
 
