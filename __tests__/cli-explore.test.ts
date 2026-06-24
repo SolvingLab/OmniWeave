@@ -483,6 +483,15 @@ export function snapshotCaller(): string {
     expect(result.stdout).not.toContain('omniweave_node');
   });
 
+  it('prints shell continuations in CLI node trails', () => {
+    const result = runCli(testDir, ['node', 'targetSymbol', '--file', 'src/mcp/tools.ts', '--line', '5']);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('### Trail');
+    expect(result.stdout).toContain('callTarget (src/mcp/tools.ts:9; cmd: `omniweave node "callTarget" --file "src/mcp/tools.ts" --line 9`)');
+    expect(result.stdout).not.toContain('omniweave_node');
+  });
+
   it('keeps CLI callees on execution edges and omits snapshot noise', () => {
     const result = runCli(testDir, ['callees', 'entryPoint']);
 

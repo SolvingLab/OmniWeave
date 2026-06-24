@@ -99,7 +99,8 @@ describe('omniweave_node file-view (Read replacement)', () => {
     const out = await text({ symbol: 'big', includeCode: true });
 
     expect(out).toContain('### Trail');
-    expect(out).toContain('useBig (src/c.ts:3)');
+    expect(out).toContain('useBig (src/c.ts:3; key:');
+    expect(out).toContain('key: `omniweave_node symbol="useBig" file="src/c.ts" line=3`');
     expect(out.indexOf('### Trail')).toBeGreaterThanOrEqual(0);
     expect(out.indexOf('### Trail')).toBeLessThan(out.indexOf('```typescript'));
     expect(out).toContain('output truncated');

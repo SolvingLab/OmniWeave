@@ -3885,7 +3885,7 @@ export class ToolHandler {
     let omittedLowSignal = 0;
     let omittedWeak = 0;
     const fmt = (e: { node: Node; edge: Edge }) => {
-      const base = `${e.node.name} (${e.node.filePath}:${e.node.startLine})`;
+      const base = `${e.node.name} (${e.node.filePath}:${e.node.startLine}; ${this.nodeContinuationLabel(e.node, outputSurface)})`;
       const synth = this.synthEdgeNote(e.edge);
       return synth ? `${base} [${synth.compact}]` : base;
     };
