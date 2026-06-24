@@ -200,6 +200,76 @@ describe('MCP staleness banner', () => {
     expect(text).not.toContain('elsewhere in this project changed since the last index');
   });
 
+  it('warns that empty explore results may be stale while a watcher event is pending', async () => {
+    cg.watch({ debounceMs: 4000, inertForTests: true });
+    await cg.waitUntilWatcherReady();
+
+    fs.writeFileSync(
+      path.join(testDir, 'src', 'pending-new-feature.ts'),
+      'export function pendingNewFeature() { return 42; }\n',
+    );
+    __emitWatchEventForTests(testDir, 'src/pending-new-feature.ts');
+    await waitFor(() => cg.getPendingFiles().some((p) => p.path === 'src/pending-new-feature.ts'));
+
+    const res = await handler.execute('omniweave_explore', { query: 'pendingNewFeature', maxFiles: 3 });
+    expect(res.isError).toBeFalsy();
+    const text = res.content[0].text;
+
+    expect(text.startsWith('⚠️')).toBe(true);
+    expect(text).toContain('empty explore result may be stale');
+    expect(text).toContain('src/pending-new-feature.ts');
+    expect(text).toContain('pending sync');
+    expect(text).toContain('No relevant code found for "pendingNewFeature"');
+    expect(text).toContain('re-run `omniweave_explore`');
+    expect(text).toContain('run `omniweave sync`');
+    expect(text).not.toContain('omniweave explore');
+  });
+
+  it('falls back to changed-files freshness when an active watcher misses an event', async () => {
+    cg.watch({ debounceMs: 4000, inertForTests: true });
+    await cg.waitUntilWatcherReady();
+
+    fs.writeFileSync(
+      path.join(testDir, 'src', 'alpha-only.ts'),
+      'export function alphaOnly() { return 99; }\n',
+    );
+
+    expect(cg.isWatching()).toBe(true);
+    expect(cg.getPendingFiles()).toEqual([]);
+
+    const res = await handler.execute('omniweave_explore', { query: 'alphaOnly', maxFiles: 3 });
+    expect(res.isError).toBeFalsy();
+    const text = res.content[0].text;
+
+    expect(text.startsWith('⚠️')).toBe(true);
+    expect(text).toContain('index is behind the worktree');
+    expect(text).toContain('src/alpha-only.ts (modified)');
+    expect(text).toContain('symbols, edges, ranking, and line ranges may still come from the old index');
+    expect(text).toContain('return 99');
+    expect(text).toContain('### Source Code');
+  });
+
+  it('shows changed files in status when an active watcher misses an event', async () => {
+    cg.watch({ debounceMs: 4000, inertForTests: true });
+    await cg.waitUntilWatcherReady();
+
+    fs.writeFileSync(
+      path.join(testDir, 'src', 'alpha-only.ts'),
+      'export function alphaOnly() { return 99; }\n',
+    );
+
+    expect(cg.isWatching()).toBe(true);
+    expect(cg.getPendingFiles()).toEqual([]);
+
+    const res = await handler.execute('omniweave_status', {});
+    expect(res.isError).toBeFalsy();
+    const text = res.content[0].text;
+
+    expect(text).toContain('### Changed since last index:');
+    expect(text).toContain('src/alpha-only.ts (modified)');
+    expect(text).toContain('Run `omniweave sync` before trusting structural relationships.');
+  });
+
   it('does not treat a changed path as referenced when it is only a prefix of another path', async () => {
     fs.writeFileSync(
       path.join(testDir, 'src', 'prefix.ts'),

@@ -1340,14 +1340,10 @@ export class ToolHandler {
       return { ...result, content: [{ type: 'text', text: composed }, ...rest] };
     }
 
-    let watching = false;
-    try {
-      watching = cg.isWatching?.() ?? false;
-    } catch {
-      watching = false;
-    }
-    if (watching) return result;
-
+    // Even an active watcher can miss edits (native fs.watch drops, partial
+    // Linux watch coverage, ignored dynamic subtree setup). With no pending
+    // events, still reconcile the worktree against the index before declaring
+    // the response fresh.
     let changedEntries: ChangedFileEntry[] = [];
     try {
       const changes = cg.getChangedFiles?.();
@@ -4021,7 +4017,7 @@ export class ToolHandler {
         const label = p.indexing ? 'indexing in progress' : 'pending sync';
         lines.push(`- ${p.path} (edited ${ageMs}ms ago, ${label})`);
       }
-    } else if (!cg.isWatching()) {
+    } else {
       const changed = changedFileEntries(cg.getChangedFiles());
       if (changed.length > 0) {
         lines.push('', '### Changed since last index:');
