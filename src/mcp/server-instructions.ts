@@ -24,8 +24,9 @@ don't pay to re-reason each run). Reads are sub-millisecond; the index lags
 writes by ~1s through the file watcher. Reach for it BEFORE *and* while
 writing or editing code — not just for questions: one call returns the
 verbatim source PLUS who calls it and what it affects, so you edit with the
-blast radius in view. More accurate context, in far fewer tokens and
-round-trips than reading files yourself.
+blast radius in view. The relevant structural context — source plus callers
+and dependents — in far fewer tokens and round-trips than reading files
+yourself.
 
 ## Match the tool to the query shape — pick the lightest tool that answers it
 

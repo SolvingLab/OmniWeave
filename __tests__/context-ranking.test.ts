@@ -535,7 +535,12 @@ export function snapshotBuildExploreOutputCaller(): string {
     expect(text).toContain('not a tool failure');
     expect(text).toContain('omniweave_search');
     expect(text).toContain('omniweave_node');
-    expect(text).toContain('refresh the index');
+    // Every MCP continuation is tool-actionable: the just-created-file step
+    // points back at omniweave_explore (after the watcher catches up), not a
+    // non-existent MCP "refresh"/"sync" tool.
+    expect(text).toContain('file watcher');
+    expect(text).toContain('omniweave_explore');
+    expect(text).not.toContain('refresh the index');
   });
 
   it('does not use external repository snapshots as the fallback for ordinary missing-symbol queries', async () => {

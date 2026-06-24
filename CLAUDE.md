@@ -125,7 +125,7 @@ Agent 上下文是滚动视口；纪律等价于 scroll anchoring：不抢视口
 
 ## 4. 图与信任边界（核心差异化）
 
-- **类型**（`src/types.ts`）：`EdgeKind` 15 值（contains/calls/imports/exports/extends/implements/references/type_of/returns/instantiates/overrides/decorates/crossLang/produces/consumes/invokes）；跨边界第一公民 = `BRIDGE_EDGE_KINDS = {crossLang, produces, consumes, invokes}`（`graph/traversal.ts`）；`provenance ∈ {tree-sitter, scip, heuristic}`。
+- **类型**（`src/types.ts`）：`EdgeKind` 16 值（contains/calls/imports/exports/extends/implements/references/type_of/returns/instantiates/overrides/decorates/crossLang/produces/consumes/invokes）；跨边界第一公民 = `BRIDGE_EDGE_KINDS = {crossLang, produces, consumes, invokes}`（`graph/traversal.ts`）；`provenance ∈ {tree-sitter, scip, heuristic}`。
 - **置信分层（关键，别拍平）**：S4 分派（`rS4DispatchEdges`）是**确定性结构边**——`setMethod` 静态可证，发 `contains`/`overrides`，**不带 provenance/confidence**；跨进程子调用（`generalCrossLangEdges`）是**启发式**——发 `heuristic` + `metadata.synthesizedBy` + `confidence`（数组/shell 基线 0.85/0.8，插值路径 ≤0.7）。把所有合成边一律标 heuristic 是错的，会毁掉「确定的算确定、猜的才标 confidence」这套信任模型。
 - **crossLang 合成门**：跳过 workflow 文件；`cleanScriptPath` 后含 `{}`/`$`（运行时路径）直接 continue；目标必须是**已索引的 file 节点**；每函数 fanOut < `MAX_CROSSLANG_PER_FN`（8）。
 - **新 edge/node kind 涟漪 6 处**（优先复用，别新造）：`types.ts` union、`mcp/tools.ts`（`RANK_EDGES` 局部集 + `CALL_SURFACE_EDGE_KINDS` + 关系展示）、`context/formatter.ts` significantEdges、`context/index.ts` recoveryKinds、`graph/traversal.ts` `BRIDGE_EDGE_KINDS` + callers/callees 边表、eval fixture。

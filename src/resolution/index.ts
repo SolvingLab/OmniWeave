@@ -55,8 +55,10 @@ const DEFAULT_CACHE_LIMIT = 5_000;
 function resolveCacheLimit(): number {
   const raw = process.env.OMNIWEAVE_RESOLVER_CACHE_SIZE;
   if (!raw) return DEFAULT_CACHE_LIMIT;
-  const parsed = Number.parseInt(raw, 10);
-  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  // Whole-string parse (Number, not parseInt) so a malformed value like "2abc"
+  // falls back to the default instead of silently becoming 2 (§7 numeric contract).
+  const parsed = Number(raw.trim());
+  if (Number.isInteger(parsed) && parsed > 0) return parsed;
   return DEFAULT_CACHE_LIMIT;
 }
 

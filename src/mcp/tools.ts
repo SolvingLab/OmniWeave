@@ -223,8 +223,11 @@ export function getExploreBudget(fileCount: number): number {
  * where one rich call is the whole story and the extra prose is just
  * overhead.
  *
- * Tier breakpoints mirror `getExploreBudget` so a project sits in the
- * same tier across both knobs.
+ * This (the per-call output ceiling) and `getExploreBudget` (the per-session
+ * call count) both scale with project size but use INDEPENDENT breakpoints:
+ * this one adds a sub-150-file micro-tier and tops out at 15000, while the
+ * call budget has no micro-tier and keeps widening through 25000. They are
+ * two separate knobs, not one shared tier.
  */
 export interface ExploreOutputBudget {
   /** Hard cap on total output characters. */
@@ -247,15 +250,6 @@ export interface ExploreOutputBudget {
   includeCompletenessSignal: boolean;
   /** Include the explore-budget reminder at the end. */
   includeBudgetNote: boolean;
-  /**
-   * Hard-drop test/spec/icon/i18n files from the relevant-file set unless
-   * the query itself mentions tests. Today they're only deprioritized in
-   * the sort, which on tiny repos still lets one slip into the top N (e.g.
-   * cobra's `command_test.go` displaced `args.go` and contributed ~10KB of
-   * pure noise to "How does cobra parse commands?"). Off by default; on
-   * for the very-tiny tier where one slip dominates the budget.
-   */
-  excludeLowValueFiles: boolean;
 }
 
 export function getExploreOutputBudget(fileCount: number): ExploreOutputBudget {
@@ -287,7 +281,6 @@ export function getExploreOutputBudget(fileCount: number): ExploreOutputBudget {
       includeAdditionalFiles: false,
       includeCompletenessSignal: false,
       includeBudgetNote: false,
-      excludeLowValueFiles: true,
     };
   }
   if (fileCount < 500) {
@@ -303,7 +296,6 @@ export function getExploreOutputBudget(fileCount: number): ExploreOutputBudget {
       includeAdditionalFiles: false,
       includeCompletenessSignal: false,
       includeBudgetNote: false,
-      excludeLowValueFiles: true,
     };
   }
   if (fileCount < 5000) {
@@ -321,7 +313,6 @@ export function getExploreOutputBudget(fileCount: number): ExploreOutputBudget {
       includeAdditionalFiles: true,
       includeCompletenessSignal: true,
       includeBudgetNote: true,
-      excludeLowValueFiles: false,
     };
   }
   // Large + very-large repos: SAME ~24K inline ceiling (a bigger response just
@@ -340,7 +331,6 @@ export function getExploreOutputBudget(fileCount: number): ExploreOutputBudget {
       includeAdditionalFiles: true,
       includeCompletenessSignal: true,
       includeBudgetNote: true,
-      excludeLowValueFiles: false,
     };
   }
   return {
@@ -354,7 +344,6 @@ export function getExploreOutputBudget(fileCount: number): ExploreOutputBudget {
     includeAdditionalFiles: true,
     includeCompletenessSignal: true,
     includeBudgetNote: true,
-    excludeLowValueFiles: false,
   };
 }
 
@@ -4684,7 +4673,7 @@ export class ToolHandler {
         '- Check the exact symbol or file name with `omniweave_search <name>`.',
         '- If you already know the file path, use `omniweave_node <path>` to read it with line numbers.',
         '- If this was a prose query, retry `omniweave_explore` with 2-5 concrete identifiers from the error, stack trace, or surrounding code.',
-        '- If the file was just created, renamed, or generated, refresh the index before querying it.',
+        '- If the file was just created or renamed, give the file watcher a moment to index it, then re-run `omniweave_explore`.',
       ];
 
     return [
