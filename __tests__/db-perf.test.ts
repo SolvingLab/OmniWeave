@@ -174,6 +174,54 @@ describe('insertEdges endpoint validation', () => {
   });
 });
 
+describe('getUnresolvedReferencesByFiles', () => {
+  let dir: string;
+  let db: DatabaseConnection;
+  let q: QueryBuilder;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'db-perf-unresolved-'));
+    db = DatabaseConnection.initialize(path.join(dir, 'test.db'));
+    q = new QueryBuilder(db.getDb());
+  });
+
+  afterEach(() => {
+    db.close();
+    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('handles one file chunk returning more rows than V8 can spread as arguments', () => {
+    q.insertNode(makeNode('source', 'source'));
+
+    const insert = db.getDb().prepare(`
+      INSERT INTO unresolved_refs
+        (from_node_id, reference_name, reference_kind, line, col, candidates, file_path, language)
+      VALUES (?, ?, 'calls', 1, 1, NULL, 'large.ts', 'typescript')
+    `);
+    const insertMany = db.getDb().transaction((count: number) => {
+      for (let i = 0; i < count; i++) {
+        insert.run('source', `target${i}`);
+      }
+    });
+
+    insertMany(150_000);
+
+    const refs = q.getUnresolvedReferencesByFiles(['large.ts']);
+
+    expect(refs).toHaveLength(150_000);
+    expect(refs[0]).toMatchObject({
+      fromNodeId: 'source',
+      referenceName: 'target0',
+      filePath: 'large.ts',
+      language: 'typescript',
+    });
+    expect(refs.at(-1)).toMatchObject({
+      referenceName: 'target149999',
+      filePath: 'large.ts',
+    });
+  });
+});
+
 describe('runMaintenance', () => {
   let dir: string;
   let db: DatabaseConnection;

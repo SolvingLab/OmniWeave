@@ -1801,7 +1801,9 @@ export class QueryBuilder {
       const chunkRows = this.db
         .prepare(`SELECT * FROM unresolved_refs WHERE file_path IN (${placeholders})`)
         .all(...chunk) as UnresolvedRefRow[];
-      rows.push(...chunkRows);
+      for (const row of chunkRows) {
+        rows.push(row);
+      }
     }
 
     return rows.map((row) => ({
