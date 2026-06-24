@@ -192,6 +192,17 @@ export function runPythonReport(name: string): string {
     expect(text).toContain('dynamic: general crosslang');
   });
 
+  it('shows a direct two-symbol call as the primary flow', async () => {
+    const result = await handler.execute('omniweave_explore', {
+      query: 'runWorkflow stepOne',
+      maxFiles: 8,
+    });
+    const text = result.content[0].text;
+
+    expect(text).toContain('## Flow (call path among the symbols you queried)');
+    expect(text).toMatch(/1\. runWorkflow[\s\S]*↓ calls[\s\S]*2\. stepOne/);
+  });
+
   it('bridges endpoint-only flow queries across two unnamed intermediates', async () => {
     const result = await handler.execute('omniweave_explore', {
       query: 'entryPoint sendPayload',

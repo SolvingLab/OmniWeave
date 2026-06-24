@@ -2231,7 +2231,7 @@ export class ToolHandler {
         chain.reverse();
         if (!best || chain.length > best.length) best = chain;
       }
-      const hasMain = !!best && best.length >= 3;
+      const hasMain = !!best && best.length >= 2;
       const pathIds = new Set((best ?? []).map((s) => s.node.id));
 
       // Dynamic-boundary scan (#687) — fires ONLY when the flow the agent
@@ -2244,9 +2244,7 @@ export class ToolHandler {
       {
         const uncovered: Node[] = [];
         if (!hasMain) {
-          // No rendered chain — but a 2-node chain still CONNECTS its two
-          // endpoints (e.g. via one synthesized hop, surfaced below as a
-          // dynamic-dispatch link). Only nodes off that short chain are
+          // No rendered chain — only nodes off any short connected chain are
           // unexplained breaks worth scanning.
           for (const n of named.values()) if (!pathIds.has(n.id)) uncovered.push(n);
         } else {
@@ -2279,11 +2277,8 @@ export class ToolHandler {
         for (const { node: other, edge } of [...cg.getCallers(n.id), ...cg.getCallees(n.id)]) {
           if (synthLines.length >= 6) break;
           if (edge.provenance !== 'heuristic' || other.id === n.id) continue;
-          // "Already in the main chain" only applies when a chain RENDERS
-          // (hasMain). A 2-node chain populates pathIds but renders nothing,
-          // so a direct synthesized hop between two named symbols (custom
-          // EventBus emit→handler, #687) was invisible — too short for Flow,
-          // skipped here as in-chain. Surface it.
+          // Hops already rendered in the main chain should not be repeated in
+          // the supplementary dynamic-dispatch list.
           if (hasMain && pathIds.has(edge.source) && pathIds.has(edge.target)) continue;
           const src = edge.source === n.id ? n : other;
           const tgt = edge.source === n.id ? other : n;
