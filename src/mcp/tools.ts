@@ -2366,7 +2366,7 @@ export class ToolHandler {
       const where = nonTest.length > 0 ? ` in ${shown}${more}` : '';
       const tests = testFiles.length > 0
         ? `; tests: ${testFiles.slice(0, FILE_CAP).map((f) => `\`${f}\``).join(', ')}${testFiles.length > FILE_CAP ? ` +${testFiles.length - FILE_CAP}` : ''}`
-        : '; ⚠️ no covering tests found';
+        : '; ⚠️ no direct test callers found';
       const omitted = [
         omittedLowSignal > 0 ? `${omittedLowSignal} low-signal` : '',
         omittedWeak > 0 ? `${omittedWeak} non-execution` : '',

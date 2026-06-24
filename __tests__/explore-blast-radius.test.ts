@@ -45,6 +45,8 @@ describe('omniweave_explore — blast radius', () => {
       path.join(src, 'feature.ts'),
       `export function target() { return 1; }\n` +
       `export function caller() { return target(); }\n` +
+      `export function untestedTarget() { return 2; }\n` +
+      `export function untestedCaller() { return untestedTarget(); }\n` +
       `export interface TargetResult { value: number; }\n` +
       `export function typedTarget(): TargetResult { return { value: 1 }; }\n`,
     );
@@ -84,6 +86,16 @@ describe('omniweave_explore — blast radius', () => {
     expect(text).toContain('feature.ts');
     expect(text).toMatch(/tests:.*feature\.test\.ts/);
     expect(text).not.toContain('no covering tests found');
+  });
+
+  it('does not overclaim missing test coverage when no direct test caller is found', async () => {
+    const res = await handler.execute('omniweave_explore', { query: 'untestedTarget' });
+    const text = res.content[0].text;
+    const blast = blastSection(text);
+
+    expect(blast).toContain('`untestedTarget`');
+    expect(blast).toContain('no direct test callers found');
+    expect(blast).not.toContain('no covering tests found');
   });
 
   it('omits symbols that have no dependents from the blast radius', async () => {
