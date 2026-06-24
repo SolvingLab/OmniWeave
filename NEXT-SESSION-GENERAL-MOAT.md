@@ -1,55 +1,44 @@
-# NEXT-SESSION — OmniWeave 通用护城河作战手册（新会话唯一权威·必读）
+# NEXT-SESSION — OmniWeave 通用护城河作战手册（新会话唯一权威·必读·极度完美化）
 
-> 新会话**无上一会话记忆**。本文是唯一权威交接。一切以**真源码 + 真命令输出**为准，不信 README/记忆。
-> 配套读：`CLAUDE.md`+`AGENTS.md`《工程交付强制规范》§0–§10、`CHECKPOINT.md`（PARK 表无新 A/B 不许重开）、
-> `eval-results/general-moat-2026-06-24/`（**本命题的完整研究+对抗证据**）、`eval-results/raison-detre-2026-06-24/`（前序存在主义答卷）。
+> 新会话**无上一会话记忆**。本文是唯一权威交接，一切以**真源码 + 真命令输出**为准，不信 README/记忆。
+> 配套读：`CLAUDE.md`+`AGENTS.md`《工程交付强制规范》§0–§10、`CHECKPOINT.md`（当前进度+PARK 表，无新 A/B 不许重开 PARK 方向）、
+> `eval-results/{lang-parity,adversarial-synthesizer,framework-parity,content-fts,content-vs-structural,general-moat,raison-detre}-2026-06-24/`、
+> memory（`omniweave-general-moat` / `omniweave-vs-codegraph` / `omniweave-agent-ab-eval` / `omniweave-stepA-content-vs-structural`）。
 
-## 0. 头号命题（用户 2026-06-24 拍板·下一会话的灵魂）
+## 0. 头号命题（用户拍板·灵魂·野心极大）
+让 OmniWeave（OW）**通用替换 codegraph（CG）**。诚实概率：替换所有人 10–20% / polyglot+workflow 最佳 + 唯一带内容索引的结构图 60–70%。
+**赌注两件**：① 成为「**唯一融合 内容检索 + 结构图 + 跨边界边 + 诚实输出 的本地零配置工具**」——护城河锚**融合 + 跨边界边(独家) + 零配置 + 努力/可达性/信任**，**不锚 grep 速度、绝不锚 correctness（永远平手，绝不宣称更正确）**。② 还「OW 不弱于 CG」的债（铁律⑥）。
 
-用户**野心极大**：让 OmniWeave 最终**通用替换 codegraph（CG）**，不止 bio niche。诚实概率：「替换所有人」≈10–20%，「polyglot/workflow 最佳 + 唯一带内容索引的结构图」≈60–70%。**赌注（用户已批准）押在两件事**：
-1. **成为「唯一融合 内容检索 + 结构图 + 跨边界边 + 诚实输出 的本地零配置工具」**（grep+graph 的超集装进一个 node:sqlite 索引）。护城河锚**融合 + 跨边界边(独家) + 零配置**，**不锚 grep 速度**（拼不过 flashgrep/Zoekt，也不用拼），**绝不锚 correctness**（永远平手）。
-2. **先还「OW 不弱于 CG」的债**（铁律⑥）——本会话亲验 OW **真的弱于 CG**（见 §3）。
+## 1. 已完成（别重做，全已 commit、门禁绿、无 AI 署名；细节见 CHECKPOINT 顶部 2026-06-24 条目）
+- **框架 synthesizer 债 8/8 还清**：celery/spring-event/mediatr/sidekiq/laravel/redux-thunk/c-fnptr/**rtkQuery**（含两层抽取 port）。dispatch-parity harness **6/6 OW≥CG**（`eval-results/framework-parity-2026-06-24/measure-dispatch.mjs` fail-closed）。
+- **OW 成真·超集**：`moduleVarReferenceEdges`（same-file function→module 常量引用，impact 分析刚需）→ lang-parity **first-party OW≥CG 处处**（aider+10/code-graph-mcp+66/semantic-search-mcp+27），干净仓 raw 也赢。aider raw 残余 −142 = **唯一** CG minified-JS 假阳性（匹配=伪造错边，拒）。`lang-parity.sh` 已加 `ow_edges_fp/cg_edges_fp/fp_diff`。证据 `eval-results/lang-parity-2026-06-24/`。
+- **Step A 决定性 A/B**（真 MiMo）：内容索引是 economy 非 outcome → 60–70 路线。**Step C content_fts** 落地：覆盖 docs/i18n、secrets 门控、`pattern:` CLI+MCP 可答 Q7、存储 1.49×。
+- **对抗自证**：synthesizer false-positive battery **6/6** + module-var-ref 对抗 **6/6**（`eval-results/adversarial-synthesizer-2026-06-24/`）。
+- **全 gate 绿**：build / test:unit 1846 / mcp-daemon 10/10 / eval 10/10+9/9 / benchmark 5/1/1 / dispatch-parity 6/6。
 
-**做法**：ultracode 起 Workflow 多视角 + 对抗 skeptic 默认证伪每条 win；token 不是约束，完整正确才是。结论可复现落 `eval-results/`。**详细战略 + 构建顺序 + 诚实 caveat 见 `eval-results/general-moat-2026-06-24/README.md §0/§4`——那是行动蓝本。**
+## 2. 剩余工作 / 下一步（按优先级；每项都要走「红→绿 + 论文级 artifact + 对抗证伪 + agent A/B」）
+1. **Step D 输出经济（白送通用杠杆，主线）**：每条边都标 provenance/confidence（不止 synthesized）；`explore` 加 **metadata-only 模式**（零 token 结构预览）；确定性工具排序保 KV-cache。全在 `context/formatter.ts`+`mcp/tools.ts`，通用便宜。
+2. **新边的 agent A/B（未过 A/B 不算能力·铁律）**：module-var-ref + rtkQuery + 8 个 dispatch synthesizer **存在 ≠ 有用**。必须真 MiMo agent A/B 证明它们让 agent 少 Read/少 turn（题库含 tie/no-help/ceiling，fail-closed，`scripts/agent-eval/`）。**这是最大未证项。**
+3. **lang-parity 全语料复测**：本会话只跑了 3 仓。跑 `lang-parity.sh` 全 14 语言真实仓，确认 OW≥CG（first-party）处处、无回归。注意 memory `omniweave-vs-codegraph` 记的 **Swift −715/Kotlin −429 node 抽取 gap 仍开**——查是否真缺、能否补。
+4. **module-var-ref 性能**：O(files×functions×modulevars×bodysize)，大仓（vscode 级 ~10k 文件）查 P95，必要时加 cap / 索引。
+5. **优化/重构方向**（发现的债）：① `callback-synthesizer.ts` 已 3800+ 行——按 family 拆成 per-file（c-fnptr/goframe 已独立），但注意 §4 涟漪 6 处。② merged dedup 是 **kind-blind**（`source>target`），我 module-var-ref 用单独 insert 绕开了——更干净是改 dedup 键为 `(source,target,kind)`。③ OW 索引 minified bundle（asciinema-player.min.js ~185 噪声节点）——是否该 index 时跳 generated/minified？产品决策，需想清楚（更干净 vs 完整性）。
+6. **benchmark v3 多样 agent A/B 未跑完**（`benchmark-questions-v3.json` GT/grader 就绪）。
 
-## 1. 战略构建顺序（`general-moat-2026-06-24/README.md §4`，每步带门禁）
+## 3. 法则 / taste / 标准（违反=失信，逐条遵守）
+**10 条铁律**：①证据优先 ②真实优先于 mock（agent A/B 用真 MiMo，`~/Desktop/本机AI-API资源盘点.md`，**key 绝不进任何文件/commit/日志**）③ultracode：实质任务 Workflow 并行 + **skeptic 默认证伪每条 win** ④题库**必含 tie/no-help/ceiling**，只挑 win=cherry-pick=失信 ⑤**绝不宣称「更正确」** ⑥**OW 绝不弱于 CG**，任何抽取改动后跑 `lang-parity.sh` 复测 ⑦commit 只描述改动**绝不加 AI 署名**（连产品名都不行，**自查 grep**）；push 只 origin 不 upstream 不 force main；**只在用户明确要求时 commit**（loop 内 checkpoint commit 已授权）⑧改 CLAUDE.md 必同步 AGENTS.md（`diff <(tail -n+12 CLAUDE.md) <(tail -n+12 AGENTS.md)` 必空）⑨daemon-skew 先疑旧 daemon ⑩别用 LANG 当 shell 变量；满载别跑全套件（flake，mcp-daemon 单独跑）；批判 Workflow 高负载卡死（TaskStop 杀+自己干）。
+**taste**：**极度完美化（不惜 token/时间/改多少代码，"差不多"=失信）**；奥卡姆/极简/性能即设计/冰山/**错边比漏边**/多工具比少工具危险/未过 eval-A/B 不算能力/**评测产物=论文级可复现 artifact**（数据集 pin commit、GT 逐题可核、harness fail-closed、干净论文式目录）/**personal-domain 效用 ≠ 通用护城河（绝不混淆）**。
+**本会话用户新增 4 条 taste（务必继承）**：① 题没区分度=题垃圾（设计判别性题）② content_fts 覆盖「所有文本文件」③ **哪怕是 OW 的优势也要疯狂质疑、不断出难题为难它**（对抗优先）④ **站 agent 角度判：多出的边有用不？有用一定要干过 CG；没用 OW 才该拒绝**（agent-usefulness test 决定建不建，不是为凑数字）。
 
-- **Step A（先做！建索引之前）— 决定性 A/B**：5 真实仓（TS monorepo 5k+/Django/Spring/nf-core Snakemake/混合 C+Python）× 10 题（5 结构 + 5 内容，内容题**半字面半 regex**）× 3 臂（结构-only-OW+Bash/grep、CG、grep+Read）× 真 LLM（MiMo）× natural+forced × fail-closed。**判**：agent 用「结构 OW + Bash」是真**失败/退化**（→内容索引有 outcome 价值，10–20% 路线），还是只多花 ~1 工具调用（→只是经济价值，60–70% 路线）。**用数字决定，不用希望。绝不宣称 correctness win。**
-- **Step B — 还框架 synthesizer 债（铁律⑥）**：port CG 的 pinia/vuex/redux/rtk/MediatR/celery/sidekiq/laravel/spring-event/c-fnptr/goframe 合成（CG 源 `research/2026-06-23-codegraph-ecosystem/repos/codegraph/src/resolution/{callback-synthesizer.ts,c-fnptr-synthesizer.ts,goframe-synthesizer.ts}`）。逐个带红→绿 eval fixture（真框架 app）+ `eval-results/omniweave-benchmark/harness/lang-parity.sh` 复测。门禁：OW≥CG 框架 app 边数。
-- **Step C — `content_fts` trigram 内容索引（唯一新通用杠杆）**：`CREATE VIRTUAL TABLE content_fts USING fts5(path UNINDEXED, content, tokenize='trigram')`，`indexAll` 里对 ≤`MAX_FILE_SIZE` 文件填充。暴露为 `omniweave_search` 的 **`pattern:` 模式**（`query:` 保留符号 BM25）+ explore 空 seed 兜底。**诚实 caveat 写进文档**：trigram 擅长字面子串、复杂 regex 退化、~3.3x 内容存储（5k/20k/50k 档测+报，<50k 仓 gate <1GB）、单写 WAL 建索引写压力须 benchmark（不得给 init 加 >~30s）。**不做新默认工具，不动 5 工具面。**
-- **Step D — 输出经济（白送通用杠杆，源自 BitFun）**：每条边都标 provenance/confidence（不只 crossLang）；explore 加 metadata-only 模式（零 token 结构预览）；确定性工具排序保 KV-cache。全在 formatter，通用，便宜。
-- **绝不做**：5→1 工具合并（违 shape-tax PARK，无新 OW A/B）；Claude-Code 专属 UserPromptSubmit hook（宿主专属，AGENTS.md 已覆盖；要做先 A/B）。
+## 4. 本会话发现的坑（新会话必踩，先记住）
+- **daemon-skew（⑨）**：rebuild 后旧 MCP daemon 服旧 dist。验前 `pkill -f 'serve --mcp'`。
+- **in-place 旧索引 skew（本会话新发现，关键）**：`init` 见源文件 hash 未变就 no-op，**即使 OW 代码(dist)变了也不重索引** → lang-parity/任何抽取验证前**必须 `rm -rf <repo>/.omniweave <repo>/.codegraph`**，否则测到旧图。
+- **test flake**：满载下 1 个 timing-sensitive 测试会假失败，重跑即绿（别误判回归）。
+- **并行流**：本仓可能有 auto-commit hook + 并行 agent 实时编辑 src 并用宽 `git add` 提交（会扫走你 uncommitted 改动）。见陌生 commit 先疑它；**验门禁用 git worktree 隔离已提交 HEAD**（symlink node_modules），别碰其 live 文件；commit 用显式路径。
+- **lang-parity raw 计数误导**：CG 把 minified 单字母调用误解析成假阳性，raw 计数把它当「CG 赢」。用 `fp_diff`（first-party）判。
 
-## 2. 用户的法则 / taste / 标准（违反=失信，逐条遵守）
-
-**10 条铁律**：①证据优先（真命令/真源码，不信 README/记忆）②真实优先于 mock——agent A/B 用**真 LLM**（MiMo，`~/Desktop/本机AI-API资源盘点.md`，Anthropic 协议 env `ANTHROPIC_BASE_URL/_AUTH_TOKEN`，**绝不把 key 写进任何文件/commit/日志**）③ultracode：每实质任务 Workflow 并行+skeptic 默认证伪每条 win④多样题库**必含 tie/no-help/ceiling**，只挑 win=cherry-pick=失信⑤**绝不宣称「更正确」**，correctness 平手是常态，护城河锚努力/可达性/信任⑥**OW 绝不该弱于 CG**（superset fork 起码平局），**任何抽取改动后跑 `lang-parity.sh` 复测**⑦commit 只描述改动**绝不加 AI 署名**，且**commit message 不得出现 Claude/Anthropic/AI 任何字样**（连产品名"Claude Code"都不行，本会话踩过）；push 只 origin 绝不 upstream 不 force main；**只在用户明确要求时 commit/push**⑧改 CLAUDE.md 必同步 AGENTS.md（`diff <(tail -n+12 CLAUDE.md) <(tail -n+12 AGENTS.md)` 必须空）⑨daemon-skew 先疑旧 daemon，rebuild+重连⑩**别用 LANG 当 shell 变量**（污染 locale 害 node:sqlite segfault）；**满载别跑全套件**（flake）；**批判 Workflow 高负载会卡死**（TaskStop 杀+自己干）。
-
-**taste**：极度完美化（不惜 token/时间/改多少代码，"差不多"=失信）；奥卡姆/极简/性能即设计/冰山/**错边比漏边**；**多工具比少工具危险**；**未过 eval/A/B 的能力不算能力**；**评测产物=论文级可复现 artifact**（数据集 MANIFEST+pin commit、GT 逐题可核、harness fail-closed、干净论文式目录、深度保留结果+测试代码）；用户未来要写论文。**personal/domain 效用 ≠ 可辩护通用护城河，二者绝不混淆**。
-
-## 3. 本会话亲验的关键事实 / 发现的问题（新会话直接用）
-
-- **OW 真的弱于 CG（铁律⑥被触）**：CG `callback-synthesizer.ts`(2751行) 有 pinia/vuex/redux/rtk/MediatR/celery/sidekiq/laravel/spring/c-fnptr/goframe 框架合成；OW(2126行,**−625**)**全无**，无 c-fnptr 文件。证据 `eval-results/general-moat-2026-06-24/framework-synthesizer-gap.txt`。→ Vue/React/.NET/Django/Rails/Laravel/Spring/C 通用仓 OW 图比 CG 残。这是 §3 旧悬案「std_diff 谁强谁弱」的答案：**OW 弱**。Step B 还债。
-- **flashgrep 不可采用**：`wgqqqqq/flashgrep` v0.2.7 私有闭源 Rust 二进制（`gh api repos/wgqqqqq/flashgrep`→404，license 未知），法律上不能 wrap/分发。架构=sparse-ngram 倒排+Lucene 分段+JSON-RPC daemon（Cursor 式，36x@Chromium）。**同类开源可采用**：Zoekt(Apache)/ripgrep(MIT)/FTS5。
-- **buildability 已亲证**：`node:sqlite` 22.x FTS5 `tokenize='trigram'` 可用（子串 MATCH 命中），内容索引能纯在现有引擎建，零新依赖、保 zero-config。
-- **OW FTS5 现状**：`nodes_fts` 只索引符号元数据(name/qualified_name/docstring/signature)，**不索引文件内容**；CG 同。这是 Q7 全文检索 grep 赢的根因，也是唯一不拥挤的通用空白。
-- **value-reference 决策=DEFER**：上一会话遗留的 Ruby 常量读取 `references` 边 WIP 已存补丁 `eval-results/value-ref-decision-2026-06-24/ruby-value-ref.patch`（`git apply --check` 通过），未上（same-lang 标准边非 OW 护城河、Ruby-only 破坏一致性、需跨语言 A/B）。
-- **并行开发流**：本会话期间有**并行进程（疑用户/另一 agent + auto-commit hook）实时编辑 src/mcp/tools.ts、sync/watcher 等并自动提交**（CLI/MCP 续跳 parity、node trails、watcher 隔离、snapshot 省略系列）。**新会话若见陌生改动/陌生 commit，先疑此并行流，别误判为自己回归**；要验门禁用 **git worktree 隔离已提交 HEAD**（symlink node_modules），别碰其 live 文件。
-
-## 4. 本会话已完成（**别重做**，全已 commit、门禁绿、无 AI 署名）
-
-- 存在主义命题答卷 `eval-results/raison-detre-2026-06-24/{README,debate.md,probe-build-orchestration.sh,build-orchestration-scan.txt,parity-recheck-post-deadcode.jsonl}`（裁定 b+c、niche、无通用 moat、6 条非-claim、build-orchestration pilot defer）。
-- 死代码清除 commit `02b29b7`（~10 死符号：formatter formatSubgraphTree/formatNodeTree/truncate/formatBytes、migrations needsMigration/getMigrationHistory、import-resolver clearImportMappingCache+孤儿 importMappingCache、grammars isGrammarsInitialized/getLanguageDisplayName；tsc noUnusedLocals 兜底）。
-- §6 lang-parity 复测 commit `06124ab`（lang-c/go/php/ruby 节点逐字等于基线，OW≥CG）。
-- worktree 隔离全套件验证 commit `ebad808`（已提交 HEAD test:unit **1769 passed|0 failed**、mcp-daemon 10/10）。
-- 通用护城河战略 commit `5061108` = `eval-results/general-moat-2026-06-24/{README,workflow-research-raw.json,framework-synthesizer-gap.txt}`（本手册 §0–§3 的完整证据源）。
-
-## 5. 关键资源 / 门禁
-
-- **门禁**：`npm run build`（指纹）；`npm test`=two-phase（`test:unit` 当前 ~1769 passed + `test:mcp-daemon` 10/10，**单独/clean 跑 daemon，满载会 ENOTEMPTY flake**）；eval `EVAL_CORPUS=capstone EVAL_CODEBASE=__tests__/fixtures/capstone npx tsx __tests__/evaluation/runner.ts`（10/10）+ polyglot-subprocess（9/9）；`npm run benchmark`（5 wins/1 tied/1 grep）；`lang-parity.sh <repo-dirs>`（OW≥CG，CG dist 在 `research/.../codegraph/dist/bin/codegraph.js`）。
+## 5. 资源 / 门禁 / 证据
+- **门禁**：`npm run build`；`npm test`（two-phase，**mcp-daemon 单独/clean 跑**）；eval `EVAL_CORPUS=capstone EVAL_CODEBASE=__tests__/fixtures/capstone npx tsx __tests__/evaluation/runner.ts`（10/10）+ polyglot（9/9）；`npm run benchmark`（5/1/1）；`lang-parity.sh`（first-party OW≥CG，CG dist 在 `research/2026-06-23-codegraph-ecosystem/repos/codegraph/dist/bin/codegraph.js`）；dispatch-parity `node eval-results/framework-parity-2026-06-24/measure-dispatch.mjs`（6/6）。
 - **真 LLM**：`~/Desktop/本机AI-API资源盘点.md`（MiMo 主力，绝不入库）。
-- **benchmark harness**：`scripts/agent-eval/{ab-benchmark.sh,lang-parity.sh,score-benchmark.mjs,benchmark-questions{,-v2,-v3}.json}`（fail-closed，工作目录 `.bench-out*`/`.parity-out` gitignore）。
-- **未竟（次要）**：v3 多样 agent A/B 未跑完（`benchmark-questions-v3.json` GT/grader 就绪）；残余 parity 长尾（swift-7/c-4/ts-3 niche）；benchmark 更狠（更大仓/更多真不同模型家族）。
 
-## 6. 每轮 loop 末尾
-
-跑 verify 门禁 + 把进度/新证据/下一步写进 CHECKPOINT + commit checkpoint（无 AI 署名）。**不做「差不多」**；未达 super-perfect 即继续 loop。细节恒以本文 + `eval-results/general-moat-2026-06-24/` 为准。
+## 6. DONE（super-perfect，全满足才停 loop）
+① Step D 输出经济落地（provenance/confidence 全边 + metadata-only explore + 确定性排序）+ 论文级 artifact ② 新边（module-var-ref/rtkQuery/8 dispatch）有真 MiMo agent A/B 证据证明 agent ROI（少 Read/turn/token，含 tie/no-help/ceiling，fail-closed）③ lang-parity 全语料 first-party OW≥CG 处处 + Swift/Kotlin node gap 查清 ④ build/test:unit/mcp-daemon 10/10/eval 10-10+9-9/benchmark 5-1-1 全绿 ⑤ 死代码/不诚实输出清零、§9 七问过、发现的重构债（callback-synth 拆分/dedup 键/minified 索引）评估并记录处置 ⑥ 文档与真值同步、CLAUDE↔AGENTS 同步、memory 更新。每轮 loop 末尾跑 verify 门禁 + 把进度/新证据/下一步写进 CHECKPOINT 并 commit checkpoint（无 AI 署名）。**未达任一项即继续 loop，绝不「差不多」。**
