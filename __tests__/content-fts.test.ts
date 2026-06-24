@@ -30,7 +30,7 @@ describe('content_fts (raw file-content search)', () => {
 
     const cg = await OmniWeave.init(dir, { silent: true });
     await cg.indexAll();
-    const q = (cg as any).queries;
+    const q = cg; // exercise the public OmniWeave.searchContent / contentIndexFileCount surface
 
     expect(q.contentIndexFileCount()).toBe(2);
 
@@ -56,7 +56,7 @@ describe('content_fts (raw file-content search)', () => {
     }
     const cg = await OmniWeave.init(dir, { silent: true });
     await cg.indexAll();
-    const q = (cg as any).queries;
+    const q = cg; // exercise the public OmniWeave.searchContent / contentIndexFileCount surface
 
     const limited = q.searchContent('marker_token_xyz', 3);
     expect(limited.results.length).toBe(3);
@@ -76,7 +76,7 @@ describe('content_fts (raw file-content search)', () => {
 
     const cg = await OmniWeave.init(dir, { silent: true });
     await cg.indexAll();
-    const q = (cg as any).queries;
+    const q = cg; // exercise the public OmniWeave.searchContent / contentIndexFileCount surface
     expect(q.searchContent('unique_marker_to_remove', 5).results.length).toBe(1);
 
     // Remove the file from disk and sync — the content row must go with it.

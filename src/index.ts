@@ -803,6 +803,24 @@ export class OmniWeave {
   }
 
   /**
+   * Literal-substring search over raw file CONTENT (trigram `content_fts`) — the
+   * axis `searchNodes` (symbol metadata only) cannot answer. Exact substring, not
+   * regex; patterns shorter than 3 chars return nothing (trigram floor).
+   */
+  searchContent(
+    pattern: string,
+    limit: number
+  ): { results: Array<{ path: string; snippet: string }>; hasMore: boolean } {
+    return this.queries.searchContent(pattern, limit);
+  }
+
+  /** Files currently carrying content in the trigram index. 0 ⇒ the index was
+   *  migrated to schema 6 but not yet repopulated by a full re-index. */
+  contentIndexFileCount(): number {
+    return this.queries.contentIndexFileCount();
+  }
+
+  /**
    * Normalized project-name tokens (go.mod / package.json / repo dir) used to
    * down-weight the non-discriminative project name in search ranking (#720).
    * Exposed so explore can exclude it from the PascalCase type-disambiguation
