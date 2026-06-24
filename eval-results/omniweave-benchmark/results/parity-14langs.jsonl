@@ -8,7 +8,7 @@
 {"name":"lua","ow_nodes":1927,"cg_nodes":1927,"ow_edges":4127,"cg_edges":4127,"std_calls_diff":0,"std_total_diff":0,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
 {"name":"php","ow_nodes":582,"cg_nodes":582,"ow_edges":1277,"cg_edges":1285,"std_calls_diff":0,"std_total_diff":8,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
 {"name":"python","ow_nodes":1299,"cg_nodes":1299,"ow_edges":2875,"cg_edges":2960,"std_calls_diff":0,"std_total_diff":85,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
-{"name":"ruby","ow_nodes":1751,"cg_nodes":1800,"ow_edges":3306,"cg_edges":3441,"std_calls_diff":13,"std_total_diff":135,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
+{"name":"ruby","ow_nodes":1800,"cg_nodes":1800,"ow_edges":3368,"cg_edges":3441,"std_calls_diff":0,"std_total_diff":73,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
 {"name":"rust","ow_nodes":3731,"cg_nodes":3731,"ow_edges":15542,"cg_edges":15686,"std_calls_diff":0,"std_total_diff":144,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
 {"name":"swift","ow_nodes":4185,"cg_nodes":4192,"ow_edges":13613,"cg_edges":13728,"std_calls_diff":0,"std_total_diff":115,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}
 {"name":"ts","ow_nodes":5076,"cg_nodes":5079,"ow_edges":24727,"cg_edges":25350,"std_calls_diff":0,"std_total_diff":623,"ow_bridge":0,"cg_bridge":0,"ow_overrides":0,"cg_overrides":0,"ow_err":null,"cg_err":null}

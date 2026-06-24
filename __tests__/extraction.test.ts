@@ -2568,6 +2568,36 @@ end
       expect(containsEdges.length).toBeGreaterThanOrEqual(2);
     });
 
+    it('should extract Ruby constants in class and module scope without lower-case class assignments', () => {
+      const code = `
+TOP_LEVEL = 1
+
+class PaymentGateway
+  API_VERSION = "v1"
+  setting = "local class body assignment"
+
+  def call
+    local_value = 1
+  end
+end
+
+module Billing
+  DEFAULT_CURRENCY = "USD"
+end
+`;
+      const result = extractFromSource('billing.rb', code);
+      const byName = new Map(result.nodes.map((n) => [n.name, n]));
+
+      expect(byName.get('TOP_LEVEL')?.kind).toBe('constant');
+      expect(byName.get('TOP_LEVEL')?.qualifiedName).toBe('TOP_LEVEL');
+      expect(byName.get('API_VERSION')?.kind).toBe('constant');
+      expect(byName.get('API_VERSION')?.qualifiedName).toBe('PaymentGateway::API_VERSION');
+      expect(byName.get('DEFAULT_CURRENCY')?.kind).toBe('constant');
+      expect(byName.get('DEFAULT_CURRENCY')?.qualifiedName).toBe('Billing::DEFAULT_CURRENCY');
+      expect(byName.has('setting')).toBe(false);
+      expect(byName.has('local_value')).toBe(false);
+    });
+
     it('should handle nested modules with classes', () => {
       const code = `
 module Discourse

@@ -18,12 +18,12 @@ from real indexed graphs and real-LLM runs (see `METHODOLOGY.md`); raw data is i
 | Lua (plenary) | 1927 | 1927 | 0 | 0 | 0/0 |
 | PHP (FastRoute) | 582 | 582 | 0 | 8 | 0/0 |
 | Python (requests) | 1299 | 1299 | 0 | 85 | 0/0 |
-| Ruby (sinatra) | 1751 | 1800 | 13 | 135 | 0/0 |
+| Ruby (sinatra) | 1800 | 1800 | 0 | 73 | 0/0 |
 | Rust (ripgrep) | 3731 | 3731 | 0 | 144 | 0/0 |
 | Swift (Alamofire) | 4185 | 4192 | 0 | 115 | 0/0 |
 | TS (zod) | 5076 | 5079 | 0 | 623 | 0/0 |
 
-**A1. No standard-edge regression.** 10/14 repos have identical node counts and
+**A1. No standard-edge regression.** 11/14 repos have identical node counts and
 `calls Δ = 0`; OmniWeave does not regress its fork base. Residual `std Δ` (tens to
 hundreds out of thousands of edges) is fork drift (OmniWeave's added framework
 resolvers + a slightly different commit), not a broken edge kind.
@@ -59,6 +59,11 @@ recorded openly: OmniWeave's fork had drifted behind upstream on a few
 *extraction-breadth* improvements; maintaining "OmniWeave ≥ codegraph everywhere"
 requires periodically syncing upstream's safe, additive wins — which this
 benchmark surfaced and these two commits closed.
+
+The same audit closed the Ruby row as well: class/module constants parse with a
+`constant` left-hand side (`API_VERSION = "v1"`), not an `identifier`, so they had
+been dropped inside class/module scope. Ruby now ties codegraph on nodes
+(1800 = 1800) and `calls` delta (0), with only 73 residual standard-edge drift.
 
 ## Part B — Bridge-edge structural capability (11 datasets, both tools)
 
@@ -177,9 +182,10 @@ scattered concepts) it honestly ties.
    sufficiency but is an artificial constraint.
 3. **Small greppable repos** under-state the moat: the workflow win is largest at
    scale where grep reads many files; we measured turns, not wall-clock at scale.
-4. **Swift/Kotlin node deficit** (Part A3) is now re-measured and closed at the
-   node layer (Swift −7, Kotlin 0). The remaining Swift/Kotlin deltas are
-   standard-edge drift (115 / 15), not missing symbols, and should be audited as
-   edge-specific maintenance before being framed as a regression.
+4. **Swift/Kotlin/Ruby node deficits** (Part A3) are now re-measured and closed at
+   the node layer (Swift −7, Kotlin 0, Ruby 0). The remaining deltas are
+   standard-edge drift (Swift 115 / Kotlin 15 / Ruby 73), not missing symbols,
+   and should be audited as edge-specific maintenance before being framed as a
+   regression.
 5. **Effort, not correctness, is the claim** — and effort has run-to-run variance;
    we report means over multiple runs and the full per-cell data is in `results/`.
