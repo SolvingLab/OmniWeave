@@ -4712,6 +4712,15 @@ export class ToolHandler {
       else if (edge.kind === 'references') labels.push('reference');
       else labels.push(edge.kind);
     }
+    // Heuristic call-surface edges must carry the same trust labels here as in
+    // explore, so a synthesized dispatch is never rendered as a proven static call.
+    const synth = this.synthEdgeNote(edge);
+    if (synth) labels.push(synth.compact);
+    else if (edge.provenance === 'heuristic') labels.push('heuristic');
+    const confidence = edge.metadata?.confidence;
+    if (typeof confidence === 'number') {
+      labels.push(`confidence ${Number.isInteger(confidence) ? confidence.toFixed(0) : confidence.toFixed(2)}`);
+    }
     if (edge.provenance === 'scip') labels.push('scip', ...this.scipTrustLabels(edge));
     return labels.length > 0 ? labels.join('; ') : null;
   }

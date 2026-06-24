@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { OmniWeave } from '../src';
 import type { Edge } from '../src/types';
+import { ToolHandler } from '../src/mcp/tools';
 
 /**
  * End-to-end tests for the cross-boundary framework dispatch synthesizers ported
@@ -321,6 +322,12 @@ end
     expect(edge).toBeDefined();
     expect((edge!.metadata as { confidence?: number }).confidence).toBe(0.85);
     expect((edge!.metadata as { via?: string }).via).toBe('DestroyUserWorker');
+
+    const callers = await new ToolHandler(cg).execute('omniweave_callers', { symbol: 'perform' });
+    const text = callers.content[0]?.text ?? '';
+    expect(text).toContain('destroy (method)');
+    expect(text).toContain('dynamic: sidekiq dispatch');
+    expect(text).toContain('confidence 0.85');
   });
 
   it('bridges a Laravel event(new X) to the listener handle by event class (PHP)', async () => {
