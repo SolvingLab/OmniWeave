@@ -33,12 +33,25 @@ resolvers + a slightly different commit), not a broken edge kind.
 differentiation in Part B is therefore **scenario-specific**, not a blanket
 "OmniWeave indexes more".
 
-**A3. Flagged divergence (honest).** Swift (Alamofire: OW 3477 vs CG 4192, −715)
-and Kotlin (koin: OW 8881 vs CG 9310, −429) — OmniWeave indexes *fewer* symbols.
-Root-cause check: `src/extraction/languages/swift.ts` is **byte-identical** to
-codegraph's (138 lines, 0 diff), so this is **not an extractor regression**; it is
-most consistent with an incomplete index under the heavy concurrent load of the
-parity sweep and is flagged for a clean-environment re-measurement, not hidden.
+**A3. A divergence found, root-caused, and fixed (the honest reflection).** The
+parity sweep showed OmniWeave indexing *fewer* nodes than its own fork base on two
+languages — Swift (Alamofire: 3477 vs 4192, **−715**) and Kotlin (koin: 8881 vs
+9310, −429). A fork that is a *superset* should never be weaker than its base, so
+this was investigated to root cause. The Swift extractor (`languages/swift.ts`) is
+byte-identical to codegraph's, and the grammars are identical; the gap was in the
+**shared walker** (`extraction/tree-sitter.ts`): OmniWeave deliberately did *not*
+emit a node for a Swift type's stored instance properties (a documented Occam
+choice — the upstream "value-reference" patch that gave those nodes an edge purpose
+was deferred). But *property listing* ("what fields does this class have?") is a
+standalone agent capability, so OmniWeave should not be weaker on it. **Fix**:
+OmniWeave now extracts a Swift stored property as a `field` node (static `let`/`var`
+as `constant`/`variable`; computed properties stay edge-only), closing the deficit
+from **−715 to −7** (4185 vs 4192) with no value-reference edges added (the trust
+model is unchanged) and all extraction/eval gates green. The remaining Kotlin −429
+is a separate `kotlin.ts` divergence flagged for the same treatment. The broader
+lesson, recorded openly: OmniWeave's fork has drifted behind upstream on a few
+*extraction-breadth* improvements; maintaining "OmniWeave ≥ codegraph everywhere"
+requires periodically syncing upstream's safe, additive wins.
 
 ## Part B — Bridge-edge structural capability (11 datasets, both tools)
 

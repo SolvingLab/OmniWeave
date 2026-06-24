@@ -676,6 +676,41 @@ export class TreeSitterExtractor {
       this.isInsideClassLikeNode()
     ) {
       const ownerId = this.nodeStack[this.nodeStack.length - 1];
+      // Extract the stored property as its own node so an agent can list a
+      // type's fields/properties — parity with the fork base, which OmniWeave
+      // previously dropped (the value-reference patch's reason for these nodes
+      // was deferred, but property-listing is a standalone capability). Static
+      // `let`/`var` are type-shared `constant`/`variable`; an instance stored
+      // property is a `field`; a *computed* property (getter, no stored value)
+      // or protocol requirement stays edge-only.
+      const swiftPropPattern =
+        getChildByField(node, 'name') ??
+        node.namedChildren.find((c: SyntaxNode) => c.type === 'value_binding_pattern' || c.type === 'pattern') ??
+        null;
+      const swiftFirstSimpleId = (n: SyntaxNode | null): SyntaxNode | null => {
+        if (!n) return null;
+        if (n.type === 'simple_identifier') return n;
+        for (let i = 0; i < n.namedChildCount; i++) {
+          const found = swiftFirstSimpleId(n.namedChild(i));
+          if (found) return found;
+        }
+        return null;
+      };
+      const swiftPropName = swiftFirstSimpleId(swiftPropPattern);
+      const swiftIsComputed = node.namedChildren.some(
+        (c: SyntaxNode) => c.type === 'computed_property' || c.type === 'protocol_property_requirements',
+      );
+      if (swiftPropName && !swiftIsComputed) {
+        const binding = node.namedChildren.find((c: SyntaxNode) => c.type === 'value_binding_pattern');
+        const isLet = binding != null && getNodeText(binding, this.source).trimStart().startsWith('let');
+        const isStatic = this.extractor.isStatic?.(node) ?? false;
+        this.createNode(
+          isStatic ? (isLet ? 'constant' : 'variable') : 'field',
+          getNodeText(swiftPropName, this.source),
+          node,
+          { visibility: this.extractor.getVisibility?.(node), isStatic },
+        );
+      }
       if (ownerId) {
         this.extractDecoratorsFor(node, ownerId);
         this.extractVariableTypeAnnotation(node, ownerId);
