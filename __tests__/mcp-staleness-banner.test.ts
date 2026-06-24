@@ -206,6 +206,26 @@ describe('MCP staleness banner', () => {
     expect(statusText).not.toContain('Run `omniweave sync` before trusting structural relationships.');
   });
 
+  it('keeps watcher-less low-signal changes visible for explicit snapshot empty queries', async () => {
+    const snapshotPath = 'research/2026-06-24-example/repos/tool/fixture.ts';
+    fs.mkdirSync(path.dirname(path.join(testDir, snapshotPath)), { recursive: true });
+    fs.writeFileSync(
+      path.join(testDir, snapshotPath),
+      'export function pendingSnapshotOnly() { return 1; }\n',
+    );
+
+    const explore = await handler.execute('omniweave_explore', {
+      query: 'external snapshot pendingSnapshotOnly',
+      maxFiles: 3,
+    });
+    expect(explore.isError).toBeFalsy();
+    const text = explore.content[0].text;
+    expect(text.startsWith('⚠️')).toBe(true);
+    expect(text).toContain('empty explore result may be stale');
+    expect(text).toContain(snapshotPath);
+    expect(text).toContain('No relevant code found for "external snapshot pendingSnapshotOnly"');
+  });
+
   it('keeps active-watcher low-signal pending files out of ordinary stale footers', async () => {
     cg.watch({ debounceMs: 4000, inertForTests: true });
     await cg.waitUntilWatcherReady();

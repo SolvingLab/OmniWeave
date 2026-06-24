@@ -625,7 +625,7 @@ function isExploreNoResultText(text: string): boolean {
   return text.startsWith('No relevant code found for ');
 }
 
-function noResultAllowsLowSignalPending(text: string): boolean {
+function noResultAllowsLowSignalSources(text: string): boolean {
   const match = text.match(/^No relevant code found for "([\s\S]*)"\./);
   return match ? queryAllowsLowSignalSources(match[1]!) : false;
 }
@@ -1361,7 +1361,7 @@ export class ToolHandler {
     }
 
     if (pending.length > 0) {
-      const lowSignalPendingAllowed = isExploreNoResultText(text) && noResultAllowsLowSignalPending(text);
+      const lowSignalPendingAllowed = isExploreNoResultText(text) && noResultAllowsLowSignalSources(text);
       pending = pending.filter((entry) =>
         !isLowSignalSourceFile(entry.path) ||
         responseMentionsPath(text, entry.path) ||
@@ -1409,8 +1409,11 @@ export class ToolHandler {
     } catch {
       return result;
     }
+    const lowSignalChangedAllowed = isExploreNoResultText(text) && noResultAllowsLowSignalSources(text);
     changedEntries = changedEntries.filter((entry) =>
-      !isLowSignalSourceFile(entry.path) || responseMentionsPath(text, entry.path)
+      !isLowSignalSourceFile(entry.path) ||
+      responseMentionsPath(text, entry.path) ||
+      lowSignalChangedAllowed
     );
     if (changedEntries.length === 0) return result;
 
