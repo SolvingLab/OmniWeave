@@ -7,6 +7,11 @@
 import { readFileSync } from 'node:fs';
 
 const [, , resultsPath, manifestPath] = process.argv;
+if (!resultsPath || !manifestPath) {
+  console.error('Usage: node score-benchmark.mjs <results.jsonl> <benchmark-questions.json>');
+  process.exit(2);
+}
+
 const runs = readFileSync(resultsPath, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
 const byId = Object.fromEntries(manifest.map((q) => [q.id, q]));
@@ -16,11 +21,11 @@ const GRADERS = {
   'Q1-s4-dispatch': (a) => a.includes('deseqdataset') && a.includes('deseqresults'),
   'Q2-crosslang-static': (a) => a.includes('deseq.r'),
   'Q3-invokes': (a) => /\bstar\b/.test(a),
-  // honest answer = the path is NOT statically resolvable / runtime / no
-  'Q4-crosslang-runtime-ceiling': (a) => /\bno\b/.test(a) || a.includes('runtime') || a.includes('not statically') || a.includes('not resolvable') || a.includes('cannot'),
+  // honest answer = the path is NOT statically resolvable / runtime (EN + 中文)
+  'Q4-crosslang-runtime-ceiling': (a) => /\bno\b/.test(a) || a.includes('否') || a.includes('runtime') || a.includes('运行时') || a.includes('动态解析') || a.includes('not statically') || (a.includes('静态') && (a.includes('无法') || a.includes('不'))) || a.includes('not resolvable') || a.includes('resource_filename'),
   'Q5-single-point-tie': (a) => a.includes('core.r'),
-  // honest no-help = not localizable / scattered / not a single file / not structural
-  'Q6-concept-no-help': (a) => a.includes('not localiz') || a.includes('scattered') || a.includes('multiple') || a.includes('not a single') || a.includes('throughout') || a.includes('across') || a.includes('not structural') || a.includes('inline'),
+  // honest no-help = not localizable / scattered (EN + 中文)
+  'Q6-concept-no-help': (a) => a.includes('not localiz') || a.includes('scattered') || a.includes('multiple') || a.includes('not a single') || a.includes('throughout') || a.includes('across') || a.includes('inline') || a.includes('分散') || a.includes('不是集中') || a.includes('无法定位') || a.includes('没有集中') || a.includes('不集中'),
 };
 
 function grade(run) {

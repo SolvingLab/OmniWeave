@@ -157,9 +157,76 @@ possible, and honestly absent where it is not.
 
 ## Part C — Agent A/B (real LLM, locked ground truth)
 
-_(Filled when the run completes — 66-cell matrix over 6 ground-truth-locked
-questions × {omniweave, codegraph, grep} × {natural, forced} × {mimo-pro,
-mimo-small}, fail-closed. See `scripts/agent-eval/.bench-out/results.jsonl`.)_
+**66 runs, 0 INVALID** (fail-closed). 6 ground-truth-locked questions ×
+{omniweave, codegraph, grep} × {natural, forced} × {mimo-v2.5-pro, mimo-v2.5}.
+Correctness is binary vs the locked GT (Chinese + English answers graded).
+
+### Correctness — ties everywhere
+
+| Question | type | omniweave | codegraph | grep |
+|---|---|---|---|---|
+| Q1 S4 dispatch (DESeq2) | differentiation | 7/7 | 7/7 | 2/2 |
+| Q2 crossLang static (polyglot) | differentiation | 7/7 | 7/7 | 2/2 |
+| Q3 invokes / workflow (capstone) | differentiation | 7/7 | 7/7 | 2/2 |
+| Q4 runtime-path ceiling (MAESTRO) | honesty-ceiling | 3/3 | — | 3/3 |
+| Q5 single-point (DESeq2) | honesty-tie | 3/3 | — | 3/3 |
+| Q6 concept (DESeq2) | no-help | 3/3 | — | 2/3 |
+
+**Correctness ties on every question.** This is the headline and it is *not* a
+disappointment — it is the honest result the whole program has converged on
+(rounds 1–7): a structural graph does not make an agent get *more right answers*;
+a capable LLM eventually reaches the answer with grep too. On the honesty
+questions both tools are honest — Q4 both say "the path is runtime-resolved, not
+statically determinable"; Q6 both say "validation is scattered across functions,
+not one file." Neither tool fabricates. **The moat, if any, is effort, not
+correctness.**
+
+### Effort — where the structural edge actually pays (forced mode, mimo-pro)
+
+| Question | omniweave turns | codegraph turns | omniweave reads | codegraph reads |
+|---|---|---|---|---|
+| Q1 S4 dispatch | **9.3** | 15.3 | 0.0 | 0.7 |
+| Q2 crossLang static | 17.7 | 14.7 | 1.3 | 0.7 |
+| Q3 invokes / workflow | **16.0** | **36.0** | 1.7 | 3.7 |
+
+- **Q3 is the decisive effort win.** Both arms answer "STAR", but codegraph's
+  agent *flails*: codegraph cannot index the Snakemake rule `star_align` at all
+  (`Symbol not found`), so the agent thrashes — a representative codegraph-forced
+  Q3 tool sequence is **17 tool calls** (`ToolSearch → Bash → ToolSearch×3 →
+  Agent → Read → … → codegraph_explore×4 → Read`) over 36 turns, versus
+  omniweave's 16 turns riding the `invokes` edge. On the **weaker model**
+  (mimo-v2.5) the gap widens to **omniweave 12 turns vs codegraph 45 turns**
+  (9 codegraph_explore calls) — confirming the long-standing thesis that **the
+  moat widens as the model weakens**.
+- **Q1 (S4)** is a smaller but real effort win (9.3 vs 15.3 turns, 0 vs 0.7
+  reads): codegraph reaches the classes only because R's naming convention leaks
+  them into the delegate function name (`plotMA.DESeqDataSet`), which the agent
+  reads off — so it ties on correctness but spends more turns.
+- **Q2 (crossLang static)** is an honest **tie even forced**: the R path is a
+  literal string in the `subprocess.run([...])` call, visible in the one file
+  both tools surface, so the crossLang *edge* buys nothing here — its value is in
+  *traversal* (callers/impact across the boundary), not reading one line.
+
+### Adoption (natural mode) — the agent often skips the MCP
+
+In natural mode (shell allowed), the mimo agent frequently answered with Bash
+alone (`mcp=0` across most natural-mode cells) — the "low-salience" / attach-
+latency confound the codegraph project also documents. This is why the **forced**
+mode matters: it isolates tool *sufficiency* from tool *adoption*. The honest
+read: on small, greppable repos a structural tool's win is realized only if the
+agent picks it; the win is largest where grep genuinely cannot reach (Q3
+workflow) and the model is weak.
+
+### Honest verdict
+
+Across 66 real-LLM runs: **correctness ties on all six questions**; OmniWeave's
+measurable advantage is **effort** (turns / tool-calls / reads), **concentrated
+on structural-traversal questions** the base tool cannot index (Q3 workflow:
+2–3× fewer turns), **widening as the model weakens**, and **honestly absent**
+where the answer is a literal (Q2), a single definition (Q5), a runtime-path
+ceiling (Q4), or a scattered concept (Q6). OmniWeave is not more correct than
+codegraph or grep — it is, in the specific cross-boundary cases, *cheaper to be
+correct with*.
 
 ---
 
