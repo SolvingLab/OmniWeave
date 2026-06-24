@@ -139,10 +139,13 @@ function isAlive(pid: number): boolean {
 }
 
 function readLockPid(root: string): number | null {
+  return readLockInfo(root)?.pid ?? null;
+}
+
+function readLockInfo(root: string): any | null {
   try {
     const raw = fs.readFileSync(path.join(root, '.omniweave', 'daemon.pid'), 'utf8');
-    const info = JSON.parse(raw);
-    return typeof info.pid === 'number' ? info.pid : null;
+    return JSON.parse(raw);
   } catch { return null; }
 }
 
@@ -227,6 +230,9 @@ describe('Shared MCP daemon (issue #411)', () => {
     const daemonPid = readLockPid(realRoot);
     expect(daemonPid).toBeTruthy();
     expect(isAlive(daemonPid!)).toBe(true);
+    const lockInfo = readLockInfo(realRoot);
+    expect(lockInfo.version).toMatch(/^\d+\.\d+\.\d+/);
+    expect(lockInfo.buildFingerprint).toEqual(expect.stringContaining(lockInfo.version));
     // The socket exists at the path the code computes from the canonical root.
     // On Windows the daemon listens on a named pipe (\\.\pipe\...), which isn't
     // a filesystem entry — existsSync doesn't apply there, and the "Attached to

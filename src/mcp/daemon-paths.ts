@@ -6,7 +6,7 @@
  * surface area is just two file paths:
  *
  *   - `daemon.sock` — Unix domain socket / named pipe the daemon listens on.
- *   - `daemon.pid` — atomic-create lockfile holding the daemon's pid + version.
+ *   - `daemon.pid` — atomic-create lockfile holding the daemon's pid + build.
  *
  * Both live under `.omniweave/` so the project-scoped uninstall (`omniweave
  * uninit`) sweeps them up for free.
@@ -56,6 +56,7 @@ export function getDaemonPidPath(projectRoot: string): string {
 export interface DaemonLockInfo {
   pid: number;
   version: string;
+  buildFingerprint?: string;
   socketPath: string;
   startedAt: number;
 }
@@ -82,6 +83,7 @@ export function decodeLockInfo(raw: string): DaemonLockInfo | null {
       parsed &&
       typeof parsed.pid === 'number' &&
       typeof parsed.version === 'string' &&
+      (parsed.buildFingerprint === undefined || typeof parsed.buildFingerprint === 'string') &&
       typeof parsed.socketPath === 'string' &&
       typeof parsed.startedAt === 'number'
     ) {

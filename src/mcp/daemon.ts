@@ -197,6 +197,7 @@ export class Daemon {
     const lock: DaemonLockInfo = {
       pid: process.pid,
       version: OmniWeavePackageVersion,
+      buildFingerprint: OmniWeaveBuildFingerprint,
       socketPath: this.socketPath,
       startedAt: Date.now(),
     };
@@ -440,6 +441,7 @@ export function tryAcquireDaemonLock(projectRoot: string): AcquireResult {
   const info: DaemonLockInfo = {
     pid: process.pid,
     version: OmniWeavePackageVersion,
+    buildFingerprint: OmniWeaveBuildFingerprint,
     socketPath: getDaemonSocketPath(projectRoot),
     startedAt: Date.now(),
   };
