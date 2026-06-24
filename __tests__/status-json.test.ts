@@ -32,6 +32,10 @@ function runStatusJson(cwd: string): Record<string, unknown> {
   return JSON.parse(line);
 }
 
+function expectChangeCounts(value: unknown, expected: { added: number; modified: number; removed: number }): void {
+  expect(value).toEqual(expected);
+}
+
 describe('omniweave status --json — CI fields (#329)', () => {
   let tempDir: string;
 
@@ -85,5 +89,23 @@ describe('omniweave status --json — CI fields (#329)', () => {
     const ms = Date.parse(out.lastIndexed as string);
     expect(ms).toBeGreaterThanOrEqual(before - 1000);
     expect(ms).toBeLessThanOrEqual(after + 1000);
+  });
+
+  it('separates source graph changes from raw-content maintenance', async () => {
+    fs.mkdirSync(path.join(tempDir, 'src'));
+    fs.writeFileSync(path.join(tempDir, 'src', 'app.ts'), 'export function entry() { return 1; }\n');
+    fs.writeFileSync(path.join(tempDir, 'README.md'), '# old docs marker\n');
+
+    const cg = OmniWeave.initSync(tempDir);
+    await cg.indexAll();
+    cg.close();
+
+    fs.writeFileSync(path.join(tempDir, 'src', 'app.ts'), 'export function entry() { return 2; }\n');
+    fs.writeFileSync(path.join(tempDir, 'README.md'), '# new docs marker\n');
+
+    const out = runStatusJson(tempDir);
+    expectChangeCounts(out.pendingChanges, { added: 0, modified: 2, removed: 0 });
+    expectChangeCounts(out.sourcePendingChanges, { added: 0, modified: 1, removed: 0 });
+    expectChangeCounts(out.rawContentMaintenance, { added: 0, modified: 1, removed: 0 });
   });
 });

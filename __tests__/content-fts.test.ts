@@ -147,6 +147,51 @@ describe('content_fts (raw file-content search)', () => {
     cg.close?.();
   });
 
+  it('separates raw-content maintenance from source graph changes in status', async () => {
+    fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'src', 'app.ts'), 'export function entry() { return 1; }\n');
+    fs.writeFileSync(path.join(dir, 'README.md'), '# old marker\n');
+
+    const cg = await OmniWeave.init(dir, { silent: true });
+    await cg.indexAll();
+
+    fs.writeFileSync(path.join(dir, 'README.md'), '# new marker\n');
+
+    const result = await new ToolHandler(cg).execute('omniweave_status', {});
+    const text = result.content.map((c) => c.text).join('\n');
+    expect(result.isError).toBeUndefined();
+    expect(text).toContain('### Raw-content index maintenance:');
+    expect(text).toContain('README.md (modified)');
+    expect(text).toContain('These affect raw-content search/snippets, not structural calls/imports.');
+    expect(text).not.toContain('### Source graph changes since last index:');
+    expect(text).not.toContain('Run `omniweave sync` before trusting structural relationships.');
+
+    cg.close?.();
+  });
+
+  it('caps raw-content maintenance entries in status', async () => {
+    fs.writeFileSync(path.join(dir, 'README.md'), '# keep docs marker\n');
+
+    const cg = await OmniWeave.init(dir, { silent: true });
+    await cg.indexAll();
+    const raw = cg as unknown as {
+      queries: { upsertFileContent(path: string, content: string): void };
+    };
+    for (let i = 0; i < 55; i++) {
+      raw.queries.upsertFileContent(`docs/missing-${i}.md`, `# stale docs ${i}\n`);
+    }
+
+    const result = await new ToolHandler(cg).execute('omniweave_status', {});
+    const text = result.content.map((c) => c.text).join('\n');
+    expect(result.isError).toBeUndefined();
+    expect(text).toContain('### Raw-content index maintenance:');
+    expect(text).toContain('docs/missing-0.md (removed)');
+    expect(text).toContain('- ...and 5 more');
+    expect(text.split('\n').filter((line) => line.includes('docs/missing-')).length).toBe(50);
+
+    cg.close?.();
+  });
+
   it('purges legacy unsafe source content rows during ordinary sync', async () => {
     const secret = 'legacy-raw-config-secret';
     fs.writeFileSync(path.join(dir, 'application.properties'), `spring.datasource.password=${secret}\n`);

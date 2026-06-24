@@ -174,7 +174,7 @@ describe('MCP staleness banner', () => {
     expect(res.isError).toBeFalsy();
     const text = res.content[0].text;
 
-    expect(text).toContain('### Changed since last index:');
+    expect(text).toContain('### Source graph changes since last index:');
     expect(text).toContain('src/alpha-only.ts (modified)');
     expect(text).toContain('src/new-feature.ts (added)');
     expect(text).toContain('Run `omniweave sync` before trusting structural relationships.');
@@ -265,7 +265,7 @@ describe('MCP staleness banner', () => {
     expect(res.isError).toBeFalsy();
     const text = res.content[0].text;
 
-    expect(text).toContain('### Changed since last index:');
+    expect(text).toContain('### Source graph changes since last index:');
     expect(text).toContain('src/alpha-only.ts (modified)');
     expect(text).toContain('Run `omniweave sync` before trusting structural relationships.');
   });

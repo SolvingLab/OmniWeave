@@ -515,6 +515,24 @@ function changedFileEntries(changes: { added: string[]; modified: string[]; remo
   ];
 }
 
+function changedEntryKey(entry: ChangedFileEntry): string {
+  return `${entry.kind}\0${entry.path}`;
+}
+
+function subtractChangedEntries(all: ChangedFileEntry[], source: ChangedFileEntry[]): ChangedFileEntry[] {
+  const sourceKeys = new Set(source.map(changedEntryKey));
+  return all.filter((entry) => !sourceKeys.has(changedEntryKey(entry)));
+}
+
+function pushCappedChangedEntries(lines: string[], entries: ChangedFileEntry[], cap = 50): void {
+  for (const p of entries.slice(0, cap)) {
+    lines.push(`- ${p.path} (${p.kind})`);
+  }
+  if (entries.length > cap) {
+    lines.push(`- ...and ${entries.length - cap} more`);
+  }
+}
+
 /**
  * Whole-response freshness banner for watcher-less reads (CLI, cross-project
  * MCP, disabled watcher policy). `getPendingFiles()` is empty there by design,
@@ -4126,13 +4144,18 @@ export class ToolHandler {
         lines.push(`- ${p.path} (edited ${ageMs}ms ago, ${label})`);
       }
     } else {
-      const changed = changedFileEntries(cg.getChangedFiles());
-      if (changed.length > 0) {
-        lines.push('', '### Changed since last index:');
-        for (const p of changed) {
-          lines.push(`- ${p.path} (${p.kind})`);
-        }
+      const allChanged = changedFileEntries(cg.getChangedFiles());
+      const sourceChanged = changedFileEntries(cg.getChangedSourceFiles?.() ?? cg.getChangedFiles());
+      const rawContentMaintenance = subtractChangedEntries(allChanged, sourceChanged);
+      if (sourceChanged.length > 0) {
+        lines.push('', '### Source graph changes since last index:');
+        pushCappedChangedEntries(lines, sourceChanged);
         lines.push('', 'Run `omniweave sync` before trusting structural relationships.');
+      }
+      if (rawContentMaintenance.length > 0) {
+        lines.push('', '### Raw-content index maintenance:');
+        pushCappedChangedEntries(lines, rawContentMaintenance);
+        lines.push('', 'These affect raw-content search/snippets, not structural calls/imports.');
       }
     }
 

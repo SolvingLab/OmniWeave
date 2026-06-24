@@ -77,6 +77,32 @@ function parseCliIntOption(value: string | undefined, fallback: number, min: num
   return clamp(parsed, min, max);
 }
 
+type ChangeSet = { added: string[]; modified: string[]; removed: string[] };
+type ChangeCounts = { added: number; modified: number; removed: number };
+
+function countChanges(changes: ChangeSet): ChangeCounts {
+  return {
+    added: changes.added.length,
+    modified: changes.modified.length,
+    removed: changes.removed.length,
+  };
+}
+
+function totalChangeCount(changes: ChangeCounts): number {
+  return changes.added + changes.modified + changes.removed;
+}
+
+function subtractChanges(all: ChangeSet, source: ChangeSet): ChangeSet {
+  const sourceAdded = new Set(source.added);
+  const sourceModified = new Set(source.modified);
+  const sourceRemoved = new Set(source.removed);
+  return {
+    added: all.added.filter((p) => !sourceAdded.has(p)),
+    modified: all.modified.filter((p) => !sourceModified.has(p)),
+    removed: all.removed.filter((p) => !sourceRemoved.has(p)),
+  };
+}
+
 /** Collapse the home directory to `~` for a compact dashboard subtitle. */
 function shortenHome(p: string): string {
   const home = process.env.HOME || process.env.USERPROFILE || '';
@@ -907,6 +933,11 @@ program
       const cg = await OmniWeave.open(projectPath);
       const stats = cg.getStats();
       const changes = cg.getChangedFiles();
+      const sourceChanges = cg.getChangedSourceFiles();
+      const rawContentMaintenance = subtractChanges(changes, sourceChanges);
+      const pendingCounts = countChanges(changes);
+      const sourceCounts = countChanges(sourceChanges);
+      const rawContentCounts = countChanges(rawContentMaintenance);
       const backend = cg.getBackend();
       const journalMode = cg.getJournalMode();
 
@@ -931,11 +962,9 @@ program
           journalMode,
           nodesByKind: stats.nodesByKind,
           languages: Object.entries(stats.filesByLanguage).filter(([, count]) => count > 0).map(([lang]) => lang),
-          pendingChanges: {
-            added: changes.added.length,
-            modified: changes.modified.length,
-            removed: changes.removed.length,
-          },
+          pendingChanges: pendingCounts,
+          sourcePendingChanges: sourceCounts,
+          rawContentMaintenance: rawContentCounts,
           worktreeMismatch: worktreeMismatch
             ? { worktreeRoot: worktreeMismatch.worktreeRoot, indexRoot: worktreeMismatch.indexRoot }
             : null,
@@ -1002,17 +1031,36 @@ program
       console.log();
 
       // Pending changes
-      const totalChanges = changes.added.length + changes.modified.length + changes.removed.length;
+      const totalChanges = totalChangeCount(pendingCounts);
+      const totalSourceChanges = totalChangeCount(sourceCounts);
+      const totalRawContentMaintenance = totalChangeCount(rawContentCounts);
       if (totalChanges > 0) {
-        console.log(chalk.bold('Pending Changes:'));
-        if (changes.added.length > 0) {
-          console.log(`  Added:     ${changes.added.length} files`);
+        if (totalSourceChanges > 0) {
+          console.log(chalk.bold('Pending Source Graph Changes:'));
+          if (sourceCounts.added > 0) {
+            console.log(`  Added:     ${sourceCounts.added} files`);
+          }
+          if (sourceCounts.modified > 0) {
+            console.log(`  Modified:  ${sourceCounts.modified} files`);
+          }
+          if (sourceCounts.removed > 0) {
+            console.log(`  Removed:   ${sourceCounts.removed} files`);
+          }
+          info('Run "omniweave sync" before trusting structural relationships');
         }
-        if (changes.modified.length > 0) {
-          console.log(`  Modified:  ${changes.modified.length} files`);
-        }
-        if (changes.removed.length > 0) {
-          console.log(`  Removed:   ${changes.removed.length} files`);
+        if (totalRawContentMaintenance > 0) {
+          if (totalSourceChanges > 0) console.log();
+          console.log(chalk.bold('Raw-content Index Maintenance:'));
+          if (rawContentCounts.added > 0) {
+            console.log(`  Added:     ${rawContentCounts.added} files`);
+          }
+          if (rawContentCounts.modified > 0) {
+            console.log(`  Modified:  ${rawContentCounts.modified} files`);
+          }
+          if (rawContentCounts.removed > 0) {
+            console.log(`  Removed:   ${rawContentCounts.removed} files`);
+          }
+          info('These affect raw-content search/snippets, not structural calls/imports');
         }
         info('Run "omniweave sync" to update the index');
       } else {
