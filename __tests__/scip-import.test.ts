@@ -230,6 +230,24 @@ function writeTsxReferenceScipIndex(filePath: string): void {
   ));
 }
 
+function writeCrossLanguageReferenceScipIndex(filePath: string): void {
+  const pythonTarget = 'scip-python pip demo 1.0 src/py_target.py/target().';
+  const caller = 'scip-typescript npm demo 1.0 src/a.ts/caller().';
+  fs.writeFileSync(filePath, msg(
+    fieldMsg(2, document('src/a.ts', 'typescript', [
+      occurrence([3, 16, 22], caller, ROLE_DEFINITION),
+      occurrence([4, 9, 15], pythonTarget, ROLE_READ),
+    ], [
+      symbolInfo(caller, KIND_FUNCTION, 'caller'),
+    ])),
+    fieldMsg(2, document('src/py_target.py', 'python', [
+      occurrence([0, 4, 10], pythonTarget, ROLE_DEFINITION),
+    ], [
+      symbolInfo(pythonTarget, KIND_FUNCTION, 'target'),
+    ])),
+  ));
+}
+
 function writeAmbiguousDefinitionScipIndex(filePath: string): void {
   const target = 'scip-typescript npm demo 1.0 src/a.ts/target().';
   const caller = 'scip-typescript npm demo 1.0 src/a.ts/caller().';
@@ -861,6 +879,33 @@ describe('SCIP importer', () => {
       'Skipping SCIP document with language mismatch: src/a.ts (SCIP python, indexed typescript)',
       'Skipping SCIP document with language mismatch: src/animals.ts (SCIP python, indexed typescript)',
     ]);
+  });
+
+  it('skips SCIP references that target definitions in a different real language', async () => {
+    fs.writeFileSync(path.join(projectRoot, 'src', 'py_target.py'), [
+      'def target():',
+      "    return 'py'",
+      '',
+    ].join('\n'));
+    await reindexProject(projectRoot);
+    writeCrossLanguageReferenceScipIndex(indexPath);
+
+    const result = await importScipIndex(projectRoot, indexPath);
+
+    expect(result.documentsImported).toBe(2);
+    expect(result.referencesImported).toBe(0);
+    expect(result.skippedReferences).toBe(1);
+    expect(result.edgesImported).toBe(0);
+    expect(result.warnings).toEqual([]);
+
+    const cg = OmniWeave.openSync(projectRoot);
+    try {
+      const caller = cg.searchNodes('caller', { limit: 5 }).find((match) => match.node.filePath === 'src/a.ts')?.node;
+      expect(caller).toBeDefined();
+      expect(cg.getOutgoingEdges(caller!.id).some((edge) => edge.provenance === 'scip')).toBe(false);
+    } finally {
+      cg.destroy();
+    }
   });
 
   it('imports SCIP references across TypeScript and TSX language-family files', async () => {
