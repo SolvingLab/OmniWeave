@@ -319,6 +319,36 @@ describe('explore surface parity', () => {
     expect(cliAmbiguousText).toContain('cmd: `omniweave node "reconcile" --file "src/overloads/');
     expect(cliAmbiguousText).not.toContain('omniweave_node');
     expect(cliAmbiguousText).not.toContain('omniweave_explore');
+
+    const staleEdit = () => writeProjectFile(
+      projectRoot,
+      'src/overloads/alpha.ts',
+      [
+        'export function reconcile(): string {',
+        "  return 'alpha-stale';",
+        '}',
+        '',
+      ].join('\n'),
+    );
+    const mcpStaleAmbiguousText = await runMcpExploreWithHook(
+      projectRoot,
+      { query: 'reconcile', maxFiles: 5 },
+      staleEdit,
+    );
+    const cliStaleAmbiguousText = runCliExplore(projectRoot, 'reconcile', 5);
+
+    for (const text of [mcpStaleAmbiguousText, cliStaleAmbiguousText]) {
+      expect(text.startsWith('⚠️')).toBe(true);
+      expect(text).toContain('The OmniWeave index is behind the worktree');
+      expect(text).toContain('src/overloads/alpha.ts (modified)');
+      expect(text).toContain('### Ambiguous named symbols');
+      expect(text).toContain('`reconcile` matched 5 callable definitions');
+      expect(text).toContain('do not treat that subset as the full overload set');
+    }
+    expect(mcpStaleAmbiguousText).toContain('key: `omniweave_node symbol="reconcile" file="src/overloads/');
+    expect(cliStaleAmbiguousText).toContain('cmd: `omniweave node "reconcile" --file "src/overloads/');
+    expect(cliStaleAmbiguousText).not.toContain('omniweave_node');
+    expect(cliStaleAmbiguousText).not.toContain('omniweave_explore');
   }, 30000);
 
   it('keeps large-repo not-shown follow-ups free of research snapshots across surfaces', async () => {
