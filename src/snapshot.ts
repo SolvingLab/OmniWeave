@@ -719,11 +719,13 @@ function validateStagedSnapshotDatabase(
       return;
     }
     validateSnapshotPathColumn(conn.getDb(), 'files', 'path', 'files.path', errors);
+    validateSnapshotPathColumn(conn.getDb(), 'content_fts', 'path', 'content_fts.path', errors);
     validateSnapshotPathColumn(conn.getDb(), 'nodes', 'file_path', 'nodes.file_path', errors);
     validateSnapshotPathColumn(conn.getDb(), 'unresolved_refs', 'file_path', 'unresolved_refs.file_path', errors);
     validateSnapshotDatabasePragmas(conn.getDb(), errors);
     validateSnapshotSqliteSchema(conn.getDb(), errors);
     validateSnapshotIndexedPathMembership(conn.getDb(), errors);
+    validateSnapshotContentIndexMatchesFiles(conn.getDb(), errors);
     validateSnapshotGraphText(conn.getDb(), errors);
     if (targetRoot) {
       validateSnapshotTargetImportPolicy(targetRoot, conn.getDb(), errors);
@@ -931,6 +933,7 @@ function validateSnapshotSqliteSchema(db: SqliteDatabase, errors: string[]): voi
 }
 
 function validateSnapshotIndexedPathMembership(db: SqliteDatabase, errors: string[]): void {
+  validateSnapshotPathMembership(db, 'content_fts', 'path', 'content_fts.path', errors);
   validateSnapshotPathMembership(db, 'nodes', 'file_path', 'nodes.file_path', errors);
   validateSnapshotPathMembership(db, 'unresolved_refs', 'file_path', 'unresolved_refs.file_path', errors);
 }
@@ -961,6 +964,33 @@ function validateSnapshotPathMembership(
     errors.push(
       `Snapshot database contains ${label} values not present in files.path: ${summarizePaths(rows.map((row) => displayPathValue(row.value)))}`
     );
+  }
+}
+
+function validateSnapshotContentIndexMatchesFiles(db: SqliteDatabase, errors: string[]): void {
+  let rows: Array<{ path: unknown; content: unknown; contentHash: unknown }>;
+  try {
+    rows = db.prepare(`
+      SELECT content_fts.path AS path, content_fts.content AS content, files.content_hash AS contentHash
+      FROM content_fts
+      LEFT JOIN files ON files.path = content_fts.path
+    `).all() as Array<{ path: unknown; content: unknown; contentHash: unknown }>;
+  } catch (err) {
+    errors.push(`Snapshot database cannot validate content_fts hashes: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+
+  const mismatches: string[] = [];
+  for (const row of rows) {
+    if (typeof row.path !== 'string' || typeof row.contentHash !== 'string') {
+      continue;
+    }
+    if (typeof row.content !== 'string' || hashContent(row.content) !== row.contentHash) {
+      mismatches.push(displayPathValue(row.path));
+    }
+  }
+  if (mismatches.length > 0) {
+    errors.push(`Snapshot database contains content_fts rows whose content does not match files.content_hash: ${summarizePaths(mismatches)}`);
   }
 }
 
