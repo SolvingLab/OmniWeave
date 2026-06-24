@@ -864,6 +864,31 @@ describe('SCIP importer', () => {
     ]);
   });
 
+  it('clears stale prior SCIP facts when re-importing against a stale base index', async () => {
+    await importScipIndex(projectRoot, indexPath);
+
+    fs.appendFileSync(path.join(projectRoot, 'src', 'a.ts'), '\nexport const changed = true;\n');
+    const result = await importScipIndex(projectRoot, indexPath);
+
+    expect(result.documentsRead).toBe(2);
+    expect(result.documentsImported).toBe(1);
+    expect(result.deletedScipEdges).toBe(2);
+    expect(result.referencesImported).toBe(0);
+    expect(result.relationshipsImported).toBe(1);
+    expect(result.warnings).toEqual([
+      'Skipping SCIP document because the OmniWeave index is stale for source file: src/a.ts',
+    ]);
+
+    const cg = OmniWeave.openSync(projectRoot);
+    try {
+      const caller = cg.searchNodes('caller', { limit: 5 }).find((match) => match.node.filePath === 'src/a.ts')?.node;
+      expect(caller).toBeDefined();
+      expect(cg.getOutgoingEdges(caller!.id).some((edge) => edge.provenance === 'scip')).toBe(false);
+    } finally {
+      cg.destroy();
+    }
+  });
+
   it('skips explicit SCIP document languages that mismatch indexed file languages', async () => {
     writeScipIndex(indexPath, 'python');
 
