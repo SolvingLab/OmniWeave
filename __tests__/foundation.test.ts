@@ -282,7 +282,7 @@ describe('Database Connection', () => {
 
     const version = db.getSchemaVersion();
     expect(version).not.toBeNull();
-    expect(version?.version).toBe(5);
+    expect(version?.version).toBe(6); // bumped for content_fts (migration v6)
 
     db.close();
   });

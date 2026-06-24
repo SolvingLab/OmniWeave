@@ -1601,6 +1601,15 @@ export class ExtractionOrchestrator {
       errors: result.errors.length > 0 ? result.errors : undefined,
     };
     this.queries.upsertFile(fileRecord);
+
+    // Populate the raw-content trigram index alongside the symbol graph so
+    // "which files contain string Y" is answerable from the same DB. Bounded by
+    // MAX_FILE_SIZE (oversized files are already skipped before extraction, but
+    // gate explicitly so this stays correct if that changes). Delete-then-insert
+    // inside upsertFileContent keeps it idempotent across re-index and sync.
+    if (stats.size <= MAX_FILE_SIZE) {
+      this.queries.upsertFileContent(filePath, content);
+    }
   }
 
   /**

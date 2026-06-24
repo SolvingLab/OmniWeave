@@ -123,6 +123,20 @@ CREATE TRIGGER IF NOT EXISTS nodes_au AFTER UPDATE ON nodes BEGIN
     VALUES (NEW.rowid, NEW.id, NEW.name, NEW.qualified_name, NEW.docstring, NEW.signature);
 END;
 
+-- Raw file-CONTENT full-text index (trigram) — the one axis nodes_fts (symbol
+-- metadata only) cannot answer: "which files contain string Y". Standalone FTS5
+-- (not external-content: the bytes are stored here, there is no source table for
+-- raw file text); rows are managed explicitly on file upsert/delete, no
+-- triggers. `path` is UNINDEXED (stored + returned, not tokenized). Trigram
+-- excels at literal substrings; complex regex degrades to a verify-scan. Only
+-- files <= MAX_FILE_SIZE are populated. Honest caveat: this roughly triples
+-- content storage vs the symbol graph alone.
+CREATE VIRTUAL TABLE IF NOT EXISTS content_fts USING fts5(
+    path UNINDEXED,
+    content,
+    tokenize='trigram'
+);
+
 -- Edge indexes.
 -- idx_edges_source / idx_edges_target are intentionally omitted —
 -- the (source, kind) and (target, kind) composites below cover the

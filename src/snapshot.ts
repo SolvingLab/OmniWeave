@@ -31,6 +31,14 @@ const ALLOWED_SNAPSHOT_SCHEMA_OBJECTS = new Set([
   'table:nodes_fts_data:nodes_fts_data',
   'table:nodes_fts_docsize:nodes_fts_docsize',
   'table:nodes_fts_idx:nodes_fts_idx',
+  // content_fts is a STANDALONE fts5 (trigram) — it carries a `_content` shadow
+  // table that the external-content nodes_fts does not.
+  'table:content_fts:content_fts',
+  'table:content_fts_config:content_fts_config',
+  'table:content_fts_content:content_fts_content',
+  'table:content_fts_data:content_fts_data',
+  'table:content_fts_docsize:content_fts_docsize',
+  'table:content_fts_idx:content_fts_idx',
   'table:project_metadata:project_metadata',
   'table:schema_versions:schema_versions',
   'table:unresolved_refs:unresolved_refs',

@@ -9,7 +9,7 @@ import { SqliteDatabase } from './sqlite-adapter';
 /**
  * Current schema version
  */
-export const CURRENT_SCHEMA_VERSION = 5;
+export const CURRENT_SCHEMA_VERSION = 6;
 
 /**
  * Migration definition
@@ -72,6 +72,22 @@ const migrations: Migration[] = [
     up: (db) => {
       db.exec(`
         ALTER TABLE nodes ADD COLUMN return_type TEXT;
+      `);
+    },
+  },
+  {
+    version: 6,
+    description:
+      'Add content_fts — raw file-content trigram FTS for "which files contain string Y" (empty until the next full index repopulates it from source)',
+    up: (db) => {
+      // Created empty: the raw bytes are not stored anywhere else, so an existing
+      // index has no content to backfill here — the next full `indexAll` fills it.
+      db.exec(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS content_fts USING fts5(
+          path UNINDEXED,
+          content,
+          tokenize='trigram'
+        );
       `);
     },
   },

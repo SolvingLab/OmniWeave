@@ -205,6 +205,8 @@ export class QueryBuilder {
     insertFile?: SqliteStatement;
     updateFile?: SqliteStatement;
     deleteFile?: SqliteStatement;
+    deleteFileContent?: SqliteStatement;
+    insertFileContent?: SqliteStatement;
     getFileByPath?: SqliteStatement;
     getAllFiles?: SqliteStatement;
     insertUnresolved?: SqliteStatement;
@@ -1578,6 +1580,78 @@ export class QueryBuilder {
   }
 
   /**
+   * Upsert one file's raw content into the trigram content index. Standalone
+   * FTS5 has no UPSERT, so this is delete-then-insert by path (idempotent on
+   * re-index / sync). Caller gates on MAX_FILE_SIZE — oversized files are not
+   * passed here.
+   */
+  upsertFileContent(path: string, content: string): void {
+    if (!this.stmts.deleteFileContent) {
+      this.stmts.deleteFileContent = this.db.prepare('DELETE FROM content_fts WHERE path = ?');
+    }
+    if (!this.stmts.insertFileContent) {
+      this.stmts.insertFileContent = this.db.prepare(
+        'INSERT INTO content_fts (path, content) VALUES (?, ?)'
+      );
+    }
+    this.stmts.deleteFileContent.run(path);
+    this.stmts.insertFileContent.run(path, content);
+  }
+
+  /** Remove a file's rows from the content index (file deletion / sync removal). */
+  deleteFileContent(path: string): void {
+    if (!this.stmts.deleteFileContent) {
+      this.stmts.deleteFileContent = this.db.prepare('DELETE FROM content_fts WHERE path = ?');
+    }
+    this.stmts.deleteFileContent.run(path);
+  }
+
+  /** How many files currently carry content in the trigram index (0 ⇒ not yet
+   *  populated — an existing index migrated to schema 6 needs a full reindex). */
+  contentIndexFileCount(): number {
+    try {
+      const row = this.db
+        .prepare('SELECT count(DISTINCT path) AS c FROM content_fts')
+        .get() as { c: number } | undefined;
+      return row?.c ?? 0;
+    } catch {
+      return 0; // table absent (old/foreign DB)
+    }
+  }
+
+  /**
+   * Literal-substring search over raw file content (trigram FTS). Returns the
+   * matching files with a content snippet, ranked, capped at `limit`. The
+   * `pattern` is matched as an FTS5 phrase (exact substring for trigram); regex
+   * is NOT supported here (trigram degrades on it). Patterns shorter than 3
+   * chars cannot be trigram-indexed and return nothing. Fetches one extra row so
+   * the caller can honestly report truncation.
+   */
+  searchContent(
+    pattern: string,
+    limit: number
+  ): { results: Array<{ path: string; snippet: string }>; hasMore: boolean } {
+    const trimmed = pattern.trim();
+    if (trimmed.length < 3) return { results: [], hasMore: false };
+    // FTS5 phrase: wrap in double quotes (substring match for trigram), escaping
+    // embedded quotes by doubling so a hostile pattern can't break out of the phrase.
+    const query = `"${trimmed.replace(/"/g, '""')}"`;
+    let rows: Array<{ path: string; snippet: string }> = [];
+    try {
+      rows = this.db
+        .prepare(
+          `SELECT path, snippet(content_fts, 1, '[', ']', ' … ', 16) AS snippet
+           FROM content_fts WHERE content MATCH ? ORDER BY rank LIMIT ?`
+        )
+        .all(query, limit + 1) as Array<{ path: string; snippet: string }>;
+    } catch {
+      return { results: [], hasMore: false }; // table absent or malformed query
+    }
+    const hasMore = rows.length > limit;
+    return { results: rows.slice(0, limit), hasMore };
+  }
+
+  /**
    * Delete a file record and its nodes
    */
   deleteFile(filePath: string): void {
@@ -1587,6 +1661,7 @@ export class QueryBuilder {
         this.stmts.deleteFile = this.db.prepare('DELETE FROM files WHERE path = ?');
       }
       this.stmts.deleteFile.run(filePath);
+      this.deleteFileContent(filePath); // keep the content index in lockstep with files
     })();
   }
 
